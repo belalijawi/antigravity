@@ -39,3 +39,31 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# React Native / Expo
+tahajjud-mobile/node_modules/
+tahajjud-mobile/.expo/
+tahajjud-mobile/.expo-shared/
+tahajjud-mobile/dist/
+tahajjud-mobile/npm-debug.*
+tahajjud-mobile/*.jks
+tahajjud-mobile/*.p8
+tahajjud-mobile/*.p12
+tahajjud-mobile/*.key
+tahajjud-mobile/*.mobileprovision
+tahajjud-mobile/*.orig.*
+tahajjud-mobile/web-build/
+tahajjud-mobile/android/app/build/
+tahajjud-mobile/android/.gradle/
+tahajjud-mobile/ios/Pods/
+tahajjud-mobile/ios/build/
+
+# macOS
+.DS_Store
+
+# Zip files
+*.zip
+
+# Log files
+*.log
+metro_log.txt
