@@ -1,0 +1,51 @@
+{
+  "expo": {
+    "name": "Tahajjud+",
+    "slug": "tahajjud-plus",
+    "version": "1.5.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "dark",
+    "newArchEnabled": true,
+    "splash": {
+      "image": "./assets/splash-icon.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#020617"
+    },
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.tahajjudplus.app",
+      "buildNumber": "1",
+      "infoPlist": {
+        "NSLocationWhenInUseUsageDescription": "Tahajjud+ needs your location to accurately calculate the Qibla direction and prayer times for your current city.",
+        "NSLocationAlwaysAndWhenInUseUsageDescription": "Tahajjud+ needs your location to accurately calculate the Qibla direction and prayer times for your current city.",
+        "NSLocalNetworkUsageDescription": "Used for community features and syncing your prayers."
+      }
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#020617"
+      },
+      "package": "com.tahajjudplus.app",
+      "edgeToEdgeEnabled": true,
+      "predictiveBackGestureEnabled": false
+    },
+    "web": {
+      "favicon": "./assets/favicon.png"
+    },
+    "plugins": [
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/notification-icon.png",
+          "color": "#020617",
+          "sounds": [
+            "./assets/sounds/tahajjud_alert.wav"
+          ]
+        }
+      ],
+      "@react-native-google-signin/google-signin"
+    ]
+  }
+}

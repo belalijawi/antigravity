@@ -1,0 +1,11 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --midnight-veil: #020617;
+
+  --luminous-silver: #f8fafc;
+  --nebula-glow: rgba(79, 70, 229, 0.15);
+  --crystalline-border: rgba(255, 255, 255, 0.08);
+}
