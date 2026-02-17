@@ -1,0 +1,17 @@
+﻿Running 17 checks on your project...
+15/17 checks passed. 2 checks failed. Possible issues detected:
+Use the --verbose flag to see more details about passed checks.
+
+Ô£û Check Expo config (app.json/ app.config.js) schema
+Error validating asset fields in C:\Users\belal\Downloads\Tahajjud\Tahajjud\tahajjud-mobile\app.json:
+ Field: Android.adaptiveIcon.foregroundImage - the file extension should match the content, but the file extension is .png while the file content at './assets/adaptive-icon.png' is of type jpg.
+ Field: Android.adaptiveIcon.foregroundImage - field 'Android.adaptiveIcon.foregroundImage' should point to .png image but the file at './assets/adaptive-icon.png' has type jpg.
+ Field: icon - the file extension should match the content, but the file extension is .png while the file content at './assets/icon.png' is of type jpg.
+ Field: icon - field 'icon' should point to .png image but the file at './assets/icon.png' has type jpg.
+Advice:
+Resolve schema errors in your app config. Learn more: https://docs.expo.dev/workflow/configuration/
+
+Ô£û Check for app config fields that may not be synced in a non-CNG project
+This project contains native project folders but also has native configuration properties in app.json, indicating it is configured to use Prebuild. When the android/ios folders are present, EAS Build will not sync the following properties: orientation, icon, userInterfaceStyle, splash, ios, android, plugins. 
+
+
