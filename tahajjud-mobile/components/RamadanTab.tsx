@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
-import { View, Text, ScrollView, StyleSheet, SafeAreaView, TouchableOpacity, Alert } from 'react-native';
+import { View, Text, ScrollView, StyleSheet, TouchableOpacity, Alert } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { Moon, Star, Sun, BookOpen, CheckCircle, Heart, Info, RotateCcw } from 'lucide-react-native';
 import Svg, { Circle } from 'react-native-svg';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -11,6 +12,104 @@ import { useTheme } from '../context/ThemeContext';
 import { getPrayerTimes } from '../lib/api';
 import * as Location from 'expo-location';
 import { haptic } from '../utils/haptic';
+import { tabletContentStyle } from '../utils/layout';
+
+interface GoalCardProps {
+    title: string;
+    value: number;
+    icon: React.ComponentType<any>;
+    onIncrement: () => void;
+    onDecrement: () => void;
+    target?: number;
+    disabled?: boolean;
+    disabledMessage?: string;
+    accentColor: string;
+}
+
+function GoalCard({ title, value, icon: Icon, onIncrement, onDecrement, target = 30, disabled = false, disabledMessage, accentColor }: GoalCardProps) {
+    const scale = useSharedValue(1);
+    const progress = (value / target) * 100;
+    const radius = 35;
+    const circumference = 2 * Math.PI * radius;
+    const strokeDashoffset = circumference - (progress / 100) * circumference;
+
+    const animatedStyle = useAnimatedStyle(() => ({
+        transform: [{ scale: scale.value }]
+    }));
+
+    const handlePress = () => {
+        if (disabled) {
+            haptic.warning();
+            Alert.alert("Already Logged", disabledMessage || "You have already logged this for today. Come back tomorrow! 🌙");
+            return;
+        }
+        haptic.success();
+        scale.value = withSpring(1.2, {}, () => {
+            scale.value = withSpring(1);
+        });
+        onIncrement();
+    };
+
+    return (
+        <TouchableOpacity
+            onPress={handlePress}
+            onLongPress={() => {
+                haptic.medium();
+                Alert.alert(
+                    "Correction",
+                    `Remove 1 ${title.toLowerCase()}?`,
+                    [
+                        { text: "Cancel", style: "cancel" },
+                        { text: "Remove", style: "destructive", onPress: () => { haptic.warning(); onDecrement(); } }
+                    ]
+                );
+            }}
+            activeOpacity={0.9}
+            style={[styles.goalCard, disabled && { opacity: 0.8 }]}
+        >
+            <BlurView intensity={20} tint="dark" style={StyleSheet.absoluteFill} />
+
+            {/* SVG Progress Ring */}
+            <View style={styles.ringContainer}>
+                <Svg width="80" height="80">
+                    <Circle
+                        cx="40"
+                        cy="40"
+                        r={radius}
+                        stroke="rgba(255, 255, 255, 0.05)"
+                        strokeWidth="4"
+                        fill="transparent"
+                    />
+                    <Circle
+                        cx="40"
+                        cy="40"
+                        r={radius}
+                        stroke={disabled ? "#4ade80" : accentColor}
+                        strokeWidth="4"
+                        strokeDasharray={circumference}
+                        strokeDashoffset={strokeDashoffset}
+                        strokeLinecap="round"
+                        fill="transparent"
+                    />
+                </Svg>
+            </View>
+
+            <View style={[styles.goalIcon, { backgroundColor: (disabled ? "#4ade80" : accentColor) + '20' }]}>
+                <Icon color={disabled ? "#4ade80" : accentColor} size={20} />
+            </View>
+
+            <View style={styles.goalInfo}>
+                <Text style={[styles.goalValue, disabled && { color: "#4ade80" }]}>{value}</Text>
+                <Text style={styles.goalTitle}>{disabled ? "Logged Today" : title}</Text>
+                <Text style={styles.goalTarget}>Target: {target}</Text>
+            </View>
+
+            <Animated.View style={[styles.plusButton, animatedStyle]}>
+                <CheckCircle size={18} color={disabled ? "#4ade80" : accentColor} />
+            </Animated.View>
+        </TouchableOpacity>
+    );
+}
 
 export function RamadanTab() {
     const { colors } = useTheme();
@@ -111,94 +210,9 @@ export function RamadanTab() {
         setCountdown(`${label} in ${hours}h ${mins}m ${secs}s`);
     };
 
-    const GoalCard = ({ title, value, icon: Icon, onIncrement, onDecrement, target = 30, disabled = false, disabledMessage }: any) => {
-        const scale = useSharedValue(1);
-        const progress = (value / target) * 100;
-        const radius = 35;
-        const circumference = 2 * Math.PI * radius;
-        const strokeDashoffset = circumference - (progress / 100) * circumference;
-
-        const animatedStyle = useAnimatedStyle(() => ({
-            transform: [{ scale: scale.value }]
-        }));
-
-        const handlePress = () => {
-            if (disabled) {
-                haptic.warning();
-                Alert.alert("Already Logged", disabledMessage || "You have already logged this for today. Come back tomorrow! 🌙");
-                return;
-            }
-            haptic.success();
-            scale.value = withSpring(1.2, {}, () => {
-                scale.value = withSpring(1);
-            });
-            onIncrement();
-        };
-
-        return (
-            <TouchableOpacity
-                onPress={handlePress}
-                onLongPress={() => {
-                    haptic.medium();
-                    Alert.alert(
-                        "Correction",
-                        `Remove 1 ${title.toLowerCase()}?`,
-                        [
-                            { text: "Cancel", style: "cancel" },
-                            { text: "Remove", style: "destructive", onPress: () => { haptic.warning(); onDecrement(); } }
-                        ]
-                    );
-                }}
-                activeOpacity={0.9}
-                style={[styles.goalCard, disabled && { opacity: 0.8 }]}
-            >
-                <BlurView intensity={20} tint="dark" style={StyleSheet.absoluteFill} />
-
-                {/* SVG Progress Ring */}
-                <View style={styles.ringContainer}>
-                    <Svg width="80" height="80">
-                        <Circle
-                            cx="40"
-                            cy="40"
-                            r={radius}
-                            stroke="rgba(255, 255, 255, 0.05)"
-                            strokeWidth="4"
-                            fill="transparent"
-                        />
-                        <Circle
-                            cx="40"
-                            cy="40"
-                            r={radius}
-                            stroke={disabled ? "#4ade80" : colors.accent}
-                            strokeWidth="4"
-                            strokeDasharray={circumference}
-                            strokeDashoffset={strokeDashoffset}
-                            strokeLinecap="round"
-                            fill="transparent"
-                        />
-                    </Svg>
-                </View>
-
-                <View style={[styles.goalIcon, { backgroundColor: (disabled ? "#4ade80" : colors.accent) + '20' }]}>
-                    <Icon color={disabled ? "#4ade80" : colors.accent} size={20} />
-                </View>
-
-                <View style={styles.goalInfo}>
-                    <Text style={[styles.goalValue, disabled && { color: "#4ade80" }]}>{value}</Text>
-                    <Text style={styles.goalTitle}>{disabled ? "Logged Today" : title}</Text>
-                    <Text style={styles.goalTarget}>Target: {target}</Text>
-                </View>
-
-                <Animated.View style={[styles.plusButton, animatedStyle]}>
-                    <CheckCircle size={18} color={disabled ? "#4ade80" : colors.accent} />
-                </Animated.View>
-            </TouchableOpacity>
-        );
-    };
-
     return (
         <SafeAreaView style={styles.safeArea}>
-            <ScrollView style={styles.container} contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+            <ScrollView style={styles.container} contentContainerStyle={[styles.content, tabletContentStyle()]} showsVerticalScrollIndicator={false}>
                 <View style={styles.header}>
                     <Text style={[styles.headerTitle, { color: colors.accent }]}>Ramadan 2026</Text>
                     <Text style={styles.headerSubtitle}>
@@ -246,6 +260,7 @@ export function RamadanTab() {
                         title="Fasts Completed"
                         value={fastDays}
                         icon={Heart}
+                        accentColor={colors.accent}
                         disabled={lastFastDate === format(new Date(), 'yyyy-MM-dd')}
                         disabledMessage="MashAllah! You have already logged your fast for today. See you at Iftar! 🌙"
                         onIncrement={() => {
@@ -266,6 +281,7 @@ export function RamadanTab() {
                         title="Juz Read"
                         value={quranGoal}
                         icon={BookOpen}
+                        accentColor={colors.accent}
                         onIncrement={() => {
                             const n = quranGoal + 1;
                             setQuranGoal(n);

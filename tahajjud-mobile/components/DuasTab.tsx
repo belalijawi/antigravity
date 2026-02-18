@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import { View, Text, ScrollView, TextInput, TouchableOpacity, StyleSheet, SafeAreaView, FlatList, Alert, Modal, KeyboardAvoidingView, Platform, ScrollView as RNScrollView, ActivityIndicator } from 'react-native';
+import { View, Text, ScrollView, TextInput, TouchableOpacity, StyleSheet, FlatList, Alert, Modal, KeyboardAvoidingView, Platform, ScrollView as RNScrollView, ActivityIndicator } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { Search, Heart, Volume2, Square, Plus, X, Trash2, Mail, PenTool, Sprout, Lock } from 'lucide-react-native';
 import { duaDatabase, categories, Dua } from '../data/duas';
 import { getBookmarkedDuas, toggleBookmark } from '../utils/bookmarks';
@@ -10,10 +11,12 @@ import * as LocalAuthentication from 'expo-local-authentication';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { supabase } from '../utils/supabase';
 import { fetchCloudData } from '../utils/syncService';
+import { getFirebaseAuth } from '../utils/firebase';
 import { BlurView } from 'expo-blur';
 import { LinearGradient } from 'expo-linear-gradient';
 import Animated, { FadeInDown, FadeInUp } from 'react-native-reanimated';
 import { useTheme } from '../context/ThemeContext';
+import { tabletContentStyle } from '../utils/layout';
 
 interface DuaCardProps {
     dua: Dua;
@@ -185,16 +188,13 @@ export function DuasTab() {
         const localDuas = await getPersonalDuas();
         setPersonalDuas(localDuas);
 
-        // 2. If authenticated, try to fetch fresh data from cloud
-        const { data: { user } } = await supabase.auth.getUser();
-        if (user) {
-            const cloudDuas = await fetchCloudData(user.id);
+        // 2. If authenticated via Firebase, try to fetch fresh data from cloud
+        const auth = getFirebaseAuth();
+        const firebaseUser = auth?.currentUser;
+        if (firebaseUser) {
+            const cloudDuas = await fetchCloudData(firebaseUser.uid);
             if (cloudDuas.length > 0) {
-                // Simplistic merge: prefer whatever is in the cloud for now
-                // Or you could merge and deduplicate
                 setPersonalDuas(cloudDuas);
-
-                // Keep local storage in sync
                 await AsyncStorage.setItem('personal-duas', JSON.stringify(cloudDuas));
             }
         }
@@ -429,7 +429,7 @@ export function DuasTab() {
 
     return (
         <SafeAreaView style={styles.safeArea}>
-            <View style={styles.container}>
+            <View style={[styles.container, tabletContentStyle()]}>
                 {/* Header */}
                 <View style={styles.header}>
                     <Text style={[styles.headerTitle, { color: colors.accent }]}>Duas</Text>

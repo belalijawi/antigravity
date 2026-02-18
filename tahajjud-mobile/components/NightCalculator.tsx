@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { View, Text, ActivityIndicator, StyleSheet, TouchableOpacity, Alert, AppState, AppStateStatus } from "react-native";
+import { View, Text, ActivityIndicator, StyleSheet, TouchableOpacity, Alert, AppState, AppStateStatus, Linking } from "react-native";
 import * as Location from "expo-location";
 import { BlurView } from 'expo-blur';
 import { getPrayerTimes } from "../lib/api";
@@ -24,6 +24,7 @@ export function NightCalculator() {
     const [nightCalc, setNightCalc] = useState<NightCalculation | null>(null);
     const [loading, setLoading] = useState<boolean>(true);
     const [errorMsg, setErrorMsg] = useState<string | null>(null);
+    const [locationDenied, setLocationDenied] = useState<boolean>(false);
     const [currentTime, setCurrentTime] = useState<Date>(new Date());
     const [notificationEnabled, setNotificationEnabled] = useState<boolean>(false);
     const [selectedBuffer, setSelectedBuffer] = useState<number>(30); // Default 30 mins
@@ -55,22 +56,27 @@ export function NightCalculator() {
 
     const fetchLocation = async () => {
         try {
-            let { status } = await Location.requestForegroundPermissionsAsync();
+            const { status } = await Location.requestForegroundPermissionsAsync();
             if (status !== 'granted') {
-                setErrorMsg('Permission to access location was denied. Using Makkah.');
+                setLocationDenied(true);
+                // Fall back to Makkah so prayer times still work
                 setLocation({ lat: 21.4225, lng: 39.8262 });
                 return;
             }
-            let location = await Location.getCurrentPositionAsync({
+            setLocationDenied(false);
+            const loc = await Location.getCurrentPositionAsync({
                 accuracy: Location.Accuracy.High
             });
             setLocation({
-                lat: location.coords.latitude,
-                lng: location.coords.longitude
+                lat: loc.coords.latitude,
+                lng: loc.coords.longitude
             });
         } catch (error) {
             console.error('Error fetching location:', error);
-            if (!location) setErrorMsg('Unable to fetch location.');
+            if (!location) {
+                setLocationDenied(true);
+                setLocation({ lat: 21.4225, lng: 39.8262 });
+            }
         }
     };
 
@@ -151,6 +157,27 @@ export function NightCalculator() {
                 style={StyleSheet.absoluteFill}
             />
             <BlurView intensity={20} tint="dark" style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(0,0,0,0.3)' }]} />
+
+            {/* Location Permission Warning Banner */}
+            {locationDenied && (
+                <View style={styles.locationWarning}>
+                    <View style={styles.locationWarningContent}>
+                        <Text style={styles.locationWarningIcon}>📍</Text>
+                        <View style={styles.locationWarningText}>
+                            <Text style={styles.locationWarningTitle}>Location Access Needed</Text>
+                            <Text style={styles.locationWarningBody}>
+                                Prayer times are calculated using Makkah. Enable location for accurate local times.
+                            </Text>
+                        </View>
+                    </View>
+                    <TouchableOpacity
+                        style={styles.locationWarningButton}
+                        onPress={() => Linking.openSettings()}
+                    >
+                        <Text style={styles.locationWarningButtonText}>Open Settings</Text>
+                    </TouchableOpacity>
+                </View>
+            )}
 
             <View style={styles.mainDisplay}>
                 <View style={styles.timeBadge}>
@@ -300,5 +327,56 @@ const styles = StyleSheet.create({
     progressBarFill: { height: '100%', borderRadius: 2 },
     lastThirdMarker: { position: 'absolute', top: 0, bottom: 0, width: 2, backgroundColor: 'rgba(255, 255, 255, 0.2)', zIndex: 1 },
     progressFooter: { flexDirection: 'row', justifyContent: 'space-between', marginTop: 8 },
-    footerTime: { fontSize: 8, color: '#475569', fontWeight: '700' }
+    footerTime: { fontSize: 8, color: '#475569', fontWeight: '700' },
+    locationWarning: {
+        marginBottom: 16,
+        borderRadius: 14,
+        borderWidth: 1,
+        borderColor: 'rgba(251, 191, 36, 0.3)',
+        backgroundColor: 'rgba(251, 191, 36, 0.08)',
+        padding: 12,
+        gap: 10,
+    },
+    locationWarningContent: {
+        flexDirection: 'row',
+        alignItems: 'flex-start',
+        gap: 10,
+    },
+    locationWarningIcon: {
+        fontSize: 18,
+        lineHeight: 22,
+    },
+    locationWarningText: {
+        flex: 1,
+        gap: 2,
+    },
+    locationWarningTitle: {
+        fontSize: 12,
+        fontWeight: '900',
+        color: '#fbbf24',
+        textTransform: 'uppercase',
+        letterSpacing: 0.5,
+    },
+    locationWarningBody: {
+        fontSize: 11,
+        color: '#94a3b8',
+        fontWeight: '500',
+        lineHeight: 16,
+    },
+    locationWarningButton: {
+        alignSelf: 'flex-end',
+        paddingHorizontal: 14,
+        paddingVertical: 6,
+        borderRadius: 8,
+        backgroundColor: 'rgba(251, 191, 36, 0.15)',
+        borderWidth: 1,
+        borderColor: 'rgba(251, 191, 36, 0.4)',
+    },
+    locationWarningButtonText: {
+        fontSize: 11,
+        fontWeight: '900',
+        color: '#fbbf24',
+        textTransform: 'uppercase',
+        letterSpacing: 0.5,
+    },
 });

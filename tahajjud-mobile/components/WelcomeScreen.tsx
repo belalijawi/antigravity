@@ -1,10 +1,12 @@
 import React, { useState } from 'react';
 import { View, Text, TextInput, TouchableOpacity, KeyboardAvoidingView, Platform, StyleSheet } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Moon, ChevronRight } from 'lucide-react-native';
 import { BlurView } from 'expo-blur';
 import Animated, { FadeIn, FadeInDown, FadeInUp } from 'react-native-reanimated';
 import { useTheme } from '../context/ThemeContext';
+import { tabletContentStyle } from '../utils/layout';
 
 interface WelcomeScreenProps {
     onComplete: (name?: string) => void;
@@ -33,7 +35,7 @@ export function WelcomeScreen({ onComplete }: WelcomeScreenProps) {
                 behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
                 style={styles.container}
             >
-                <View style={styles.content}>
+                <View style={[styles.content, tabletContentStyle()]}>
                     {/* Hero Visual */}
                     <Animated.View
                         entering={FadeInUp.delay(200).duration(1200)}
@@ -123,15 +125,18 @@ export function WelcomeScreen({ onComplete }: WelcomeScreenProps) {
                             </TouchableOpacity>
                         </Animated.View>
                     </View>
-
-                    <Animated.Text
-                        entering={FadeIn.delay(1500).duration(1000)}
-                        style={styles.footerQuote}
-                    >
-                        "The Lord descends every night to the lowest heaven when the last third of the night remains..."
-                    </Animated.Text>
                 </View>
             </KeyboardAvoidingView>
+
+            {/* Footer quote — outside KeyboardAvoidingView so keyboard never pushes it up */}
+            <SafeAreaView style={styles.footerSafeArea} edges={['bottom']}>
+                <Animated.Text
+                    entering={FadeIn.delay(1500).duration(1000)}
+                    style={styles.footerQuote}
+                >
+                    "The Lord descends every night to the lowest heaven when the last third of the night remains..."
+                </Animated.Text>
+            </SafeAreaView>
         </View>
     );
 }
@@ -273,9 +278,15 @@ const styles = StyleSheet.create({
         fontWeight: '700',
         letterSpacing: 0.5,
     },
-    footerQuote: {
+    footerSafeArea: {
         position: 'absolute',
-        bottom: 50,
+        bottom: 0,
+        left: 0,
+        right: 0,
+        pointerEvents: 'none',
+    },
+    footerQuote: {
+        paddingBottom: 16,
         fontSize: 11,
         color: '#cbd5e1',
         textAlign: 'center',

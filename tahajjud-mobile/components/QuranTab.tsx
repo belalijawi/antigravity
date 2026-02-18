@@ -1,6 +1,7 @@
 import * as React from 'react';
 import { useEffect, useState } from 'react';
-import { View, Text, FlatList, StyleSheet, TouchableOpacity, ActivityIndicator, TextInput, SafeAreaView } from 'react-native';
+import { View, Text, FlatList, StyleSheet, TouchableOpacity, ActivityIndicator, TextInput } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { QuranService, SurahMeta } from '../services/QuranService';
 import { SurahReader } from './SurahReader';
 import { Search, Bookmark, BookOpen } from 'lucide-react-native';
@@ -9,6 +10,7 @@ import { BlurView } from 'expo-blur';
 import { LinearGradient } from 'expo-linear-gradient';
 import Animated, { FadeInDown } from 'react-native-reanimated';
 import { useTheme } from '../context/ThemeContext';
+import { tabletContentStyle } from '../utils/layout';
 
 export function QuranTab() {
     const { colors } = useTheme();
@@ -76,92 +78,94 @@ export function QuranTab() {
 
     return (
         <SafeAreaView style={styles.container}>
-            <View style={styles.header}>
-                <Text style={[styles.title, { color: colors.accent }]}>The Holy Quran</Text>
-                <Text style={styles.subtitle}>Guidance for the heart</Text>
-            </View>
+            <View style={[{ flex: 1 }, tabletContentStyle()]}>
+                <View style={styles.header}>
+                    <Text style={[styles.title, { color: colors.accent }]}>The Holy Quran</Text>
+                    <Text style={styles.subtitle}>Guidance for the heart</Text>
+                </View>
 
-            {bookmark && !searchQuery && (
-                <Animated.View
-                    entering={FadeInDown.duration(800)}
-                    style={styles.bookmarkWrapper}
-                >
-                    <TouchableOpacity
-                        style={styles.bookmarkCard}
-                        onPress={() => {
-                            if (bookmark) {
-                                setCurrentEdition(bookmark.edition);
-                                setSelectedSurah(bookmark.surahNumber);
-                            }
-                        }}
+                {bookmark && !searchQuery && (
+                    <Animated.View
+                        entering={FadeInDown.duration(800)}
+                        style={styles.bookmarkWrapper}
                     >
-                        <BlurView intensity={20} tint="dark" style={StyleSheet.absoluteFill} />
-                        <LinearGradient
-                            colors={['rgba(248, 250, 252, 0.15)', 'transparent']}
-                            style={StyleSheet.absoluteFill}
-                        />
-                        <View style={styles.bookmarkIconContainer}>
-                            <BookOpen color={colors.primaryText} size={24} strokeWidth={2} />
-                        </View>
-                        <View style={styles.bookmarkContent}>
-                            <Text style={styles.bookmarkLabel}>RESUME ASCENT</Text>
-                            <Text style={[styles.bookmarkSurah, { color: colors.primaryText }]}>
-                                {bookmark.surahName} {bookmark.ayahNumber ? `• v${bookmark.ayahNumber}` : ''}
-                            </Text>
-                        </View>
-                        <Bookmark color="#22d3ee" size={20} fill="#22d3ee" />
-                    </TouchableOpacity>
-                </Animated.View>
-            )}
-
-            <View style={styles.searchContainer}>
-                <BlurView intensity={10} tint="dark" style={StyleSheet.absoluteFill} />
-                <Search color="#94a3b8" size={20} />
-                <TextInput
-                    style={styles.input}
-                    placeholder="Search by Name or Theme..."
-                    placeholderTextColor="rgba(255, 255, 255, 0.2)"
-                    value={searchQuery}
-                    onChangeText={handleSearch}
-                />
-            </View>
-
-            {loading ? (
-                <ActivityIndicator size="large" color="#f8fafc" style={{ marginTop: 50 }} />
-            ) : (
-                <FlatList
-                    data={filteredSurahs}
-                    keyExtractor={(item) => item.number.toString()}
-                    contentContainerStyle={styles.listContent}
-                    showsVerticalScrollIndicator={false}
-                    renderItem={({ item }) => (
                         <TouchableOpacity
-                            style={styles.card}
-                            onPress={() => setSelectedSurah(item.number)}
+                            style={styles.bookmarkCard}
+                            onPress={() => {
+                                if (bookmark) {
+                                    setCurrentEdition(bookmark.edition);
+                                    setSelectedSurah(bookmark.surahNumber);
+                                }
+                            }}
                         >
-                            <BlurView intensity={15} tint="dark" style={StyleSheet.absoluteFill} />
+                            <BlurView intensity={20} tint="dark" style={StyleSheet.absoluteFill} />
                             <LinearGradient
-                                colors={['rgba(255, 255, 255, 0.05)', 'transparent']}
+                                colors={['rgba(248, 250, 252, 0.15)', 'transparent']}
                                 style={StyleSheet.absoluteFill}
                             />
-
-                            <View style={styles.cardMain}>
-                                <View style={styles.numberBadge}>
-                                    <Text style={styles.numberText}>{item.number}</Text>
-                                </View>
-                                <View style={styles.cardTextGroup}>
-                                    <Text style={styles.surahName}>{item.englishName}</Text>
-                                    <Text style={styles.surahTranslation}>{item.englishNameTranslation}</Text>
-                                </View>
-                                <View style={styles.cardEndGroup}>
-                                    <Text style={styles.ayahCount}>{item.numberOfAyahs} v.</Text>
-                                    <Text style={styles.revelationType}>{item.revelationType}</Text>
-                                </View>
+                            <View style={styles.bookmarkIconContainer}>
+                                <BookOpen color={colors.primaryText} size={24} strokeWidth={2} />
                             </View>
+                            <View style={styles.bookmarkContent}>
+                                <Text style={styles.bookmarkLabel}>RESUME ASCENT</Text>
+                                <Text style={[styles.bookmarkSurah, { color: colors.primaryText }]}>
+                                    {bookmark.surahName} {bookmark.ayahNumber ? `• v${bookmark.ayahNumber}` : ''}
+                                </Text>
+                            </View>
+                            <Bookmark color="#22d3ee" size={20} fill="#22d3ee" />
                         </TouchableOpacity>
-                    )}
-                />
-            )}
+                    </Animated.View>
+                )}
+
+                <View style={styles.searchContainer}>
+                    <BlurView intensity={10} tint="dark" style={StyleSheet.absoluteFill} />
+                    <Search color="#94a3b8" size={20} />
+                    <TextInput
+                        style={styles.input}
+                        placeholder="Search by Name or Theme..."
+                        placeholderTextColor="rgba(255, 255, 255, 0.2)"
+                        value={searchQuery}
+                        onChangeText={handleSearch}
+                    />
+                </View>
+
+                {loading ? (
+                    <ActivityIndicator size="large" color="#f8fafc" style={{ marginTop: 50 }} />
+                ) : (
+                    <FlatList
+                        data={filteredSurahs}
+                        keyExtractor={(item) => item.number.toString()}
+                        contentContainerStyle={styles.listContent}
+                        showsVerticalScrollIndicator={false}
+                        renderItem={({ item }) => (
+                            <TouchableOpacity
+                                style={styles.card}
+                                onPress={() => setSelectedSurah(item.number)}
+                            >
+                                <BlurView intensity={15} tint="dark" style={StyleSheet.absoluteFill} />
+                                <LinearGradient
+                                    colors={['rgba(255, 255, 255, 0.05)', 'transparent']}
+                                    style={StyleSheet.absoluteFill}
+                                />
+
+                                <View style={styles.cardMain}>
+                                    <View style={styles.numberBadge}>
+                                        <Text style={styles.numberText}>{item.number}</Text>
+                                    </View>
+                                    <View style={styles.cardTextGroup}>
+                                        <Text style={styles.surahName}>{item.englishName}</Text>
+                                        <Text style={styles.surahTranslation}>{item.englishNameTranslation}</Text>
+                                    </View>
+                                    <View style={styles.cardEndGroup}>
+                                        <Text style={styles.ayahCount}>{item.numberOfAyahs} v.</Text>
+                                        <Text style={styles.revelationType}>{item.revelationType}</Text>
+                                    </View>
+                                </View>
+                            </TouchableOpacity>
+                        )}
+                    />
+                )}
+            </View>
         </SafeAreaView>
     );
 }

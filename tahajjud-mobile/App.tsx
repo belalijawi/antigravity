@@ -3,6 +3,7 @@ import React, { useEffect, useState } from 'react';
 import { View, StatusBar, LogBox, Platform, StyleSheet } from 'react-native';
 import { NavigationContainer, DarkTheme } from '@react-navigation/native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { WelcomeScreen } from './components/WelcomeScreen';
 import { HomeTab } from './components/HomeTab';
 import { GuideTab } from './components/GuideTab';
@@ -13,7 +14,7 @@ import { BlurView } from 'expo-blur';
 import { LinearGradient } from 'expo-linear-gradient';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { Moon, BookHeart, Scroll, BookOpen, MessageCircle } from 'lucide-react-native';
+import { Moon, BookHeart, Scroll, BookOpen } from 'lucide-react-native';
 import { ThemeProvider, useTheme } from './context/ThemeContext';
 import { haptic } from './utils/haptic';
 import { setupFirebase } from './setup-firebase';
@@ -82,6 +83,12 @@ const DynamicTheme = {
 
 function MainApp() {
   const { colors } = useTheme();
+  const insets = useSafeAreaInsets();
+  // Bar sits 16px above the safe area bottom edge
+  const BAR_BOTTOM = Math.max(insets.bottom, 8) + 8;
+  const BAR_HEIGHT = 62;
+  // Horizontal gutter: safe area inset + 16px breathing room
+  const BAR_SIDE = Math.max(insets.left, insets.right, 0) + 16;
 
   return (
     <View style={{ flex: 1, backgroundColor: '#020617' }}>
@@ -94,14 +101,14 @@ function MainApp() {
             headerShown: false,
             tabBarStyle: {
               position: 'absolute',
-              bottom: 20,
-              left: 20,
-              right: 20,
+              bottom: BAR_BOTTOM,
+              left: BAR_SIDE,
+              right: BAR_SIDE,
               backgroundColor: 'rgba(15, 23, 42, 0.6)',
               borderRadius: 28,
-              height: 64,
-              paddingBottom: 8,
-              paddingTop: 4,
+              height: BAR_HEIGHT,
+              paddingBottom: 10,
+              paddingTop: 8,
               borderWidth: 1,
               borderColor: 'rgba(255, 255, 255, 0.1)',
               elevation: 0,
@@ -238,9 +245,11 @@ export default function App() {
   if (isOnboarded === null) {
     return (
       <SafeAreaProvider>
-        <View style={{ flex: 1, backgroundColor: '#020617', justifyContent: 'center', alignItems: 'center' }}>
-          <StatusBar barStyle="light-content" />
-        </View>
+        <ThemeProvider>
+          <View style={{ flex: 1, backgroundColor: '#020617', justifyContent: 'center', alignItems: 'center' }}>
+            <StatusBar barStyle="light-content" />
+          </View>
+        </ThemeProvider>
       </SafeAreaProvider>
     );
   }
@@ -248,7 +257,9 @@ export default function App() {
   if (!isOnboarded) {
     return (
       <SafeAreaProvider>
-        <WelcomeScreen onComplete={handleOnboardingComplete} />
+        <ThemeProvider>
+          <WelcomeScreen onComplete={handleOnboardingComplete} />
+        </ThemeProvider>
       </SafeAreaProvider>
     );
   }

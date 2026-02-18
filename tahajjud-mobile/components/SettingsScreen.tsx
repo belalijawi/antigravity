@@ -1,8 +1,17 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, ScrollView, SafeAreaView, Alert, Switch, Platform, Linking, Modal } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Alert, Switch, Platform, Linking, Modal, ActivityIndicator } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { X, ChevronRight, User, Cloud, Shield, Bell, LogOut, Mail, Globe, Lock, MessageSquare, Palette, Moon, Trash2 } from 'lucide-react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as LocalAuthentication from 'expo-local-authentication';
+import { GoogleAuthProvider, OAuthProvider, signInWithCredential } from 'firebase/auth';
+
+// Native modules — not available in Expo Go, so we load them safely
+let AppleAuthentication: typeof import('expo-apple-authentication') | null = null;
+let GoogleSignin: any = null;
+let statusCodes: any = {};
+try { AppleAuthentication = require('expo-apple-authentication'); } catch (_) { }
+try { const gs = require('@react-native-google-signin/google-signin'); GoogleSignin = gs.GoogleSignin; statusCodes = gs.statusCodes; } catch (_) { }
 import { supabase } from '../utils/supabase';
 import { syncLocalToCloud, deleteCloudData } from '../utils/syncService';
 import { getFirebaseAuth } from '../utils/firebase';
@@ -12,6 +21,7 @@ import Animated, { FadeInDown, FadeInUp } from 'react-native-reanimated';
 import { useTheme, ThemeType } from '../context/ThemeContext';
 import { PrivacyPolicy } from './PrivacyPolicy';
 import { haptic } from '../utils/haptic';
+import { tabletContentStyle } from '../utils/layout';
 
 interface SettingsScreenProps {
     onClose: () => void;
@@ -24,6 +34,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ onClose }) => {
     const [user, setUser] = useState<any>(null);
     const [showPrivacy, setShowPrivacy] = useState(false);
     const [prayerMethod, setPrayerMethod] = useState<number>(2);
+    const [isSigningIn, setIsSigningIn] = useState(false);
 
     const prayerMethods = [
         { id: 2, name: 'ISNA', sub: 'North America (15°)' },
@@ -84,24 +95,103 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ onClose }) => {
     };
 
     const checkUser = async () => {
-        const { data: { user } } = await supabase.auth.getUser();
-        setUser(user);
-        setIsSyncEnabled(!!user);
+        // Firebase auth state is handled by the listener in useEffect
+        // This fallback is intentionally a no-op
     };
 
-    const handleSocialLogin = async (provider: 'google' | 'apple') => {
+    // ─── Google Sign-In ──────────────────────────────────────────────
+    const handleGoogleSignIn = async () => {
         haptic.medium();
-        Alert.alert(
-            "Sync Your Journey",
-            `Connecting to ${provider}... Your Tahajjud Letters and consistency will be preserved in the celestial cloud.`,
-            [{
-                text: "Continue", onPress: () => {
-                    // Real auth flow triggered via supabase wrapper which points to Firebase
-                    // The actual implementation depends on native modules being configured
-                    Alert.alert("Social Sign-In", "Please ensure Google/Apple Sign-In is configured in your Expo environment.");
-                }
-            }, { text: "Cancel", style: 'cancel' }]
-        );
+        if (!GoogleSignin) {
+            Alert.alert('Not Available', 'Google Sign-In requires a production build.');
+            return;
+        }
+        setIsSigningIn(true);
+        try {
+            GoogleSignin.configure({
+                iosClientId: '434827238021-l54qkp6ts99g1vsf5ha314tfj056sk50.apps.googleusercontent.com',
+                scopes: ['profile', 'email'],
+            });
+            await GoogleSignin.hasPlayServices({ showPlayServicesUpdateDialog: true });
+            const signInResult = await GoogleSignin.signIn();
+            const idToken = signInResult.data?.idToken;
+            if (!idToken) throw new Error('No ID token from Google');
+
+            const auth = getFirebaseAuth();
+            if (!auth) throw new Error('Firebase not initialised');
+
+            const credential = GoogleAuthProvider.credential(idToken);
+            const result = await signInWithCredential(auth, credential);
+            setUser(result.user);
+            setIsSyncEnabled(true);
+            haptic.success();
+            Alert.alert('✅ Signed In', `Welcome, ${result.user.displayName || result.user.email}!`);
+        } catch (error: any) {
+            if (error.code === statusCodes.SIGN_IN_CANCELLED) {
+                // user cancelled — no alert needed
+            } else if (error.code === statusCodes.IN_PROGRESS) {
+                Alert.alert('Sign-In In Progress', 'Please wait...');
+            } else if (error.code === statusCodes.PLAY_SERVICES_NOT_AVAILABLE) {
+                Alert.alert('Error', 'Google Play Services not available.');
+            } else {
+                console.error('Google sign-in error:', error);
+                Alert.alert('Sign-In Failed', error.message || 'Could not sign in with Google.');
+            }
+        } finally {
+            setIsSigningIn(false);
+        }
+    };
+
+    // ─── Apple Sign-In ───────────────────────────────────────────────
+    const handleAppleSignIn = async () => {
+        haptic.medium();
+        if (!AppleAuthentication) {
+            Alert.alert('Not Available', 'Apple Sign-In requires a production build.');
+            return;
+        }
+        setIsSigningIn(true);
+        try {
+            const credential = await AppleAuthentication.signInAsync({
+                requestedScopes: [
+                    AppleAuthentication.AppleAuthenticationScope.FULL_NAME,
+                    AppleAuthentication.AppleAuthenticationScope.EMAIL,
+                ],
+            });
+
+            const auth = getFirebaseAuth();
+            if (!auth) throw new Error('Firebase not initialised');
+
+            const provider = new OAuthProvider('apple.com');
+            const firebaseCredential = provider.credential({
+                idToken: credential.identityToken!,
+                rawNonce: credential.authorizationCode ?? undefined,
+            });
+            const result = await signInWithCredential(auth, firebaseCredential);
+
+            // Apple only gives name on first sign-in — persist it
+            const displayName = credential.fullName
+                ? `${credential.fullName.givenName ?? ''} ${credential.fullName.familyName ?? ''}`.trim()
+                : result.user.displayName;
+
+            setUser({ ...result.user, displayName });
+            setIsSyncEnabled(true);
+            haptic.success();
+            Alert.alert('✅ Signed In', `Welcome${displayName ? `, ${displayName}` : ''}!`);
+        } catch (error: any) {
+            if (error.code === 'ERR_REQUEST_CANCELED') {
+                // user cancelled — no alert needed
+            } else {
+                console.error('Apple sign-in error:', error);
+                Alert.alert('Sign-In Failed', error.message || 'Could not sign in with Apple.');
+            }
+        } finally {
+            setIsSigningIn(false);
+        }
+    };
+
+    const handleSocialLogin = (provider: 'google' | 'apple') => {
+        if (provider === 'google') handleGoogleSignIn();
+        else handleAppleSignIn();
     };
 
     const toggleBiometric = async (value: boolean) => {
@@ -132,11 +222,16 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ onClose }) => {
     };
 
     const handleLogout = async () => {
-        const { error } = await supabase.auth.signOut();
-        if (!error) {
+        try {
+            const auth = getFirebaseAuth();
+            if (auth) {
+                await auth.signOut();
+            }
             setUser(null);
             setIsSyncEnabled(false);
             Alert.alert("Signed Out", "Cloud sync paused.");
+        } catch (e) {
+            console.error('Logout error:', e);
         }
     };
 
@@ -193,7 +288,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ onClose }) => {
             <ScrollView
                 style={styles.content}
                 showsVerticalScrollIndicator={false}
-                contentContainerStyle={styles.scrollContent}
+                contentContainerStyle={[styles.scrollContent, tabletContentStyle()]}
             >
                 <Animated.View entering={FadeInDown.delay(100).duration(800)} style={styles.section}>
                     <Text style={[styles.sectionHeader, { color: colors.secondaryText }]}>Appearance</Text>
@@ -323,17 +418,19 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ onClose }) => {
                                 </Text>
                                 <View style={styles.authRow}>
                                     <TouchableOpacity
-                                        style={[styles.authPill, styles.googlePill]}
+                                        style={[styles.authPill, styles.googlePill, isSigningIn && { opacity: 0.6 }]}
                                         onPress={() => handleSocialLogin('google')}
+                                        disabled={isSigningIn}
                                     >
-                                        <Globe size={18} color="#0f172a" />
+                                        {isSigningIn ? <ActivityIndicator size="small" color="#0f172a" /> : <Globe size={18} color="#0f172a" />}
                                         <Text style={styles.googleText}>Google</Text>
                                     </TouchableOpacity>
                                     <TouchableOpacity
-                                        style={[styles.authPill, styles.applePill]}
+                                        style={[styles.authPill, styles.applePill, isSigningIn && { opacity: 0.6 }]}
                                         onPress={() => handleSocialLogin('apple')}
+                                        disabled={isSigningIn}
                                     >
-                                        <Shield size={18} color="#ffffff" />
+                                        {isSigningIn ? <ActivityIndicator size="small" color="#ffffff" /> : <Shield size={18} color="#ffffff" />}
                                         <Text style={styles.appleText}>Apple</Text>
                                     </TouchableOpacity>
                                 </View>
@@ -439,7 +536,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ onClose }) => {
                         start={{ x: 0, y: 0 }}
                         end={{ x: 1, y: 0 }}
                     />
-                    <Text style={styles.versionText}>TAHAJJUD PLUS v1.5.0</Text>
+                    <Text style={styles.versionText}>TAHAJJUD PLUS v1.5.1</Text>
                     <Text style={styles.ummahText}>Bespoke spiritual tool for the Ummah</Text>
                     <Text style={styles.creatorText}>Created by a Palestinian 🇵🇸</Text>
                 </View>

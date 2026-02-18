@@ -1,7 +1,8 @@
 import React, { useEffect, useState } from 'react';
-import { View, ScrollView, StyleSheet, SafeAreaView, Text, TouchableOpacity, Modal } from 'react-native';
+import { View, ScrollView, StyleSheet, Text, TouchableOpacity, Modal } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { Settings } from 'lucide-react-native';
+import { SlidersHorizontal } from 'lucide-react-native';
 import { NightCalculator } from './NightCalculator';
 import { QiblaCompass } from './QiblaCompass';
 import { Tracker } from './Tracker';
@@ -12,18 +13,13 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { BlurView } from 'expo-blur';
 import Animated, { FadeInUp, FadeInDown } from 'react-native-reanimated';
 import { useTheme } from '../context/ThemeContext';
+import { tabletContentStyle } from '../utils/layout';
 
 
 export function HomeTab() {
     const { colors } = useTheme();
     const [userName, setUserName] = useState<string | null>(null);
     const [isSettingsVisible, setIsSettingsVisible] = useState(false);
-
-    // ...
-    // Inside JSX:
-    // Replace #facc15 with colors.accent
-    // Replace #f8fafc with colors.primaryText
-    // Replace #94a3b8 with colors.secondaryText
 
 
     useEffect(() => {
@@ -43,7 +39,7 @@ export function HomeTab() {
         <SafeAreaView style={styles.safeArea}>
             <ScrollView
                 style={styles.container}
-                contentContainerStyle={styles.contentContainer}
+                contentContainerStyle={[styles.contentContainer, tabletContentStyle()]}
                 showsVerticalScrollIndicator={false}
             >
                 {/* Header */}
@@ -60,10 +56,10 @@ export function HomeTab() {
                     <TouchableOpacity
                         activeOpacity={0.7}
                         onPress={() => setIsSettingsVisible(true)}
-                        style={[styles.settingsButton, { borderColor: 'rgba(255, 255, 255, 0.08)' }]}
+                        style={styles.settingsButton}
                     >
-                        <BlurView intensity={20} tint="dark" style={[StyleSheet.absoluteFill, { borderRadius: 20 }]} />
-                        <Settings color={colors.primaryText} size={24} strokeWidth={2} />
+                        <BlurView intensity={25} tint="dark" style={[StyleSheet.absoluteFill, { borderRadius: 22 }]} />
+                        <SlidersHorizontal color={colors.primaryText} size={18} strokeWidth={2} />
                     </TouchableOpacity>
                 </View>
 
@@ -258,11 +254,15 @@ const styles = StyleSheet.create({
         letterSpacing: -0.5,
     },
     settingsButton: {
-        padding: 12,
-        backgroundColor: 'transparent',
-        borderRadius: 20,
+        width: 44,
+        height: 44,
+        borderRadius: 22,
+        justifyContent: 'center',
+        alignItems: 'center',
         borderWidth: 1,
-        borderColor: 'rgba(255, 255, 255, 0.08)',
+        borderColor: 'rgba(255, 255, 255, 0.1)',
+        overflow: 'hidden',
+        backgroundColor: 'rgba(255, 255, 255, 0.04)',
     },
     heroPortal: {
         marginHorizontal: 20,

@@ -6,16 +6,17 @@
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "dark",
-    "newArchEnabled": false,
     "splash": {
       "image": "./assets/splash-icon.png",
       "resizeMode": "contain",
       "backgroundColor": "#020617"
     },
+    "newArchEnabled": false,
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.tahajjudplus.app",
-      "buildNumber": "1",
+      "buildNumber": "4",
+      "googleServicesFile": "./GoogleService-Info.plist",
       "infoPlist": {
         "NSLocationWhenInUseUsageDescription": "Tahajjud+ needs your location to accurately calculate the Qibla direction and prayer times for your current city.",
         "NSLocationAlwaysAndWhenInUseUsageDescription": "Tahajjud+ needs your location to accurately calculate the Qibla direction and prayer times for your current city.",
@@ -28,7 +29,8 @@
         "backgroundColor": "#020617"
       },
       "package": "com.tahajjudplus.app",
-      "versionCode": 2,
+      "versionCode": 3,
+      "googleServicesFile": "./google-services.json",
       "edgeToEdgeEnabled": true,
       "predictiveBackGestureEnabled": false
     },
@@ -46,7 +48,8 @@
           ]
         }
       ],
-      "@react-native-google-signin/google-signin"
+      "@react-native-google-signin/google-signin",
+      "expo-apple-authentication"
     ],
     "extra": {
       "eas": {

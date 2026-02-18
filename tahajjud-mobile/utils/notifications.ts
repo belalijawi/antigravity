@@ -6,18 +6,25 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 const NOTIFICATION_ENABLED_KEY = 'tahajjud_notification_enabled';
 const NOTIFICATION_ID_KEY = 'tahajjud_notification_id';
 
-// Configure notification behavior
-Notifications.setNotificationHandler({
-    handleNotification: async () => ({
-        shouldShowAlert: true,
-        shouldPlaySound: true,
-        shouldSetBadge: false,
-        shouldShowBanner: true,
-        shouldShowList: true,
-    }),
-});
+let notificationHandlerConfigured = false;
+
+// Call this before any notification API usage — NOT at module load time
+function ensureNotificationHandler() {
+    if (notificationHandlerConfigured) return;
+    notificationHandlerConfigured = true;
+    Notifications.setNotificationHandler({
+        handleNotification: async () => ({
+            shouldShowAlert: true,
+            shouldPlaySound: true,
+            shouldSetBadge: false,
+            shouldShowBanner: true,
+            shouldShowList: true,
+        }),
+    });
+}
 
 export async function requestNotificationPermissions(): Promise<boolean> {
+    ensureNotificationHandler();
     if (!Device.isDevice) {
         console.log('Notifications only work on physical devices');
         return false;
@@ -56,6 +63,7 @@ export async function scheduleTahajjudNotification(
     targetTime: Date,
     bufferMinutes: number = 0
 ): Promise<string | null> {
+    ensureNotificationHandler();
     try {
         // Cancel any existing notification
         await cancelTahajjudNotification();

@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useRef } from 'react';
-import { View, Text, StyleSheet, Platform, Animated, ActivityIndicator } from 'react-native';
+import { View, Text, StyleSheet, Platform, Animated, ActivityIndicator, Linking } from 'react-native';
 import * as Location from 'expo-location';
 import { LinearGradient } from 'expo-linear-gradient';
 import { BlurView } from 'expo-blur';
@@ -15,6 +15,7 @@ export function QiblaCompass() {
     const [magnetometerHeading, setMagnetometerHeading] = useState<number>(0);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
+    const [locationDenied, setLocationDenied] = useState(false);
     const [cityName, setCityName] = useState<string | null>(null);
     const [isLocked, setIsLocked] = useState(false);
     const [guidance, setGuidance] = useState('Point your phone forward');
@@ -110,11 +111,12 @@ export function QiblaCompass() {
         try {
             setLoading(true);
             setError(null);
+            setLocationDenied(false);
 
             // Request location permission
             const { status } = await Location.requestForegroundPermissionsAsync();
             if (status !== 'granted') {
-                setError('Location permission required');
+                setLocationDenied(true);
                 setLoading(false);
                 return;
             }
@@ -187,7 +189,6 @@ export function QiblaCompass() {
                     colors={['rgba(79, 70, 229, 0.15)', 'rgba(139, 92, 246, 0.1)']}
                     style={[StyleSheet.absoluteFill, { borderRadius: 32 }]}
                 />
-                <BlurView intensity={20} tint="dark" style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(0,0,0,0.3)', borderRadius: 32 }]} />
                 <View style={styles.loadingContainer}>
                     <ActivityIndicator size="large" color={colors.accent} />
                     <Text style={[styles.loadingText, { color: colors.secondaryText }]}>Finding Qibla...</Text>
@@ -196,17 +197,27 @@ export function QiblaCompass() {
         );
     }
 
-    if (error) {
+    // Location permission denied — show actionable warning
+    if (locationDenied) {
         return (
             <View style={styles.container}>
                 <LinearGradient
-                    colors={['rgba(239, 68, 68, 0.15)', 'rgba(220, 38, 38, 0.1)']}
+                    colors={['rgba(251, 191, 36, 0.12)', 'rgba(245, 158, 11, 0.06)']}
                     style={[StyleSheet.absoluteFill, { borderRadius: 32 }]}
                 />
                 <BlurView intensity={20} tint="dark" style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(0,0,0,0.3)', borderRadius: 32 }]} />
-                <View style={styles.errorContainer}>
-                    <CompassIcon size={32} color={colors.secondaryText} strokeWidth={2} />
-                    <Text style={[styles.errorText, { color: colors.secondaryText }]}>{error}</Text>
+                <View style={styles.permissionContainer}>
+                    <Text style={styles.permissionIcon}>📍</Text>
+                    <Text style={styles.permissionTitle}>Location Required</Text>
+                    <Text style={styles.permissionBody}>
+                        The Qibla Compass needs your location to calculate the direction of the Kaaba from where you are.
+                    </Text>
+                    <Text
+                        style={styles.permissionButton}
+                        onPress={() => Linking.openSettings()}
+                    >
+                        Open Settings →
+                    </Text>
                 </View>
             </View>
         );
@@ -632,5 +643,47 @@ const styles = StyleSheet.create({
         fontSize: 10,
         fontFamily: Platform.OS === 'ios' ? 'Courier' : 'monospace',
         opacity: 0.5,
+    },
+    permissionContainer: {
+        flex: 1,
+        justifyContent: 'center',
+        alignItems: 'center',
+        padding: 24,
+        gap: 12,
+    },
+    permissionIcon: {
+        fontSize: 40,
+        marginBottom: 4,
+    },
+    permissionTitle: {
+        fontSize: 16,
+        fontWeight: '900',
+        color: '#fbbf24',
+        textTransform: 'uppercase',
+        letterSpacing: 1,
+        textAlign: 'center',
+    },
+    permissionBody: {
+        fontSize: 13,
+        color: '#94a3b8',
+        fontWeight: '500',
+        textAlign: 'center',
+        lineHeight: 20,
+        maxWidth: 260,
+    },
+    permissionButton: {
+        marginTop: 8,
+        fontSize: 13,
+        fontWeight: '900',
+        color: '#fbbf24',
+        textTransform: 'uppercase',
+        letterSpacing: 1,
+        paddingHorizontal: 20,
+        paddingVertical: 10,
+        borderRadius: 10,
+        backgroundColor: 'rgba(251, 191, 36, 0.12)',
+        borderWidth: 1,
+        borderColor: 'rgba(251, 191, 36, 0.3)',
+        overflow: 'hidden',
     },
 });
