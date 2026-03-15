@@ -221,12 +221,16 @@ const styles = StyleSheet.create({
   },
 });
 
+import { PurchasesProvider } from './context/PurchasesContext';
+
 export default function App() {
   return (
     <SafeAreaProvider>
-      <ThemeProvider>
-        <AppNavigator />
-      </ThemeProvider>
+      <PurchasesProvider>
+        <ThemeProvider>
+          <AppNavigator />
+        </ThemeProvider>
+      </PurchasesProvider>
     </SafeAreaProvider>
   );
 }

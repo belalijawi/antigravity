@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
-import RevenueCatService from '../services/revenueCat';
+import RevenueCatService, { ENTITLEMENT_ID } from '../services/revenueCat';
 import Purchases from 'react-native-purchases';
 
 interface PurchasesContextType {
@@ -39,7 +39,7 @@ export const PurchasesProvider: React.FC<{ children: React.ReactNode }> = ({ chi
 
             // Add listener for automatic updates if purchase status changes in the background
             Purchases.addCustomerInfoUpdateListener((info) => {
-                const hasPremium = typeof info.entitlements.active[RevenueCatService.ENTITLEMENT_ID] !== 'undefined';
+                const hasPremium = typeof info.entitlements.active[ENTITLEMENT_ID] !== 'undefined';
                 setIsPremium(hasPremium);
             });
         };
