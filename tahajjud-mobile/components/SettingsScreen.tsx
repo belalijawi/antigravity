@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Alert, Switch, Platform, Linking, Modal, ActivityIndicator } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Alert, Switch, Platform, Linking, Modal, ActivityIndicator, TextInput } from 'react-native';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { X, ChevronRight, User, Cloud, Shield, Bell, LogOut, Mail, Globe, Lock, MessageSquare, Palette, Moon, Trash2 } from 'lucide-react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as LocalAuthentication from 'expo-local-authentication';
@@ -12,7 +12,6 @@ let GoogleSignin: any = null;
 let statusCodes: any = {};
 try { AppleAuthentication = require('expo-apple-authentication'); } catch (_) { }
 try { const gs = require('@react-native-google-signin/google-signin'); GoogleSignin = gs.GoogleSignin; statusCodes = gs.statusCodes; } catch (_) { }
-import { supabase } from '../utils/supabase';
 import { syncLocalToCloud, deleteCloudData } from '../utils/syncService';
 import { getFirebaseAuth } from '../utils/firebase';
 import { BlurView } from 'expo-blur';
@@ -27,14 +26,18 @@ interface SettingsScreenProps {
     onClose: () => void;
 }
 export const SettingsScreen: React.FC<SettingsScreenProps> = ({ onClose }) => {
-    const { theme, setTheme, colors } = useTheme();
-    const [userName, setUserName] = useState<string>('');
+    const { theme, setTheme, colors, userName, setUserName } = useTheme();
+    const [isDeleting, setIsDeleting] = useState(false);
+    const insets = useSafeAreaInsets();
     const [isSyncEnabled, setIsSyncEnabled] = useState(false);
     const [isBiometricEnabled, setIsBiometricEnabled] = useState(false);
     const [user, setUser] = useState<any>(null);
     const [showPrivacy, setShowPrivacy] = useState(false);
     const [prayerMethod, setPrayerMethod] = useState<number>(2);
     const [isSigningIn, setIsSigningIn] = useState(false);
+    const [showNameModal, setShowNameModal] = useState(false);
+    const [nameInput, setNameInput] = useState('');
+    const [allPrayersEnabled, setAllPrayersEnabled] = useState(false);
 
     const prayerMethods = [
         { id: 2, name: 'ISNA', sub: 'North America (15°)' },
@@ -79,12 +82,13 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ onClose }) => {
     }, []);
 
     const loadSettings = async () => {
-        const name = await AsyncStorage.getItem('user-name');
-        setUserName(name || 'Servant');
         const biometricStatus = await AsyncStorage.getItem('biometric-lock-enabled');
         setIsBiometricEnabled(biometricStatus === 'true');
         const method = await AsyncStorage.getItem('prayer_calculation_method');
         if (method) setPrayerMethod(parseInt(method, 10));
+
+        const allPrayers = await AsyncStorage.getItem('notification_all_prayers_enabled');
+        setAllPrayersEnabled(allPrayers === 'true');
     };
 
     const updatePrayerMethod = async (id: number) => {
@@ -92,6 +96,34 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ onClose }) => {
         setPrayerMethod(id);
         await AsyncStorage.setItem('prayer_calculation_method', id.toString());
         Alert.alert("Method Updated", "Prayer times will refresh upon returning to the home screen.");
+    };
+
+    const handleEditName = () => {
+        haptic.medium();
+        if (Platform.OS === 'android') {
+            setNameInput(userName === 'Servant' ? '' : userName);
+            setShowNameModal(true);
+        } else {
+            Alert.prompt(
+                "Spiritual Name",
+                "How should we address you in your journey?",
+                [
+                    { text: "Cancel", style: "cancel" },
+                    {
+                        text: "Update",
+                        onPress: async (newName: string | undefined) => {
+                            if (newName && newName.trim()) {
+                                const trimmed = newName.trim();
+                                await setUserName(trimmed);
+                                haptic.success();
+                            }
+                        }
+                    }
+                ],
+                'plain-text',
+                userName === 'Servant' ? '' : userName
+            );
+        }
     };
 
     const checkUser = async () => {
@@ -108,11 +140,13 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ onClose }) => {
         }
         setIsSigningIn(true);
         try {
+            // Configure must be called before signIn. iosClientId is required on iOS/iPad.
             GoogleSignin.configure({
                 iosClientId: '434827238021-l54qkp6ts99g1vsf5ha314tfj056sk50.apps.googleusercontent.com',
+                webClientId: '434827238021-ntc25erm80s4nhkkbj2bv7g18v80l48h.apps.googleusercontent.com',
                 scopes: ['profile', 'email'],
             });
-            await GoogleSignin.hasPlayServices({ showPlayServicesUpdateDialog: true });
+            // Note: hasPlayServices() is Android-only — do NOT call it on iOS as it crashes
             const signInResult = await GoogleSignin.signIn();
             const idToken = signInResult.data?.idToken;
             if (!idToken) throw new Error('No ID token from Google');
@@ -162,9 +196,11 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ onClose }) => {
             if (!auth) throw new Error('Firebase not initialised');
 
             const provider = new OAuthProvider('apple.com');
+            // rawNonce must only be provided if a nonce was sent to Apple during sign-in.
+            // Since we don't use a nonce in signInAsync, omit rawNonce entirely.
+            // Passing authorizationCode here (the old code) causes Firebase to reject it.
             const firebaseCredential = provider.credential({
                 idToken: credential.identityToken!,
-                rawNonce: credential.authorizationCode ?? undefined,
             });
             const result = await signInWithCredential(auth, firebaseCredential);
 
@@ -192,6 +228,12 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ onClose }) => {
     const handleSocialLogin = (provider: 'google' | 'apple') => {
         if (provider === 'google') handleGoogleSignIn();
         else handleAppleSignIn();
+    };
+
+    const toggleAllPrayers = async (value: boolean) => {
+        haptic.light();
+        setAllPrayersEnabled(value);
+        await AsyncStorage.setItem('notification_all_prayers_enabled', value.toString());
     };
 
     const toggleBiometric = async (value: boolean) => {
@@ -240,33 +282,94 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ onClose }) => {
         haptic.medium();
 
         Alert.alert(
-            "Erase Your Journey?",
-            "This will permanently delete your spiritual name, your Tahajjud letters, and all synchronized history. This action is irreversible.",
+            "Delete Account?",
+            "This will permanently erase your spiritual name, Tahajjud letters, and journey history. This action cannot be undone.",
             [
-                { text: "Keep My Journey", style: 'cancel' },
+                { text: "Cancel", style: 'cancel' },
                 {
                     text: "Delete Forever",
                     style: 'destructive',
                     onPress: async () => {
+                        setIsDeleting(true);
                         try {
-                            // 1. Delete Firestore Data
-                            await deleteCloudData(user.id);
+                            const authInst = getFirebaseAuth();
+                            const currentUser = authInst?.currentUser;
 
-                            // 2. Clear Local Storage
+                            if (!currentUser) throw new Error("No authenticated user");
+
+                            // 1. SILENT Firestore Cleanup (Best effort)
+                            try {
+                                await deleteCloudData(user.id);
+                            } catch (firestoreError) {
+                                console.log('[Deletion] Firestore cleanup failed, proceeding anyway:', firestoreError);
+                            }
+
+                            // 2. CRITICAL Auth Record Deletion (Apple Compliance)
+                            await currentUser.delete();
+
+                            // 3. Guaranteed Local Wipe
                             const keys = await AsyncStorage.getAllKeys();
                             await AsyncStorage.multiRemove(keys);
 
-                            // 3. Sign Out (Supabase)
-                            await supabase.auth.signOut();
-
+                            // Reset app state
                             setUser(null);
                             setIsSyncEnabled(false);
+                            await setUserName('Servant'); // Reset to default
 
-                            Alert.alert("Data Deleted", "Your journey and all associated data have been removed.");
+                            Alert.alert(
+                                "Account Deleted",
+                                "Your account and data have been fully erased. Restart the app for a fresh journey."
+                            );
                             onClose();
-                        } catch (e) {
-                            console.error('Deletion error:', e);
-                            Alert.alert("Support Required", "We couldn't fully erase your account. Please email tahajjud.letters@gmail.com to complete deletion.");
+                        } catch (e: any) {
+                            console.error('Deletion error details:', e);
+                            const errorMessage = e.message?.toLowerCase() || "";
+                            const errorCode = e.code;
+
+                            if (errorCode === 'auth/requires-recent-login' ||
+                                errorMessage.includes('requires-recent-login') ||
+                                errorMessage.includes('recent login')) {
+
+                                Alert.alert(
+                                    "Verification Required",
+                                    "For security, please sign out and sign back in before deleting.",
+                                    [
+                                        { text: "Cancel", style: 'cancel' },
+                                        {
+                                            text: "Sign Out & Re-verify",
+                                            onPress: async () => {
+                                                const authInst = getFirebaseAuth();
+                                                await authInst?.signOut();
+                                                setUser(null);
+                                                onClose();
+                                            }
+                                        }
+                                    ]
+                                );
+                            } else {
+                                // Guaranteed local wipe even on cloud failure
+                                try {
+                                    const keys = await AsyncStorage.getAllKeys();
+                                    await AsyncStorage.multiRemove(keys);
+                                    await setUserName('Servant');
+                                } catch (wipeError) {
+                                    console.error('Failed to wipe local data:', wipeError);
+                                }
+
+                                Alert.alert(
+                                    "Partially Deleted",
+                                    "Cloud removal failed (network error), but your local device is wiped. For full removal, email: tahajjud.letters@gmail.com",
+                                    [
+                                        {
+                                            text: "Email Support",
+                                            onPress: () => Linking.openURL('mailto:tahajjud.letters@gmail.com?subject=Cloud%20Deletion%20Request')
+                                        },
+                                        { text: "OK", onPress: onClose }
+                                    ]
+                                );
+                            }
+                        } finally {
+                            setIsDeleting(false);
                         }
                     }
                 }
@@ -275,14 +378,27 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ onClose }) => {
     };
 
     return (
-        <SafeAreaView style={styles.container}>
-            <View style={styles.header}>
-                <TouchableOpacity onPress={onClose} style={styles.backButton}>
-                    <BlurView intensity={20} tint="dark" style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(0,0,0,0.3)' }]} />
-                    <X color="#ffffff" size={24} />
-                </TouchableOpacity>
-                <Text style={styles.headerTitle}>Account Settings</Text>
-                <View style={{ width: 44 }} />
+        <View style={styles.container}>
+            {/* Header */}
+            <View style={[styles.header, { paddingTop: Math.max(insets.top, 20) + 12 }]}>
+                <View>
+                    <Text style={[styles.headerTitle, { color: colors.accent }]}>Settings</Text>
+                    <Text style={[styles.headerSubtitle, { color: colors.secondaryText }]}>Customize your experience</Text>
+                </View>
+                <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                    {isDeleting && (
+                        <ActivityIndicator color={colors.accent} size="small" style={{ marginRight: 15 }} />
+                    )}
+                    <TouchableOpacity
+                        onPress={onClose}
+                        style={styles.backButton}
+                        hitSlop={{ top: 15, bottom: 15, left: 15, right: 15 }}
+                        disabled={isDeleting}
+                    >
+                        <BlurView intensity={20} tint="dark" style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(0,0,0,0.3)' }]} />
+                        <X color="#ffffff" size={24} />
+                    </TouchableOpacity>
+                </View>
             </View>
 
             <ScrollView
@@ -378,7 +494,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ onClose }) => {
                     <Text style={[styles.sectionHeader, { color: colors.secondaryText }]}>Profile</Text>
                     <View style={styles.card}>
                         <BlurView intensity={20} tint="dark" style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(0,0,0,0.3)' }]} />
-                        <View style={styles.cardItem}>
+                        <TouchableOpacity style={styles.cardItem} onPress={handleEditName}>
                             <View style={styles.cardIconContainer}>
                                 <User size={20} color="#f8fafc" strokeWidth={2.5} />
                             </View>
@@ -387,7 +503,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ onClose }) => {
                                 <Text style={styles.cardValue}>{userName}</Text>
                             </View>
                             <ChevronRight size={18} color="#475569" />
-                        </View>
+                        </TouchableOpacity>
                     </View>
                 </Animated.View>
 
@@ -437,6 +553,29 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ onClose }) => {
                             </View>
                         </View>
                     )}
+                </Animated.View>
+
+                <Animated.View entering={FadeInDown.delay(300).duration(800)} style={styles.section}>
+                    <Text style={[styles.sectionHeader, { color: colors.secondaryText }]}>Notifications</Text>
+                    <View style={styles.card}>
+                        <BlurView intensity={20} tint="dark" style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(0,0,0,0.3)' }]} />
+
+                        <View style={styles.cardItem}>
+                            <View style={styles.cardIconContainer}>
+                                <Bell size={20} color={colors.primaryText} strokeWidth={2.5} />
+                            </View>
+                            <View style={styles.cardTextContainer}>
+                                <Text style={[styles.cardLabel, { color: colors.primaryText }]}>Daily Prayer Times</Text>
+                                <Text style={[styles.cardSub, { color: colors.secondaryText }]}>Alerts for all 5 daily prayers</Text>
+                            </View>
+                            <Switch
+                                value={allPrayersEnabled}
+                                onValueChange={toggleAllPrayers}
+                                trackColor={{ false: '#0f172a', true: colors.accent }}
+                                thumbColor={allPrayersEnabled ? '#ffffff' : '#94a3b8'}
+                            />
+                        </View>
+                    </View>
                 </Animated.View>
 
                 <Animated.View entering={FadeInDown.delay(300).duration(800)} style={styles.section}>
@@ -536,12 +675,13 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ onClose }) => {
                         start={{ x: 0, y: 0 }}
                         end={{ x: 1, y: 0 }}
                     />
-                    <Text style={styles.versionText}>TAHAJJUD PLUS v1.5.1</Text>
+                    <Text style={styles.versionText}>TAHAJJUD PLUS v1.5.3 (Build 12)</Text>
                     <Text style={styles.ummahText}>Bespoke spiritual tool for the Ummah</Text>
                     <Text style={styles.creatorText}>Created by a Palestinian 🇵🇸</Text>
                 </View>
             </ScrollView >
 
+            {/* Privacy Policy Modal */}
             <Modal
                 animationType="slide"
                 transparent={false}
@@ -550,7 +690,52 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ onClose }) => {
             >
                 <PrivacyPolicy onClose={() => setShowPrivacy(false)} />
             </Modal>
-        </SafeAreaView >
+
+            {/* Android Name Edit Modal */}
+            <Modal
+                animationType="fade"
+                transparent={true}
+                visible={showNameModal}
+                onRequestClose={() => setShowNameModal(false)}
+            >
+                <View style={styles.nameModalOverlay}>
+                    <View style={styles.nameModalBox}>
+                        <Text style={styles.nameModalTitle}>Spiritual Name</Text>
+                        <Text style={styles.nameModalSub}>How should we address you in your journey?</Text>
+                        <TextInput
+                            style={styles.nameModalInput}
+                            value={nameInput}
+                            onChangeText={setNameInput}
+                            placeholder="Your name"
+                            placeholderTextColor="#475569"
+                            autoFocus
+                            maxLength={30}
+                        />
+                        <View style={styles.nameModalRow}>
+                            <TouchableOpacity
+                                style={[styles.nameModalBtn, { backgroundColor: 'rgba(255,255,255,0.06)' }]}
+                                onPress={() => setShowNameModal(false)}
+                            >
+                                <Text style={[styles.nameModalBtnText, { color: '#94a3b8' }]}>Cancel</Text>
+                            </TouchableOpacity>
+                            <TouchableOpacity
+                                style={[styles.nameModalBtn, { backgroundColor: colors.accent }]}
+                                onPress={async () => {
+                                    const trimmed = nameInput.trim();
+                                    if (trimmed) {
+                                        await setUserName(trimmed);
+                                        haptic.success();
+                                    }
+                                    setShowNameModal(false);
+                                }}
+                            >
+                                <Text style={[styles.nameModalBtnText, { color: '#0f172a' }]}>Update</Text>
+                            </TouchableOpacity>
+                        </View>
+                    </View>
+                </View>
+            </Modal>
+        </View >
     );
 };
 
@@ -583,11 +768,17 @@ const styles = StyleSheet.create({
         color: '#f8fafc',
         letterSpacing: -0.5,
     },
+    headerSubtitle: {
+        fontSize: 13,
+        color: '#94a3b8',
+        marginTop: 2,
+        fontWeight: '600',
+    },
     content: {
         flex: 1,
     },
     scrollContent: {
-        paddingBottom: 40,
+        paddingBottom: 120, // Increased to avoid "half scrolls" and account for tab bar
     },
     section: {
         paddingHorizontal: 20,
@@ -804,5 +995,60 @@ const styles = StyleSheet.create({
     methodSub: {
         fontSize: 10,
         fontWeight: '600',
+    },
+    // Android name-edit modal
+    nameModalOverlay: {
+        flex: 1,
+        backgroundColor: 'rgba(0,0,0,0.75)',
+        justifyContent: 'center',
+        alignItems: 'center',
+        paddingHorizontal: 28,
+    },
+    nameModalBox: {
+        width: '100%',
+        backgroundColor: '#0f172a',
+        borderRadius: 24,
+        padding: 28,
+        borderWidth: 1,
+        borderColor: 'rgba(255,255,255,0.1)',
+    },
+    nameModalTitle: {
+        fontSize: 20,
+        fontWeight: '900',
+        color: '#f8fafc',
+        marginBottom: 6,
+        letterSpacing: -0.3,
+    },
+    nameModalSub: {
+        fontSize: 13,
+        color: '#94a3b8',
+        fontWeight: '600',
+        marginBottom: 20,
+    },
+    nameModalInput: {
+        backgroundColor: 'rgba(255,255,255,0.06)',
+        borderWidth: 1,
+        borderColor: 'rgba(255,255,255,0.12)',
+        borderRadius: 14,
+        paddingHorizontal: 16,
+        paddingVertical: 14,
+        fontSize: 16,
+        color: '#f8fafc',
+        fontWeight: '700',
+        marginBottom: 20,
+    },
+    nameModalRow: {
+        flexDirection: 'row',
+        gap: 12,
+    },
+    nameModalBtn: {
+        flex: 1,
+        paddingVertical: 14,
+        borderRadius: 14,
+        alignItems: 'center',
+    },
+    nameModalBtnText: {
+        fontSize: 15,
+        fontWeight: '800',
     },
 });

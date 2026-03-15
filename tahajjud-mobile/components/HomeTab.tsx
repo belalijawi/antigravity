@@ -14,26 +14,26 @@ import { BlurView } from 'expo-blur';
 import Animated, { FadeInUp, FadeInDown } from 'react-native-reanimated';
 import { useTheme } from '../context/ThemeContext';
 import { tabletContentStyle } from '../utils/layout';
+import { NightCalculation } from '../lib/prayer-times';
+import { format } from 'date-fns';
 
 
 export function HomeTab() {
-    const { colors } = useTheme();
-    const [userName, setUserName] = useState<string | null>(null);
+    const { colors, userName } = useTheme();
     const [isSettingsVisible, setIsSettingsVisible] = useState(false);
+    const [nightCalc, setNightCalc] = useState<NightCalculation | null>(null);
+    const [currentTime, setCurrentTime] = useState(new Date());
+    const [refreshKey, setRefreshKey] = useState(0);
 
-
+    // Tick every minute so the badge updates without reloading
     useEffect(() => {
-        loadUserName();
+        const timer = setInterval(() => setCurrentTime(new Date()), 60000);
+        return () => clearInterval(timer);
     }, []);
 
-    const loadUserName = async () => {
-        try {
-            const name = await AsyncStorage.getItem('user-name');
-            if (name) setUserName(name);
-        } catch (e) {
-            console.error('Failed to load user name', e);
-        }
-    };
+    const isGateOpen = nightCalc
+        ? currentTime >= nightCalc.lastThirdStart && currentTime < nightCalc.nightEnd
+        : false;
 
     return (
         <SafeAreaView style={styles.safeArea}>
@@ -148,8 +148,16 @@ export function HomeTab() {
                         <Text style={[styles.heroSubtitle, { color: colors.accent }]}>Tonight's Journey</Text>
                         <Text style={styles.heroTitle}>Enter the Silent Hour</Text>
                         <View style={styles.heroBadge}>
-                            <View style={styles.pulseDot} />
-                            <Text style={[styles.heroBadgeText, { color: colors.accent }]}>Gate is Open</Text>
+                            <View style={[styles.pulseDot, isGateOpen && styles.pulseDotActive]} />
+                            <Text style={[styles.heroBadgeText, { color: isGateOpen ? colors.accent : '#64748b' }]}>
+                                {isGateOpen
+                                    ? 'Gate is Open'
+                                    : nightCalc
+                                        ? (currentTime >= nightCalc.nightStart && currentTime < nightCalc.lastThirdStart
+                                            ? `Gate Opens ${format(nightCalc.lastThirdStart, 'h:mm a')}`
+                                            : 'Gate is Closed')
+                                        : 'Calculating...'}
+                            </Text>
                         </View>
                     </View>
                 </Animated.View>
@@ -162,7 +170,7 @@ export function HomeTab() {
                         style={[styles.bentoCard, styles.bentoCardLarge]}
                     >
                         <BlurView intensity={15} tint="dark" style={StyleSheet.absoluteFill} />
-                        <NightCalculator />
+                        <NightCalculator onNightCalcReady={setNightCalc} refreshKey={refreshKey} />
                     </Animated.View>
 
                     {/* Row: Dua Network & Stats */}
@@ -206,11 +214,17 @@ export function HomeTab() {
                 visible={isSettingsVisible}
                 animationType="slide"
                 presentationStyle="fullScreen"
-                onRequestClose={() => setIsSettingsVisible(false)}
+                onRequestClose={() => {
+                    setIsSettingsVisible(false);
+                    setRefreshKey(prev => prev + 1);
+                }}
             >
-                <SettingsScreen onClose={() => setIsSettingsVisible(false)} />
+                <SettingsScreen onClose={() => {
+                    setIsSettingsVisible(false);
+                    setRefreshKey(prev => prev + 1);
+                }} />
             </Modal>
-        </SafeAreaView>
+        </SafeAreaView >
     );
 }
 
@@ -383,6 +397,9 @@ const styles = StyleSheet.create({
         width: 6,
         height: 6,
         borderRadius: 3,
+        backgroundColor: '#475569',
+    },
+    pulseDotActive: {
         backgroundColor: '#f8fafc',
     },
     heroBadgeText: {

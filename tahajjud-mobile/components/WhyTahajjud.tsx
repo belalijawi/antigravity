@@ -1,5 +1,6 @@
 import React from 'react';
-import { View, Text, ScrollView, StyleSheet, SafeAreaView } from 'react-native';
+import { View, Text, ScrollView, StyleSheet } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { Heart, Sparkles, Moon, BookOpen, Trophy, Sunrise } from 'lucide-react-native';
 
 import { useTheme } from '../context/ThemeContext';
@@ -29,7 +30,7 @@ export function WhyTahajjud() {
     const { colors } = useTheme();
 
     return (
-        <SafeAreaView style={styles.safeArea}>
+        <View style={styles.safeArea}>
             <ScrollView style={styles.container} contentContainerStyle={styles.contentContainer}>
                 {/* Header */}
                 <View style={styles.header}>
@@ -143,7 +144,7 @@ export function WhyTahajjud() {
                     </Text>
                 </View>
             </ScrollView>
-        </SafeAreaView>
+        </View>
     );
 }
 
@@ -157,7 +158,7 @@ const styles = StyleSheet.create({
         backgroundColor: 'transparent',
     },
     contentContainer: {
-        paddingBottom: 120,
+        paddingBottom: 180,
     },
     header: {
         alignItems: 'center',

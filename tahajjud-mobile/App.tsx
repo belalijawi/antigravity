@@ -1,6 +1,6 @@
 import 'react-native-gesture-handler';
 import React, { useEffect, useState } from 'react';
-import { View, StatusBar, LogBox, Platform, StyleSheet } from 'react-native';
+import { View, StatusBar, LogBox, Platform, StyleSheet, Dimensions } from 'react-native';
 import { NavigationContainer, DarkTheme } from '@react-navigation/native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -17,7 +17,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Moon, BookHeart, Scroll, BookOpen } from 'lucide-react-native';
 import { ThemeProvider, useTheme } from './context/ThemeContext';
 import { haptic } from './utils/haptic';
-import { setupFirebase } from './setup-firebase';
+import { Audio, InterruptionModeIOS, InterruptionModeAndroid } from 'expo-av';
 
 // Suppress known SVG warnings
 LogBox.ignoreLogs([
@@ -51,10 +51,13 @@ const NebulaBackground = () => {
       <View style={[styles.nebulaLayer, { top: '25%', left: '10%', backgroundColor: 'rgba(236, 72, 153, 0.1)', width: 300, height: 300 }]} />
       <View style={[styles.nebulaLayer, { bottom: '20%', right: '5%', backgroundColor: 'rgba(56, 189, 248, 0.15)', width: 450, height: 450 }]} />
 
-      <BlurView intensity={30} tint="dark" style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(0,0,0,0.3)' }]} />
+      {/* BlurView and starfield are skipped on Android — unsupported & causes lag/black flashes */}
+      {Platform.OS === 'ios' && (
+        <BlurView intensity={30} tint="dark" style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(0,0,0,0.3)' }]} />
+      )}
 
-      {/* Subtle Starfield */}
-      {stars.map((star) => (
+      {/* Subtle Starfield — iOS only for performance */}
+      {Platform.OS === 'ios' && stars.map((star) => (
         <View
           key={star.id}
           style={{
@@ -83,117 +86,124 @@ const DynamicTheme = {
 
 function MainApp() {
   const { colors } = useTheme();
+  const { width } = Dimensions.get('window');
   const insets = useSafeAreaInsets();
-  // Bar sits 16px above the safe area bottom edge
-  const BAR_BOTTOM = Math.max(insets.bottom, 8) + 8;
-  const BAR_HEIGHT = 62;
-  // Horizontal gutter: safe area inset + 16px breathing room
-  const BAR_SIDE = Math.max(insets.left, insets.right, 0) + 16;
+
+  // Dynamic bottom placement that feels premium on all devices
+  const BAR_BOTTOM = Math.max(insets.bottom, 12) + 4;
+  const BAR_HEIGHT = 68;
+  // Side padding: 24pt from screen edge, but capped for iPad
+  const MAX_BAR_WIDTH = 500;
+  const BAR_WIDTH = Math.min(width - 48, MAX_BAR_WIDTH);
+  const BAR_SIDE = (width - BAR_WIDTH) / 2;
 
   return (
     <View style={{ flex: 1, backgroundColor: '#020617' }}>
       <StatusBar barStyle="light-content" />
       <NebulaBackground />
 
-      <NavigationContainer theme={DynamicTheme}>
-        <Tab.Navigator
-          screenOptions={{
-            headerShown: false,
-            tabBarStyle: {
-              position: 'absolute',
-              bottom: BAR_BOTTOM,
-              left: BAR_SIDE,
-              right: BAR_SIDE,
-              backgroundColor: 'rgba(15, 23, 42, 0.6)',
-              borderRadius: 28,
-              height: BAR_HEIGHT,
-              paddingBottom: 10,
-              paddingTop: 8,
-              borderWidth: 1,
-              borderColor: 'rgba(255, 255, 255, 0.1)',
-              elevation: 0,
-              shadowColor: colors.shadow,
-              shadowOffset: { width: 0, height: 10 },
-              shadowOpacity: 0.5,
-              shadowRadius: 24,
-            },
-            tabBarBackground: () => (
-              <BlurView intensity={95} tint="dark" style={{ ...StyleSheet.absoluteFillObject, borderRadius: 28, overflow: 'hidden' }} />
-            ),
-            tabBarActiveTintColor: colors.accent,
-            tabBarInactiveTintColor: colors.secondaryText,
-            tabBarShowLabel: true,
-            tabBarLabelStyle: {
-              fontSize: 8, // Reduced from 9
-              fontWeight: '800',
-              marginTop: 0,
-              marginBottom: 0,
-              letterSpacing: 0,
-            },
-          }}
-          screenListeners={{
-            tabPress: () => {
-              haptic.light();
-            },
-          }}
-        >
-          <Tab.Screen
-            name="Home"
-            component={HomeTab}
-            options={{
-              tabBarIcon: ({ color, focused }) => (
-                <View style={styles.iconWrapper}>
-                  <Moon size={18} color={color} strokeWidth={focused ? 2.5 : 2} />
-                </View>
+      <View style={{ flex: 1, backgroundColor: 'transparent' }}>
+        <NavigationContainer theme={DynamicTheme}>
+          <Tab.Navigator
+            screenOptions={{
+              headerShown: false,
+              tabBarStyle: {
+                position: 'absolute',
+                bottom: BAR_BOTTOM,
+                left: BAR_SIDE,
+                right: BAR_SIDE,
+                backgroundColor: 'rgba(15, 23, 42, 0.45)', // Slightly more transparent
+                borderRadius: 34,
+                height: BAR_HEIGHT,
+                paddingBottom: insets.bottom > 0 ? 4 : 0,
+                paddingTop: 8,
+                borderWidth: 1,
+                borderColor: 'rgba(255, 255, 255, 0.15)',
+                elevation: 0,
+                shadowColor: '#000',
+                shadowOffset: { width: 0, height: 12 },
+                shadowOpacity: 0.5,
+                shadowRadius: 24,
+              },
+              tabBarBackground: () => (
+                Platform.OS === 'ios'
+                  ? <BlurView intensity={insets.bottom > 0 ? 85 : 95} tint="dark" style={{ ...StyleSheet.absoluteFillObject, borderRadius: 34, overflow: 'hidden' }} />
+                  : <View style={{ ...StyleSheet.absoluteFillObject, borderRadius: 34, overflow: 'hidden', backgroundColor: 'rgba(10, 16, 35, 0.97)' }} />
               ),
+              tabBarActiveTintColor: colors.accent,
+              tabBarInactiveTintColor: colors.secondaryText,
+              tabBarShowLabel: true,
+              tabBarLabelStyle: {
+                fontSize: 9,
+                fontWeight: '700',
+                marginTop: 2,
+                letterSpacing: 0.3,
+              },
             }}
-          />
-          <Tab.Screen
-            name="Guide"
-            component={GuideTab}
-            options={{
-              tabBarIcon: ({ color, focused }) => (
-                <View style={styles.iconWrapper}>
-                  <BookHeart size={18} color={color} strokeWidth={focused ? 2.5 : 2} />
-                </View>
-              ),
+            screenListeners={{
+              tabPress: () => {
+                haptic.light();
+              },
             }}
-          />
-          <Tab.Screen
-            name="Duas"
-            component={DuasTab}
-            options={{
-              tabBarIcon: ({ color, focused }) => (
-                <View style={styles.iconWrapper}>
-                  <Scroll size={18} color={color} strokeWidth={focused ? 2.5 : 2} />
-                </View>
-              ),
-            }}
-          />
-          <Tab.Screen
-            name="Ramadan"
-            component={RamadanTab}
-            options={{
-              tabBarIcon: ({ color, focused }) => (
-                <View style={styles.iconWrapper}>
-                  <Moon size={18} color={color} strokeWidth={focused ? 2.5 : 3} fill={focused ? color : 'transparent'} />
-                </View>
-              ),
-            }}
-          />
-          <Tab.Screen
-            name="Quran"
-            component={QuranTab}
-            options={{
-              tabBarIcon: ({ color, focused }) => (
-                <View style={styles.iconWrapper}>
-                  <BookOpen size={18} color={color} strokeWidth={focused ? 2.5 : 2} />
-                </View>
-              ),
-            }}
-          />
-        </Tab.Navigator>
-      </NavigationContainer>
+          >
+            <Tab.Screen
+              name="Home"
+              component={HomeTab}
+              options={{
+                tabBarIcon: ({ color, focused }) => (
+                  <View style={styles.iconWrapper}>
+                    <Moon size={18} color={color} strokeWidth={focused ? 2.5 : 2} />
+                  </View>
+                ),
+              }}
+            />
+            <Tab.Screen
+              name="Guide"
+              component={GuideTab}
+              options={{
+                tabBarIcon: ({ color, focused }) => (
+                  <View style={styles.iconWrapper}>
+                    <BookHeart size={18} color={color} strokeWidth={focused ? 2.5 : 2} />
+                  </View>
+                ),
+              }}
+            />
+            <Tab.Screen
+              name="Duas"
+              component={DuasTab}
+              options={{
+                tabBarIcon: ({ color, focused }) => (
+                  <View style={styles.iconWrapper}>
+                    <Scroll size={18} color={color} strokeWidth={focused ? 2.5 : 2} />
+                  </View>
+                ),
+              }}
+            />
+            <Tab.Screen
+              name="Ramadan"
+              component={RamadanTab}
+              options={{
+                tabBarIcon: ({ color, focused }) => (
+                  <View style={styles.iconWrapper}>
+                    <Moon size={18} color={color} strokeWidth={focused ? 2.5 : 3} fill={focused ? color : 'transparent'} />
+                  </View>
+                ),
+              }}
+            />
+            <Tab.Screen
+              name="Quran"
+              component={QuranTab}
+              options={{
+                tabBarIcon: ({ color, focused }) => (
+                  <View style={styles.iconWrapper}>
+                    <BookOpen size={18} color={color} strokeWidth={focused ? 2.5 : 2} />
+                  </View>
+                ),
+              }}
+            />
+          </Tab.Navigator>
+        </NavigationContainer>
+      </View>
     </View>
   );
 }
@@ -212,14 +222,39 @@ const styles = StyleSheet.create({
 });
 
 export default function App() {
+  return (
+    <SafeAreaProvider>
+      <ThemeProvider>
+        <AppNavigator />
+      </ThemeProvider>
+    </SafeAreaProvider>
+  );
+}
+
+function AppNavigator() {
   const [isOnboarded, setIsOnboarded] = useState<boolean | null>(null);
+  const { setUserName } = useTheme();
 
   useEffect(() => {
-    // Setup Firebase config on first run
-    setupFirebase();
-
     checkOnboarding();
+    setupAudio();
   }, []);
+
+  const setupAudio = async () => {
+    try {
+      await Audio.setAudioModeAsync({
+        allowsRecordingIOS: false,
+        staysActiveInBackground: true,
+        interruptionModeIOS: InterruptionModeIOS.MixWithOthers,
+        playsInSilentModeIOS: true,
+        shouldDuckAndroid: true,
+        interruptionModeAndroid: InterruptionModeAndroid.DuckOthers,
+        playThroughEarpieceAndroid: false,
+      });
+    } catch (e) {
+      console.error('Error setting global audio mode:', e);
+    }
+  };
 
   const checkOnboarding = async () => {
     try {
@@ -234,7 +269,8 @@ export default function App() {
     try {
       await AsyncStorage.setItem('onboarded', 'true');
       if (name) {
-        await AsyncStorage.setItem('user-name', name);
+        // Save to AsyncStorage AND update the ThemeContext immediately
+        await setUserName(name);
       }
       setIsOnboarded(true);
     } catch (e) {
@@ -244,31 +280,15 @@ export default function App() {
 
   if (isOnboarded === null) {
     return (
-      <SafeAreaProvider>
-        <ThemeProvider>
-          <View style={{ flex: 1, backgroundColor: '#020617', justifyContent: 'center', alignItems: 'center' }}>
-            <StatusBar barStyle="light-content" />
-          </View>
-        </ThemeProvider>
-      </SafeAreaProvider>
+      <View style={{ flex: 1, backgroundColor: '#020617', justifyContent: 'center', alignItems: 'center' }}>
+        <StatusBar barStyle="light-content" />
+      </View>
     );
   }
 
   if (!isOnboarded) {
-    return (
-      <SafeAreaProvider>
-        <ThemeProvider>
-          <WelcomeScreen onComplete={handleOnboardingComplete} />
-        </ThemeProvider>
-      </SafeAreaProvider>
-    );
+    return <WelcomeScreen onComplete={handleOnboardingComplete} />;
   }
 
-  return (
-    <SafeAreaProvider>
-      <ThemeProvider>
-        <MainApp />
-      </ThemeProvider>
-    </SafeAreaProvider>
-  );
+  return <MainApp />;
 }

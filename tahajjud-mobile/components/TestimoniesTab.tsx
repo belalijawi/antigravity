@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
-import { View, Text, FlatList, TouchableOpacity, StyleSheet, SafeAreaView, Linking, Share, ScrollView, Platform, Alert } from 'react-native';
+import { View, Text, FlatList, TouchableOpacity, StyleSheet, Linking, Share, ScrollView, Platform, Alert } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { Heart, Send, Share2, BookHeart, Sparkles } from 'lucide-react-native';
 import { BlurView } from 'expo-blur';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -115,66 +116,68 @@ export function TestimoniesTab() {
     };
 
     return (
-        <SafeAreaView style={styles.safeArea}>
-            <View style={styles.container}>
-                <View style={styles.header}>
-                    <Text style={[styles.headerTitle, { color: colors.accent }]}>Reflections</Text>
-                    <Text style={[styles.headerSubtitle, { color: colors.secondaryText }]}>Echoes of faith from the silent hours</Text>
-                </View>
+        <View style={styles.container}>
+            <FlatList
+                style={{ flex: 1 }}
+                data={filteredStories}
+                renderItem={({ item }) => <TestimonyCard item={item} onShare={handleShareQuote} />}
+                keyExtractor={item => item.id}
+                contentContainerStyle={[styles.listContent, { flexGrow: 1 }]}
+                ListHeaderComponent={
+                    <View>
+                        <View style={styles.header}>
+                            <Text style={[styles.headerTitle, { color: colors.accent }]}>Reflections</Text>
+                            <Text style={[styles.headerSubtitle, { color: colors.secondaryText }]}>Echoes of faith from the silent hours</Text>
+                        </View>
 
-                <View style={styles.topicsContainer}>
-                    <ScrollView
-                        horizontal
-                        showsHorizontalScrollIndicator={false}
-                        contentContainerStyle={styles.topicsContent}
-                    >
-                        {storyTopics.map(topic => (
-                            <TouchableOpacity
-                                key={topic}
-                                onPress={() => setSelectedTopic(topic)}
-                                style={[
-                                    styles.topicPill,
-                                    selectedTopic === topic && styles.topicPillActive
-                                ]}
+                        <View style={styles.topicsContainer}>
+                            <ScrollView
+                                horizontal
+                                showsHorizontalScrollIndicator={false}
+                                contentContainerStyle={styles.topicsContent}
                             >
-                                {selectedTopic === topic && (
-                                    <View style={styles.pillGlow} />
-                                )}
-                                <Text style={[
-                                    styles.topicText,
-                                    selectedTopic === topic && styles.topicTextActive
-                                ]}>
-                                    {topic}
-                                </Text>
-                            </TouchableOpacity>
-                        ))}
-                    </ScrollView>
-                </View>
+                                {storyTopics.map(topic => (
+                                    <TouchableOpacity
+                                        key={topic}
+                                        onPress={() => setSelectedTopic(topic)}
+                                        style={[
+                                            styles.topicPill,
+                                            selectedTopic === topic && styles.topicPillActive
+                                        ]}
+                                    >
+                                        {selectedTopic === topic && (
+                                            <View style={styles.pillGlow} />
+                                        )}
+                                        <Text style={[
+                                            styles.topicText,
+                                            selectedTopic === topic && styles.topicTextActive
+                                        ]}>
+                                            {topic}
+                                        </Text>
+                                    </TouchableOpacity>
+                                ))}
+                            </ScrollView>
+                        </View>
+                    </View>
+                }
+                showsVerticalScrollIndicator={false}
+            />
 
-                <FlatList
-                    data={filteredStories}
-                    renderItem={({ item }) => <TestimonyCard item={item} onShare={handleShareQuote} />}
-                    keyExtractor={item => item.id}
-                    contentContainerStyle={styles.listContent}
-                    showsVerticalScrollIndicator={false}
+            <TouchableOpacity style={[styles.fab, { shadowColor: colors.shadow }]} onPress={handleShareStory}>
+                <LinearGradient
+                    colors={colors.accentGradient} // Dynamic Gradient
+                    style={StyleSheet.absoluteFill}
+                    start={{ x: 0, y: 0 }}
+                    end={{ x: 1, y: 1 }}
                 />
+                <Send color="#020617" size={20} strokeWidth={2.5} />
+                <Text style={styles.fabText}>Share Reflection</Text>
+            </TouchableOpacity>
 
-                <TouchableOpacity style={[styles.fab, { shadowColor: colors.shadow }]} onPress={handleShareStory}>
-                    <LinearGradient
-                        colors={colors.accentGradient} // Dynamic Gradient
-                        style={StyleSheet.absoluteFill}
-                        start={{ x: 0, y: 0 }}
-                        end={{ x: 1, y: 1 }}
-                    />
-                    <Send color="#020617" size={20} strokeWidth={2.5} />
-                    <Text style={styles.fabText}>Share Reflection</Text>
-                </TouchableOpacity>
-
-                <View collapsable={false} style={styles.captureBuffer}>
-                    <QuoteShareCard ref={viewShotRef} testimony={sharingQuote} />
-                </View>
+            <View collapsable={false} style={styles.captureBuffer}>
+                <QuoteShareCard ref={viewShotRef} testimony={sharingQuote} />
             </View>
-        </SafeAreaView>
+        </View >
     );
 }
 
@@ -205,7 +208,7 @@ const styles = StyleSheet.create({
     },
     listContent: {
         paddingHorizontal: 20,
-        paddingBottom: 120,
+        paddingBottom: 180,
     },
     card: {
         borderRadius: 24,
@@ -343,7 +346,7 @@ const styles = StyleSheet.create({
     },
     fab: {
         position: 'absolute',
-        bottom: 120,
+        bottom: 140,
         alignSelf: 'center',
         height: 60,
         paddingHorizontal: 28,

@@ -1,0 +1,47 @@
+{
+  "project_info": {
+    "project_number": "434827238021",
+    "project_id": "tahajjud-2d7bf",
+    "storage_bucket": "tahajjud-2d7bf.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:434827238021:android:e7b22f9f27f8184fc1e7ec",
+        "android_client_info": {
+          "package_name": "com.tahajjudplus.app"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "434827238021-ntc25erm80s4nhkkbj2bv7g18v80l48h.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyATN6fPE8umtsJRPFxvQttrPsEMWvo0Ln4"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "434827238021-ntc25erm80s4nhkkbj2bv7g18v80l48h.apps.googleusercontent.com",
+              "client_type": 3
+            },
+            {
+              "client_id": "434827238021-l54qkp6ts99g1vsf5ha314tfj056sk50.apps.googleusercontent.com",
+              "client_type": 2,
+              "ios_info": {
+                "bundle_id": "com.tahajjudplus.app",
+                "app_store_id": "980898"
+              }
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

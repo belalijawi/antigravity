@@ -1,6 +1,6 @@
 {
     "cli": {
-        "version": ">= 7.0.0"
+        "version": ">= 18.0.0"
     },
     "build": {
         "development": {
@@ -15,6 +15,11 @@
         }
     },
     "submit": {
-        "production": {}
+        "production": {
+            "ios": {
+                "ascAppId": "6759176533",
+                "appleId": "belalijawi@yahoo.com"
+            }
+        }
     }
 }

@@ -27,6 +27,7 @@ export interface SurahDetail {
         name: string;
         englishName: string;
     };
+    audioAyahs?: Ayah[]; // Optional audio URLs mapping
 }
 
 export interface Edition {
@@ -38,7 +39,7 @@ export interface Edition {
     type: string;
 }
 
-const BASE_URL = 'http://api.alquran.cloud/v1';
+const BASE_URL = 'https://api.alquran.cloud/v1';
 
 export const QuranService = {
     // Get list of all 114 Surahs
@@ -109,12 +110,33 @@ export const QuranService = {
             const response = await fetch(`${BASE_URL}/edition?format=${format}`);
             const data = await response.json();
             if (data.code === 200) {
-                // Filter to only include translations (type: translation) to avoid complexity for now
-                return data.data.filter((e: Edition) => e.type === 'translation');
+                // Filter to only include translations or audio reciters
+                return data.data.filter((e: Edition) =>
+                    format === 'text' ? e.type === 'translation' : e.type === 'versebyverse'
+                );
             }
             return [];
         } catch (error) {
             console.error(error);
+            return [];
+        }
+    },
+
+    // Get audio recitation for a surah
+    async getAudioRecitation(number: number, reciter: string = 'ar.alafasy'): Promise<Ayah[]> {
+        try {
+            const response = await fetch(`${BASE_URL}/surah/${number}/${reciter}`);
+            const data = await response.json();
+            if (data.code === 200) {
+                return data.data.ayahs.map((ayah: any) => ({
+                    number: ayah.number,
+                    text: ayah.audio, // Use text field to store audio URL for audio-only fetches
+                    numberInSurah: ayah.numberInSurah
+                }));
+            }
+            return [];
+        } catch (error) {
+            console.error('Error fetching audio:', error);
             return [];
         }
     }

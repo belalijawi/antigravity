@@ -1,16 +1,19 @@
 import React from 'react';
-import { View, Text, StyleSheet } from 'react-native';
+import { View, Text, StyleSheet, ScrollView } from 'react-native';
 import { Book, Lightbulb } from 'lucide-react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { BlurView } from 'expo-blur';
-
 import { useTheme } from '../context/ThemeContext';
 
 export function EducationalContent() {
     const { colors } = useTheme();
 
     return (
-        <View style={styles.container}>
+        <ScrollView
+            style={{ flex: 1 }}
+            contentContainerStyle={styles.container}
+            showsVerticalScrollIndicator={false}
+        >
             <View style={styles.card}>
                 <LinearGradient
                     colors={['rgba(248, 250, 252, 0.1)', 'rgba(203, 213, 225, 0.1)', 'rgba(15, 23, 42, 0.05)']}
@@ -51,7 +54,7 @@ export function EducationalContent() {
                     </View>
                 </View>
             </View>
-        </View>
+        </ScrollView>
     );
 }
 
@@ -59,7 +62,8 @@ const styles = StyleSheet.create({
     container: {
         width: '100%',
         paddingHorizontal: 16,
-        paddingVertical: 40,
+        paddingTop: 40,
+        paddingBottom: 120, // Increased to clear hotbar
     },
     card: {
         borderRadius: 32,

@@ -1,66 +1,52 @@
 import { initializeApp, getApps, getApp, FirebaseApp } from 'firebase/app';
-import { 
-    getAuth, 
-    Auth, 
-    getReactNativePersistence,
-    initializeAuth
-} from 'firebase/auth';
+import { getAuth, Auth, initializeAuth } from 'firebase/auth';
 import { getFirestore, Firestore } from 'firebase/firestore';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
-export interface FirebaseConfig {
-    apiKey: string;
-    authDomain: string;
-    projectId: string;
-    storageBucket: string;
-    messagingSenderId: string;
-    appId: string;
+// Firebase config is safe to be in source — web API keys are public-facing by design.
+// Previously stored in AsyncStorage: empty on fresh install → null auth → SIGABRT crash.
+const FIREBASE_CONFIG = {
+    apiKey: "AIzaSyBTbpXPTn-wMBp821rMaoqOqdstNhzyRdM",
+    authDomain: "tahajjud-2d7bf.firebaseapp.com",
+    projectId: "tahajjud-2d7bf",
+    storageBucket: "tahajjud-2d7bf.firebasestorage.app",
+    messagingSenderId: "434827238021",
+    appId: "1:434827238021:web:2a437aa88af1b360c1e7ec",
+};
+
+// Initialize eagerly at module load — guarantees getFirebaseAuth() never returns null.
+let app: FirebaseApp;
+let auth: Auth;
+let db: Firestore;
+
+if (getApps().length) {
+    app = getApp();
+    auth = getAuth(app);
+    db = getFirestore(app);
+} else {
+    app = initializeApp(FIREBASE_CONFIG);
+    try {
+        // Use initializeAuth with AsyncStorage for persistent sessions across app restarts.
+        // getReactNativePersistence is imported inline to avoid TypeScript path resolution issues.
+        // eslint-disable-next-line @typescript-eslint/no-var-requires
+        const { getReactNativePersistence } = require('firebase/auth');
+        auth = initializeAuth(app, {
+            persistence: getReactNativePersistence(AsyncStorage),
+        });
+    } catch {
+        // Fallback to in-memory auth if persistence setup fails (e.g. in Expo Go)
+        auth = getAuth(app);
+    }
+    db = getFirestore(app);
 }
 
-const CONFIG_KEY = 'firebase_config';
+export const getFirebaseAuth = (): Auth => auth;
+export const getFirebaseDb = (): Firestore => db;
 
-export const saveFirebaseConfig = async (config: FirebaseConfig) => {
-    await AsyncStorage.setItem(CONFIG_KEY, JSON.stringify(config));
-};
-
-export const getSavedFirebaseConfig = async (): Promise<FirebaseConfig | null> => {
-    const config = await AsyncStorage.getItem(CONFIG_KEY);
-    return config ? JSON.parse(config) : null;
-};
-
-let appInstance: FirebaseApp | null = null;
-let authInstance: Auth | null = null;
-let dbInstance: Firestore | null = null;
-
-export const initFirebase = async () => {
-    if (appInstance) return { app: appInstance, auth: authInstance, db: dbInstance };
-
-    const config = await getSavedFirebaseConfig();
-    if (!config || !config.apiKey || config.apiKey === 'YOUR_API_KEY') {
-        console.log('[Firebase] Configuration missing or invalid');
-        return null;
-    }
-
-    try {
-        if (!getApps().length) {
-            appInstance = initializeApp(config);
-            authInstance = initializeAuth(appInstance, {
-                persistence: getReactNativePersistence(AsyncStorage)
-            });
-            dbInstance = getFirestore(appInstance);
-        } else {
-            appInstance = getApp();
-            authInstance = getAuth(appInstance);
-            dbInstance = getFirestore(appInstance);
-        }
-        console.log('[Firebase] Initialized successfully');
-        return { app: appInstance, auth: authInstance, db: dbInstance };
-    } catch (error) {
-        console.error('[Firebase] Initialization error:', error);
-        return null;
-    }
-};
-
-// Hook-like getters for components
-export const getFirebaseDb = () => dbInstance;
-export const getFirebaseAuth = () => authInstance;
+// Kept for backwards compatibility
+export const initFirebase = async () => ({ app, auth, db });
+export const saveFirebaseConfig = async (_config: any) => { /* no-op — config is now hardcoded */ };
+export interface FirebaseConfig {
+    apiKey: string; authDomain: string; projectId: string;
+    storageBucket: string; messagingSenderId: string; appId: string;
+}

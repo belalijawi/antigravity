@@ -428,7 +428,7 @@ export function DuasTab() {
     );
 
     return (
-        <SafeAreaView style={styles.safeArea}>
+        <SafeAreaView style={styles.safeArea} edges={['top', 'left', 'right']}>
             <View style={[styles.container, tabletContentStyle()]}>
                 {/* Header */}
                 <View style={styles.header}>
@@ -450,73 +450,75 @@ export function DuasTab() {
                 </View>
 
                 {activeTab === 'library' ? (
-                    <>
-                        {/* Search Bar */}
-                        <View style={styles.searchContainer}>
-                            <Search size={20} color="#94a3b8" style={styles.searchIcon} />
-                            <TextInput
-                                style={styles.searchInput}
-                                placeholder="Search duas..."
-                                placeholderTextColor="#94a3b8"
-                                value={searchQuery}
-                                onChangeText={setSearchQuery}
-                            />
-                        </View>
+                    <FlatList
+                        style={{ flex: 1 }}
+                        data={filteredDuas}
+                        renderItem={renderDuaItem}
+                        keyExtractor={item => item.id}
+                        contentContainerStyle={[styles.duasContent, { flexGrow: 1 }]}
+                        ListHeaderComponent={
+                            <View>
+                                {/* Search Bar */}
+                                <View style={styles.searchContainer}>
+                                    <Search size={20} color="#94a3b8" style={styles.searchIcon} />
+                                    <TextInput
+                                        style={styles.searchInput}
+                                        placeholder="Search duas..."
+                                        placeholderTextColor="#94a3b8"
+                                        value={searchQuery}
+                                        onChangeText={setSearchQuery}
+                                    />
+                                </View>
 
-                        {/* Category Pills */}
-                        <View style={styles.categoriesContainer}>
-                            <ScrollView
-                                horizontal
-                                showsHorizontalScrollIndicator={false}
-                                contentContainerStyle={styles.categoriesContent}
-                            >
-                                {allCategories.map(category => (
-                                    <TouchableOpacity
-                                        key={category}
-                                        onPress={() => setSelectedCategory(category)}
-                                        style={[
-                                            styles.categoryPill,
-                                            selectedCategory === category && styles.categoryPillActive
-                                        ]}
+                                {/* Category Pills */}
+                                <View style={styles.categoriesContainer}>
+                                    <ScrollView
+                                        horizontal
+                                        showsHorizontalScrollIndicator={false}
+                                        contentContainerStyle={styles.categoriesContent}
                                     >
-                                        <Text style={[
-                                            styles.categoryText,
-                                            selectedCategory === category && styles.categoryTextActive
-                                        ]}>
-                                            {category}
-                                        </Text>
-                                    </TouchableOpacity>
-                                ))}
-                            </ScrollView>
-                        </View>
-
-                        {/* Duas List */}
-                        <FlatList
-                            data={filteredDuas}
-                            renderItem={renderDuaItem}
-                            keyExtractor={item => item.id}
-                            contentContainerStyle={styles.duasContent}
-                            ListEmptyComponent={renderEmptyState}
-                            removeClippedSubviews={true}
-                            initialNumToRender={5}
-                            maxToRenderPerBatch={10}
-                            windowSize={5}
-                            showsVerticalScrollIndicator={false}
-                        />
-                    </>
+                                        {allCategories.map(category => (
+                                            <TouchableOpacity
+                                                key={category}
+                                                onPress={() => setSelectedCategory(category)}
+                                                style={[
+                                                    styles.categoryPill,
+                                                    selectedCategory === category && styles.categoryPillActive
+                                                ]}
+                                            >
+                                                <Text style={[
+                                                    styles.categoryText,
+                                                    selectedCategory === category && styles.categoryTextActive
+                                                ]}>
+                                                    {category}
+                                                </Text>
+                                            </TouchableOpacity>
+                                        ))}
+                                    </ScrollView>
+                                </View>
+                            </View>
+                        }
+                        ListEmptyComponent={renderEmptyState}
+                        initialNumToRender={5}
+                        maxToRenderPerBatch={10}
+                        windowSize={5}
+                        showsVerticalScrollIndicator={false}
+                    />
                 ) : (
                     <View style={{ flex: 1 }}>
                         <FlatList
+                            style={{ flex: 1 }}
                             data={personalDuas}
                             renderItem={renderPersonalDuaItem}
                             keyExtractor={item => item.id}
-                            contentContainerStyle={styles.duasContent}
+                            contentContainerStyle={[styles.duasContent, { flexGrow: 1 }]}
                             ListEmptyComponent={() => (
                                 <View style={styles.emptyState}>
                                     <Text style={styles.emptyText}>Your heart's journey is a private conversation.</Text>
                                     <Text style={styles.emptySubtext}>Tap the ✉️ icon to write your first letter to Allah.</Text>
                                 </View>
                             )}
+                            showsVerticalScrollIndicator={false}
                         />
                         <TouchableOpacity
                             style={[styles.fab, { backgroundColor: colors.accent, shadowColor: colors.shadow }]}
@@ -696,7 +698,7 @@ const styles = StyleSheet.create({
     },
     duasContent: {
         paddingHorizontal: 20,
-        paddingBottom: 120,
+        paddingBottom: 180,
     },
     emptyState: {
         paddingVertical: 80,
@@ -854,7 +856,7 @@ const styles = StyleSheet.create({
     },
     fab: {
         position: 'absolute',
-        bottom: 120,
+        bottom: 140,
         right: 24,
         width: 64,
         height: 64,

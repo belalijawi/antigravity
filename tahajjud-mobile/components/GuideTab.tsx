@@ -12,7 +12,7 @@ export function GuideTab() {
     const [activeSection, setActiveSection] = useState<'info' | 'testimonies' | 'guide'>('info');
 
     return (
-        <SafeAreaView style={styles.container}>
+        <SafeAreaView style={styles.container} edges={['top', 'left', 'right']}>
             <View style={[{ flex: 1 }, tabletContentStyle()]}>
                 <View style={styles.header}>
                     <View style={styles.pillContainer}>

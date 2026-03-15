@@ -39,27 +39,33 @@ interface ThemeContextType {
     theme: ThemeType;
     colors: ThemeColors;
     setTheme: (theme: ThemeType) => void;
+    userName: string;
+    setUserName: (name: string) => void;
 }
 
 const ThemeContext = createContext<ThemeContextType | undefined>(undefined);
 
 export function ThemeProvider({ children }: { children: React.ReactNode }) {
     const [theme, setThemeState] = useState<ThemeType>('silver');
+    const [userName, setUserNameState] = useState<string>('Servant');
 
     useEffect(() => {
-        loadTheme();
+        loadSettings();
     }, []);
 
-    const loadTheme = async () => {
+    const loadSettings = async () => {
         try {
+            // Theme
             const savedTheme = await AsyncStorage.getItem('app-theme');
             if (savedTheme && Object.keys(themes).includes(savedTheme)) {
                 setThemeState(savedTheme as ThemeType);
-            } else {
-                setThemeState('silver');
             }
+
+            // Name
+            const savedName = await AsyncStorage.getItem('user-name');
+            if (savedName) setUserNameState(savedName);
         } catch (e) {
-            console.error('Failed to load theme', e);
+            console.error('Failed to load settings', e);
         }
     };
 
@@ -68,8 +74,13 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
         await AsyncStorage.setItem('app-theme', newTheme);
     };
 
+    const setUserName = async (newName: string) => {
+        setUserNameState(newName);
+        await AsyncStorage.setItem('user-name', newName);
+    };
+
     return (
-        <ThemeContext.Provider value={{ theme, colors: themes[theme], setTheme }}>
+        <ThemeContext.Provider value={{ theme, colors: themes[theme], setTheme, userName, setUserName }}>
             {children}
         </ThemeContext.Provider>
     );

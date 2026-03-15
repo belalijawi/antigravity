@@ -2,7 +2,8 @@
   "expo": {
     "name": "Tahajjud+",
     "slug": "tahajjud-plus",
-    "version": "1.5.1",
+    "version": "1.5.3",
+    "scheme": "tahajjud-plus",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "dark",
@@ -11,16 +12,21 @@
       "resizeMode": "contain",
       "backgroundColor": "#020617"
     },
-    "newArchEnabled": false,
+    "newArchEnabled": true,
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.tahajjudplus.app",
-      "buildNumber": "4",
+      "buildNumber": "13",
       "googleServicesFile": "./GoogleService-Info.plist",
       "infoPlist": {
-        "NSLocationWhenInUseUsageDescription": "Tahajjud+ needs your location to accurately calculate the Qibla direction and prayer times for your current city.",
-        "NSLocationAlwaysAndWhenInUseUsageDescription": "Tahajjud+ needs your location to accurately calculate the Qibla direction and prayer times for your current city.",
-        "NSLocalNetworkUsageDescription": "Used for community features and syncing your prayers."
+        "UIBackgroundModes": [
+          "audio"
+        ],
+        "NSLocationWhenInUseUsageDescription": "Tahajjud+ uses your location to calculate the five daily Islamic prayer times (Fajr, Dhuhr, Asr, Maghrib, and Isha) specific to your city, and to orient the Qibla compass toward Mecca. For example, a user in Dubai will see prayer times calculated for Dubai and a compass pointing from Dubai toward the Kaaba in Mecca.",
+        "NSLocationAlwaysAndWhenInUseUsageDescription": "Tahajjud+ uses your location to calculate the five daily Islamic prayer times (Fajr, Dhuhr, Asr, Maghrib, and Isha) specific to your city, and to orient the Qibla compass toward Mecca. For example, a user in Dubai will see prayer times calculated for Dubai and a compass pointing from Dubai toward the Kaaba in Mecca.",
+        "NSLocationAlwaysUsageDescription": "Tahajjud+ uses your location to calculate the five daily Islamic prayer times specific to your city and to orient the Qibla compass toward Mecca. For example, a user in London will receive prayer times calculated for London.",
+        "NSLocalNetworkUsageDescription": "Tahajjud+ uses the local network to connect to Firebase for syncing your Tahajjud prayer logs and journal entries across your devices. For example, a Tahajjud letter you write on your iPhone will sync and appear on your iPad.",
+        "NSFaceIDUsageDescription": "Tahajjud+ uses FaceID to provide a secure biometric lock for your private Tahajjud letters and journal entries, ensuring your spiritual journey remains for your eyes only."
       }
     },
     "android": {
@@ -28,8 +34,20 @@
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#020617"
       },
+      "permissions": [
+        "ACCESS_COARSE_LOCATION",
+        "ACCESS_FINE_LOCATION",
+        "INTERNET",
+        "READ_EXTERNAL_STORAGE",
+        "WRITE_EXTERNAL_STORAGE",
+        "USE_BIOMETRIC",
+        "USE_FINGERPRINT",
+        "VIBRATE",
+        "FOREGROUND_SERVICE",
+        "FOREGROUND_SERVICE_MEDIA_PLAYBACK"
+      ],
       "package": "com.tahajjudplus.app",
-      "versionCode": 3,
+      "versionCode": 5,
       "googleServicesFile": "./google-services.json",
       "edgeToEdgeEnabled": true,
       "predictiveBackGestureEnabled": false
@@ -38,6 +56,7 @@
       "favicon": "./assets/favicon.png"
     },
     "plugins": [
+      "expo-av",
       [
         "expo-notifications",
         {

@@ -1,5 +1,6 @@
 import React from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, SafeAreaView, Dimensions, Linking } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Dimensions, Linking } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { X, Shield, Lock, Eye, Database } from 'lucide-react-native';
 import { BlurView } from 'expo-blur';
 import { useTheme } from '../context/ThemeContext';
@@ -12,6 +13,7 @@ interface Props {
 
 export function PrivacyPolicy({ onClose }: Props) {
     const { colors } = useTheme();
+    const insets = useSafeAreaInsets();
 
     const Section = ({ icon: Icon, title, content }: { icon: any, title: string, content: string }) => (
         <View style={styles.section}>
@@ -26,13 +28,17 @@ export function PrivacyPolicy({ onClose }: Props) {
     );
 
     return (
-        <SafeAreaView style={styles.container}>
-            <View style={styles.header}>
+        <View style={styles.container}>
+            <View style={[styles.header, { paddingTop: Math.max(insets.top, 20) + 12 }]}>
                 <View>
                     <Text style={[styles.title, { color: colors.accent }]}>Privacy Trust</Text>
                     <Text style={[styles.subtitle, { color: colors.secondaryText }]}>Your spiritual journey is private</Text>
                 </View>
-                <TouchableOpacity onPress={onClose} style={styles.closeButton}>
+                <TouchableOpacity
+                    onPress={onClose}
+                    style={styles.closeButton}
+                    hitSlop={{ top: 15, bottom: 15, left: 15, right: 15 }}
+                >
                     <X color={colors.primaryText} size={24} />
                 </TouchableOpacity>
             </View>
@@ -78,7 +84,7 @@ export function PrivacyPolicy({ onClose }: Props) {
                     </Text>
                 </View>
             </ScrollView>
-        </SafeAreaView>
+        </View>
     );
 }
 

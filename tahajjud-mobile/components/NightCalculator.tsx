@@ -8,16 +8,11 @@ import { Moon, Bell, BellOff } from "lucide-react-native";
 import { LinearGradient } from 'expo-linear-gradient';
 import { PrayerCard } from "./PrayerCard";
 import { format } from "date-fns";
-import {
-    requestNotificationPermissions,
-    scheduleTahajjudNotification,
-    cancelTahajjudNotification,
-    isNotificationEnabled
-} from "../utils/notifications";
+import { isNotificationEnabled, requestNotificationPermissions, scheduleAllPrayerNotifications, cancelNotification, NOTIFICATION_ENABLED_KEY } from '../utils/notifications';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useTheme } from '../context/ThemeContext';
 
-export function NightCalculator() {
+export function NightCalculator({ onNightCalcReady, refreshKey }: { onNightCalcReady?: (calc: NightCalculation) => void, refreshKey?: number } = {}) {
     const { colors } = useTheme();
     const [location, setLocation] = useState<{ lat: number; lng: number } | null>(null);
     const [prayerTimes, setPrayerTimes] = useState<PrayerTimes | null>(null);
@@ -27,8 +22,10 @@ export function NightCalculator() {
     const [locationDenied, setLocationDenied] = useState<boolean>(false);
     const [currentTime, setCurrentTime] = useState<Date>(new Date());
     const [notificationEnabled, setNotificationEnabled] = useState<boolean>(false);
-    const [selectedBuffer, setSelectedBuffer] = useState<number>(30); // Default 30 mins
+    const [selectedBuffer, setSelectedBuffer] = useState<number>(0); // Default to 0 (at the time)
     const [selectedMethod, setSelectedMethod] = useState<number>(2); // Default ISNA
+    const [lastScheduledKey, setLastScheduledKey] = useState<string | null>(null);
+    const [internalRefresh, setInternalRefresh] = useState(0);
 
     useEffect(() => {
         const timer = setInterval(() => setCurrentTime(new Date()), 60000);
@@ -86,13 +83,51 @@ export function NightCalculator() {
             setLoading(true);
             try {
                 const today = new Date();
-                const times = await getPrayerTimes(location!.lat, location!.lng, today, selectedMethod);
-                setPrayerTimes(times);
-                const tomorrow = new Date(today);
-                tomorrow.setDate(tomorrow.getDate() + 1);
-                const tomorrowTimes = await getPrayerTimes(location!.lat, location!.lng, tomorrow, selectedMethod);
-                const calc = calculateLastThird(times.maghrib, tomorrowTimes.fajr);
+                const todayTimes = await getPrayerTimes(location!.lat, location!.lng, today, selectedMethod);
+
+                let nightStart: Date;
+                let nightEnd: Date;
+                let activeTimes: PrayerTimes;
+
+                if (today < todayTimes.fajr) {
+                    const yesterday = new Date(today);
+                    yesterday.setDate(yesterday.getDate() - 1);
+                    const yesterdayTimes = await getPrayerTimes(location!.lat, location!.lng, yesterday, selectedMethod);
+                    nightStart = yesterdayTimes.maghrib;
+                    nightEnd = todayTimes.fajr;
+                    activeTimes = todayTimes;
+                } else {
+                    const tomorrow = new Date(today);
+                    tomorrow.setDate(tomorrow.getDate() + 1);
+                    const tomorrowTimes = await getPrayerTimes(location!.lat, location!.lng, tomorrow, selectedMethod);
+                    nightStart = todayTimes.maghrib;
+                    nightEnd = tomorrowTimes.fajr;
+                    activeTimes = todayTimes;
+                }
+
+                setPrayerTimes(activeTimes);
+                const calc = calculateLastThird(nightStart, nightEnd);
                 setNightCalc(calc);
+                onNightCalcReady?.(calc);
+
+                // Schedule all enabled prayer notifications (Daily + Tahajjud)
+                const allPrayers = await AsyncStorage.getItem('notification_all_prayers_enabled');
+                const isEnabled = allPrayers === 'true';
+
+                const tahajjudEnabled = await AsyncStorage.getItem(NOTIFICATION_ENABLED_KEY);
+                const isTahajjudEnabled = tahajjudEnabled === 'true';
+
+                // Prevent duplicate scheduling if nothing changed
+                const currentKey = `${JSON.stringify(activeTimes)}_${isEnabled}_${isTahajjudEnabled}_${selectedBuffer}`;
+                if (currentKey !== lastScheduledKey) {
+                    await scheduleAllPrayerNotifications(activeTimes, isEnabled, {
+                        enabled: isTahajjudEnabled,
+                        buffer: selectedBuffer,
+                        targetTime: new Date(calc.lastThirdStart)
+                    });
+                    setLastScheduledKey(currentKey);
+                    console.log(`[DEBUG] Unified notifications scheduled for ${today.toDateString()}`);
+                }
             } catch (err) {
                 console.error(err);
                 setErrorMsg("Failed to load prayer times");
@@ -101,22 +136,24 @@ export function NightCalculator() {
             }
         }
         fetchData();
-    }, [location]);
+    }, [location, refreshKey, selectedMethod, selectedBuffer, internalRefresh]);
 
     useEffect(() => {
         checkNotificationStatus();
-    }, []);
+    }, [internalRefresh]);
 
     const checkNotificationStatus = async () => {
-        const enabled = await isNotificationEnabled();
-        setNotificationEnabled(enabled);
+        const enabled = await AsyncStorage.getItem(NOTIFICATION_ENABLED_KEY);
+        setNotificationEnabled(enabled === 'true');
     };
 
     const handleToggleNotification = async () => {
         if (!nightCalc) return;
         if (notificationEnabled) {
-            await cancelTahajjudNotification();
+            await cancelNotification('tahajjud');
+            await AsyncStorage.setItem(NOTIFICATION_ENABLED_KEY, 'false');
             setNotificationEnabled(false);
+            setLastScheduledKey(null); // Force re-sync
             Alert.alert('Reminder Disabled', 'Tahajjud reminder has been turned off.');
         } else {
             const hasPermission = await requestNotificationPermissions();
@@ -124,14 +161,15 @@ export function NightCalculator() {
                 Alert.alert('Permission Required', 'Please enable notifications in settings.');
                 return;
             }
-            let targetTime = new Date(nightCalc.lastThirdStart);
-            if (targetTime < new Date()) targetTime.setDate(targetTime.getDate() + 1);
-            const notificationId = await scheduleTahajjudNotification(targetTime, selectedBuffer);
-            if (notificationId) {
-                setNotificationEnabled(true);
-                const wakeTime = new Date(targetTime.getTime() - selectedBuffer * 60 * 1000);
-                Alert.alert('Reminder Set! 🌙', `You will be woken up at ${format(wakeTime, 'h:mm a')}\n(${selectedBuffer} mins before Last Third)`);
-            }
+            await AsyncStorage.setItem(NOTIFICATION_ENABLED_KEY, 'true');
+            setNotificationEnabled(true);
+            setLastScheduledKey(null); // Force re-sync that will include Tahajjud
+            // Trigger local refresh to run fetchData again with the new enabled state
+            setInternalRefresh(prev => prev + 1);
+
+            const targetTime = new Date(nightCalc.lastThirdStart);
+            const wakeTime = new Date(targetTime.getTime() - selectedBuffer * 60 * 1000);
+            Alert.alert('Reminder Set! 🌙', `You will be woken up at ${format(wakeTime, 'h:mm a')}\n(${selectedBuffer} mins before Last Third)`);
         }
     };
 
@@ -185,7 +223,9 @@ export function NightCalculator() {
                     <Text style={[styles.timeText, { color: colors.accent }]}>{format(nightCalc.lastThirdStart, "h:mm a")}</Text>
                     <View style={styles.statusRow}>
                         <View style={[styles.pulseDot, (currentTime >= nightCalc.lastThirdStart && currentTime < nightCalc.nightEnd) && styles.pulseDotActive]} />
-                        <Text style={styles.statusText}>{(currentTime >= nightCalc.lastThirdStart && currentTime < nightCalc.nightEnd) ? "Currently Active" : "Upcoming"}</Text>
+                        <Text style={[styles.statusText, (currentTime >= nightCalc.lastThirdStart && currentTime < nightCalc.nightEnd) && { color: colors.accent }]}>
+                            {(currentTime >= nightCalc.lastThirdStart && currentTime < nightCalc.nightEnd) ? "The Gate is Open" : "Upcoming"}
+                        </Text>
                     </View>
                 </View>
 
@@ -202,21 +242,22 @@ export function NightCalculator() {
                     </TouchableOpacity>
 
                     <View style={styles.prepRow}>
-                        {[15, 30, 45].map((mins) => (
+                        {[0, 15, 30, 45].map((mins) => (
                             <TouchableOpacity
                                 key={mins}
                                 style={[styles.bufferTab, selectedBuffer === mins && styles.bufferTabActive]}
                                 onPress={() => {
                                     setSelectedBuffer(mins);
                                     AsyncStorage.setItem('tahajjud_buffer_minutes', mins.toString());
-                                    if (notificationEnabled && nightCalc) {
-                                        let targetTime = new Date(nightCalc.lastThirdStart);
-                                        if (targetTime < new Date()) targetTime.setDate(targetTime.getDate() + 1);
-                                        scheduleTahajjudNotification(targetTime, mins);
+                                    if (notificationEnabled) {
+                                        setLastScheduledKey(null); // Force re-sync
+                                        setInternalRefresh(prev => prev + 1);
                                     }
                                 }}
                             >
-                                <Text style={[styles.bufferTabText, selectedBuffer === mins && styles.bufferTabTextActive]}>{mins}</Text>
+                                <Text style={[styles.bufferTabText, selectedBuffer === mins && styles.bufferTabTextActive]}>
+                                    {mins === 0 ? "Now" : mins}
+                                </Text>
                             </TouchableOpacity>
                         ))}
                     </View>
@@ -238,33 +279,39 @@ export function NightCalculator() {
                     <Text style={styles.progressLabel}>Night Flow</Text>
                     <Text style={styles.progressValue}>
                         {(() => {
-                            const total = nightCalc.nightEnd.getTime() - prayerTimes.maghrib.getTime();
-                            const elapsed = Math.max(0, Math.min(total, currentTime.getTime() - prayerTimes.maghrib.getTime()));
+                            const total = nightCalc.nightEnd.getTime() - nightCalc.nightStart.getTime();
+                            const elapsed = Math.max(0, Math.min(total, currentTime.getTime() - nightCalc.nightStart.getTime()));
                             return Math.floor((elapsed / total) * 100) + "%";
                         })()}
                     </Text>
                 </View>
                 <View style={styles.progressBarBg}>
-                    <LinearGradient
-                        colors={[colors.accent, colors.accent + '80']}
-                        start={{ x: 0, y: 0 }}
-                        end={{ x: 1, y: 0 }}
-                        style={[
-                            styles.progressBarFill,
-                            {
-                                width: `${(() => {
-                                    const total = nightCalc.nightEnd.getTime() - prayerTimes.maghrib.getTime();
-                                    const elapsed = Math.max(0, Math.min(total, currentTime.getTime() - prayerTimes.maghrib.getTime()));
-                                    return (elapsed / total) * 100;
-                                })()}%` as any
-                            }
-                        ]}
-                    />
-                    {/* Last Third Marker */}
-                    <View style={[styles.lastThirdMarker, { left: '66.6%' }]} />
+                    {(() => {
+                        const total = nightCalc.nightEnd.getTime() - nightCalc.nightStart.getTime();
+                        const elapsed = Math.max(0, Math.min(total, currentTime.getTime() - nightCalc.nightStart.getTime()));
+                        const progress = (elapsed / total) * 100;
+                        const isLastThird = currentTime >= nightCalc.lastThirdStart && currentTime < nightCalc.nightEnd;
+                        const markerPos = ((nightCalc.lastThirdStart.getTime() - nightCalc.nightStart.getTime()) / total) * 100;
+
+                        return (
+                            <>
+                                <LinearGradient
+                                    colors={isLastThird ? [colors.accent, '#f8fafc'] : [colors.accent, colors.accent + '80']}
+                                    start={{ x: 0, y: 0 }}
+                                    end={{ x: 1, y: 0 }}
+                                    style={[
+                                        styles.progressBarFill,
+                                        { width: `${progress}%` as any }
+                                    ]}
+                                />
+                                {/* Dynamic Last Third Marker */}
+                                <View style={[styles.lastThirdMarker, { left: `${markerPos}%` }]} />
+                            </>
+                        );
+                    })()}
                 </View>
                 <View style={styles.progressFooter}>
-                    <Text style={styles.footerTime}>Maghrib • {format(prayerTimes.maghrib, "h:mm a")}</Text>
+                    <Text style={styles.footerTime}>Maghrib • {format(nightCalc.nightStart, "h:mm a")}</Text>
                     <Text style={[styles.footerTime, { color: colors.accent }]}>Tahajjud Zone</Text>
                     <Text style={styles.footerTime}>{format(nightCalc.nightEnd, "h:mm a")} • Fajr</Text>
                 </View>

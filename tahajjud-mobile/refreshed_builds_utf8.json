@@ -1,0 +1,260 @@
+﻿[
+  {
+    "id": "4de78d19-8ef2-4398-b94f-499b855396d7",
+    "status": "ERRORED",
+    "platform": "ANDROID",
+    "error": {
+      "errorCode": "EAS_BUILD_UNKNOWN_GRADLE_ERROR",
+      "message": "Gradle build failed with unknown error. See logs for the \"Run gradlew\" phase for more information."
+    },
+    "artifacts": {},
+    "fingerprint": {
+      "id": "019c90b8-289d-7c4c-bff9-deae7c198405",
+      "hash": "3a173b079ceb5c864509c03e9afc3bdd4fb7d2fd"
+    },
+    "initiatingActor": {
+      "id": "ac40966d-468b-4627-9ed0-6b4a8588d35a",
+      "displayName": "belalijawi"
+    },
+    "logFiles": [
+      "https://job-logs.eascdn.net/production/4de78d19-8ef2-4398-b94f-499b855396d7/1771954514305-976aacfa-e523-4a8a-bcdf-94c3fa9f1acf.txt?X-Goog-Algorithm=GOOG4-RSA-SHA256&X-Goog-Credential=www-production%40exponentjs.iam.gserviceaccount.com%2F20260225%2Fauto%2Fstorage%2Fgoog4_request&X-Goog-Date=20260225T173342Z&X-Goog-Expires=900&X-Goog-SignedHeaders=host&X-Goog-Signature=64b8905ecd1678453a56f897589dbb434b43c39c275d6a65a4381cf7eb191411cd875ac00f319f666a596fcb0d8300939362fe83ebbb33faafca9b3be1cafbe7d2aeb9b3cae102242b6f5c89adbf1b5f29ca45f7ce19282f1f303db07bdda798e9d00d2cbd71e6d647d16e6bd537d5af7bc0f87c5013dd6ae5929d0a891dedc1636cdd65e7c42d4d6a9f96f33c5d55c04899bd9245408abb07b51668fd7e62165ed7811fd96c719520d3eb130b5262b20208901fe11d6f653be960a1f54865a201e3ff3603ce413d58c1a3206a824f6c0f22b29cb5244be4d07a59e6414751bd7268f56fc1859833ea41fbf1a0d6db621c90b5accf7e1b6c71e37228616ccd82",
+      "https://job-logs.eascdn.net/production/4de78d19-8ef2-4398-b94f-499b855396d7/1771960227841-4262c465-6ae5-4f40-842a-ff5ec47d6bc9.txt?X-Goog-Algorithm=GOOG4-RSA-SHA256&X-Goog-Credential=www-production%40exponentjs.iam.gserviceaccount.com%2F20260225%2Fauto%2Fstorage%2Fgoog4_request&X-Goog-Date=20260225T173342Z&X-Goog-Expires=900&X-Goog-SignedHeaders=host&X-Goog-Signature=4607f261e56fb6ddeb90dbf61e0d66f71019fc1e8aabdd6b608e3ef4c6e9a38ff8134a4fe60e3b3be8ae506155524e99fce6bf6158e386b0d587ea4a335259ed9377679562c08aca2755bb3db9af3d3115c83b8ac02d160416f648ac044df965804622c2562611c3f560bca9440b0e0e42a792b00be76c5fa7c246b530c9b7e9fcfed92d0e3fcfe6e8e2930471976d83cf094ef43ef9a2b6fb1275faa6844f0379848b634bd1aee1120327b16d4fce9a76d8697019625949c59fb22fda0c1f876308ffe391071b09e0ca8ee08b5d37aeaa1a6692dfb4c9b013389db75b8b1a881c7b76f2b8171d054bf0c295c1956a7e4ed3745e0d2f2c44e62b5533da0e6ddc",
+      "https://job-logs.eascdn.net/production/4de78d19-8ef2-4398-b94f-499b855396d7/1771960228062-ffcd186f-89b7-415a-8bbc-6aad254fd6f3.txt?X-Goog-Algorithm=GOOG4-RSA-SHA256&X-Goog-Credential=www-production%40exponentjs.iam.gserviceaccount.com%2F20260225%2Fauto%2Fstorage%2Fgoog4_request&X-Goog-Date=20260225T173342Z&X-Goog-Expires=900&X-Goog-SignedHeaders=host&X-Goog-Signature=a4fa974cf5d5a20893a32a6f16ab3448ff6e70f8ef8bbec19975f037e74a1ffa3b92d70c0383c13897ffb0c7b993efdc74a9b638bb31faf118e45a5dab26c33137d638533e75a2bf3fdd0c3a13de65eceacbf00f048da7906b31185efc1a19dda31acf087eaa72595ab84e200b1e1f9283afd10faacd2caa5ce00cb354c40a36241a8f0e42e18efee9ead7d8382d299e0ef9f794d1ac30a294635530060597a6f8f274ce31f9f9ba57c66d39d89aa9e73858d61c18fed118327b969d2f8330a340a3c85b9e3f062a2ae27aa2f7550b678168f4ac2681ddede14f96bed14b1e5cff6e841525e7f5b83f3fce31b748b4a9268fee609dc45c2449e03f202dd23aab",
+      "https://job-logs.eascdn.net/production/4de78d19-8ef2-4398-b94f-499b855396d7/1771960228247-b2f11f22-e893-4f7c-9473-17253e9c12be.txt?X-Goog-Algorithm=GOOG4-RSA-SHA256&X-Goog-Credential=www-production%40exponentjs.iam.gserviceaccount.com%2F20260225%2Fauto%2Fstorage%2Fgoog4_request&X-Goog-Date=20260225T173342Z&X-Goog-Expires=900&X-Goog-SignedHeaders=host&X-Goog-Signature=1e425470f61e0bc7949ce381cd9fe36a16c8efd97ed380ec2bc1e3444f826de2db36e71a76eb55342d208b523e2253857eafd89a370f879423a118701ea9ad571b27177b537f87d81a6a9374a30781b61e23b167a1b1bbb0d4772de6de1b9d5b35226bc0399431148c8ee3d97d6a93dbd6ce9455d0ccac8b4ebc3c790baf948d141a35f4c1248e4f60d8060740c2b8c85d1520edde29cab6a7d4465de4011b6ca468b8b351028630af1c548fd9f252eeac4006eea06265edf29da9eb7db08367624b98fa40b6095f5333787f29593e6fc4f702f39e3e424d45f2da9a0563d5d4ba36a25f5a5c94487750110cab5051b4643f5006080a50c8795d3a3b4cce32d3"
+    ],
+    "project": {
+      "id": "826f6518-cc97-4065-bbfd-e0e8e51cb475",
+      "name": "tahajjud-plus",
+      "slug": "tahajjud-plus",
+      "ownerAccount": {
+        "id": "21e56b93-b012-48ae-9701-ab0893a46da2",
+        "name": "belalijawi"
+      }
+    },
+    "distribution": "STORE",
+    "buildProfile": "production",
+    "sdkVersion": "54.0.0",
+    "appVersion": "1.5.3",
+    "appBuildVersion": "4",
+    "gitCommitHash": "af9b44ffb94c480abc334d33d7ffaa058d2d53d0",
+    "gitCommitMessage": "feat: Production build v1.5.1 (Build 4) - iPad Optimization & Crash Fixes",
+    "priority": "NORMAL",
+    "createdAt": "2026-02-24T17:35:13.969Z",
+    "updatedAt": "2026-02-24T19:14:06.753Z",
+    "completedAt": "2026-02-24T19:13:54.314Z",
+    "expirationDate": "2026-03-26T17:35:14.057Z",
+    "isForIosSimulator": false,
+    "metrics": {
+      "buildWaitTime": 242,
+      "buildQueueTime": 5757298,
+      "buildDuration": 162413
+    }
+  },
+  {
+    "id": "393b5974-ce62-4586-bfae-ea69b69b25d2",
+    "status": "FINISHED",
+    "platform": "IOS",
+    "artifacts": {
+      "buildUrl": "https://expo.dev/artifacts/eas/84UaxkNy1LidujHYmaoZnd.ipa",
+      "xcodeBuildLogsUrl": "https://job-logs.eascdn.net/production-xcode-logs/393b5974-ce62-4586-bfae-ea69b69b25d2?X-Goog-Algorithm=GOOG4-RSA-SHA256&X-Goog-Credential=www-production%40exponentjs.iam.gserviceaccount.com%2F20260225%2Fauto%2Fstorage%2Fgoog4_request&X-Goog-Date=20260225T173342Z&X-Goog-Expires=900&X-Goog-SignedHeaders=host&X-Goog-Signature=7c4035c199a3d4cc9f31e71cf197d0be510cdbc978cfd1f7845c9e6a6b138a7e9fb93d7e948f14b60a80f14bd063a3159c911a350da25468f18850c7e01aee88ba4db928920a6d9e63b2cd2534173d912851cac1efcc6cbf284fb3809b580c298698a229e36f8ee8c3783aa7a2d9ef71bfed177db1241ced7931fbf28c230f21a9207e63d87a0a320fa8abdd0b8d4533b28aadd739db812f464424c332e57eafcad43976a5bf703b0d938a3bc00ab33cb0a52fcbfb7ce9ca16486aa8fbb6610dc53cb36a75a786318a0f914dc23437a51d27bd1a9e811d828f54215732a8083b9913ddfd3f1c816c1f9616cca8ba7df39a3b3203ef116c204e0340dca884e38b",
+      "applicationArchiveUrl": "https://expo.dev/artifacts/eas/84UaxkNy1LidujHYmaoZnd.ipa"
+    },
+    "fingerprint": {
+      "id": "019c8666-2705-7618-a5b9-cff4f206636f",
+      "hash": "93b8cef39eef60ccccdcb8d480388615dfbe58aa"
+    },
+    "initiatingActor": {
+      "id": "ac40966d-468b-4627-9ed0-6b4a8588d35a",
+      "displayName": "belalijawi"
+    },
+    "logFiles": [
+      "https://job-logs.eascdn.net/production/393b5974-ce62-4586-bfae-ea69b69b25d2/1771781367813-1fe802c7-c17c-470b-b0b8-247a15140f2e.txt?X-Goog-Algorithm=GOOG4-RSA-SHA256&X-Goog-Credential=www-production%40exponentjs.iam.gserviceaccount.com%2F20260225%2Fauto%2Fstorage%2Fgoog4_request&X-Goog-Date=20260225T173342Z&X-Goog-Expires=900&X-Goog-SignedHeaders=host&X-Goog-Signature=6ba5737707138d2f7a0f2788bd2bf34534a5d60911090280fc832024ac0cb3bf6b047991fbb06e0f0b3540b0740656bf3d7c2ef3f2a3333a3caada7f6fd756cbfb65a22615ea5503e0e964605694119871279640dbb3b1caac24e4cdb45f0f6eb4b0487a3d975ee2017273b0ffd18d09483892fd942d813e35713df7fb9aa4aa0317403e0ccb8b7005ac8374bdc3e66c6c43ccfce4c866bf8e9b2585922cb084800c94ebfb5866859d77b73914dad406bd930c2abe3a40bd140161e9a2f8b2ddef42afbb8b452a196c9fba93af1282e6b453cbe8ce8f55b066849358edd940d2de2091bde65f2226c589e7b404f016c6fadaf5dbd155eb0a6e457c9e4765b763",
+      "https://job-logs.eascdn.net/production/393b5974-ce62-4586-bfae-ea69b69b25d2/1771781369042-eadc2b40-b8e6-4771-8531-49d125a9b890.txt?X-Goog-Algorithm=GOOG4-RSA-SHA256&X-Goog-Credential=www-production%40exponentjs.iam.gserviceaccount.com%2F20260225%2Fauto%2Fstorage%2Fgoog4_request&X-Goog-Date=20260225T173342Z&X-Goog-Expires=900&X-Goog-SignedHeaders=host&X-Goog-Signature=59a6a86d513d2528c5dec261122680e34f37c694c49c8f356bb8e1dbec4ff95f7ad4d254f0770aeff9946f2004dbb528d02e190ca4267914f83c5ed3c807540e80ca1a09563d16739ee33e6c75ce42790cf88fae99663d5e4c8541d5750c007395361e590277f68bd462f4067d1e23ce9fc92f65ba25ea45accf7b151d10d3edb89a66ab64924ef4f972b8b248f9fbdcc0dbf22f837605edf77a0dd46e024f239ce1acb0e9c8a4de46775f0538e71873839f7f466ce4d3abd7ee40f0f2adde76f39d1111d60b5c301dad981843efea3ffe9fc449eca6cad461a0bc2415fde118ee29df9f3a450d1f3a9bf8a9ba5b882e505782443e4764959ed1c25dea0dc342",
+      "https://job-logs.eascdn.net/production/393b5974-ce62-4586-bfae-ea69b69b25d2/1771781369258-7ced25fc-9dd7-44b8-8bc0-2c203c477811.txt?X-Goog-Algorithm=GOOG4-RSA-SHA256&X-Goog-Credential=www-production%40exponentjs.iam.gserviceaccount.com%2F20260225%2Fauto%2Fstorage%2Fgoog4_request&X-Goog-Date=20260225T173342Z&X-Goog-Expires=900&X-Goog-SignedHeaders=host&X-Goog-Signature=74cf6d42404831e775677a7da2fed013120f74c7f851221615b415c2564a1697eb57ad5f530c1c294a657de71085582105883b17c8405e6781d5788bd131a60f8a24b39fb88e8f2fd52e3336daaa448006f635028f4da5aa669928c555a2129ed4fd92f513a5ceae3087b00ca5507440ed14e7449cfb9d746d9d1a091afb6fc15bd39f338a9c6ea5125cbef9be187f761d7eaaa7c638ff1e030feaa787bb882c039d357068ec3830b6881b5fa72158952d6815ac98a8deea271c872cd1655877a45be47c8dfdb70c341397b2b348c102cec5f205dccc83f787ca7bed15a1a806dada69d64c287609abb136abcc8934314d747945a555cc5d776ec8f499cb5876",
+      "https://job-logs.eascdn.net/production/393b5974-ce62-4586-bfae-ea69b69b25d2/1771781369437-02377007-2b0e-4844-b26a-9b5e21aeea19.txt?X-Goog-Algorithm=GOOG4-RSA-SHA256&X-Goog-Credential=www-production%40exponentjs.iam.gserviceaccount.com%2F20260225%2Fauto%2Fstorage%2Fgoog4_request&X-Goog-Date=20260225T173342Z&X-Goog-Expires=900&X-Goog-SignedHeaders=host&X-Goog-Signature=37d7562dc7839bde01f43a95de32916a8fb793bd75536b779a3436b07a2620189d9a378ddf0cad29834c827f5112d7d2a85d747c66ed1ac231a73265f002502cda99f5c91a016b4cf88f77f4c776303fbd98572be3a55620babdb73b06ee4204043664d0a8c663496d0988c9c7260769b0eb87b6bda527ca1e6d998ef710ad68caf753e2ba5f4055b7e4a3dee22543e277429442a7745aa9137e40e4fcb306ca2fc7dd1dbbcaf561d5b7334e636092c6d254ddde23e8ee7751f75b40befc3f265839aec58a6c0a75820e4327e91be29a92e86e026395ab614be08f8916686e6877f2b2194ee15f9848c61ff2e02a5e7b66ec3814d2ae32cfd3ee891a88d5a454"
+    ],
+    "project": {
+      "id": "826f6518-cc97-4065-bbfd-e0e8e51cb475",
+      "name": "tahajjud-plus",
+      "slug": "tahajjud-plus",
+      "ownerAccount": {
+        "id": "21e56b93-b012-48ae-9701-ab0893a46da2",
+        "name": "belalijawi"
+      }
+    },
+    "distribution": "STORE",
+    "buildProfile": "production",
+    "sdkVersion": "54.0.0",
+    "appVersion": "1.5.3",
+    "appBuildVersion": "12",
+    "gitCommitHash": "af9b44ffb94c480abc334d33d7ffaa058d2d53d0",
+    "gitCommitMessage": "feat: Production build v1.5.1 (Build 4) - iPad Optimization & Crash Fixes",
+    "priority": "NORMAL",
+    "createdAt": "2026-02-22T17:29:27.474Z",
+    "updatedAt": "2026-02-22T17:35:18.266Z",
+    "message": "Build 12: Definitive Native Build Number Fix",
+    "completedAt": "2026-02-22T17:35:08.744Z",
+    "expirationDate": "2026-03-24T17:29:27.542Z",
+    "isForIosSimulator": false,
+    "metrics": {
+      "buildWaitTime": 201,
+      "buildQueueTime": 44903,
+      "buildDuration": 292018
+    }
+  },
+  {
+    "id": "a20a652a-c1f3-47a9-9189-c1e79d7b8f82",
+    "status": "FINISHED",
+    "platform": "IOS",
+    "artifacts": {
+      "buildUrl": "https://expo.dev/artifacts/eas/m1xQH9difyFYUWgoyZfTJj.ipa",
+      "xcodeBuildLogsUrl": "https://job-logs.eascdn.net/production-xcode-logs/a20a652a-c1f3-47a9-9189-c1e79d7b8f82?X-Goog-Algorithm=GOOG4-RSA-SHA256&X-Goog-Credential=www-production%40exponentjs.iam.gserviceaccount.com%2F20260225%2Fauto%2Fstorage%2Fgoog4_request&X-Goog-Date=20260225T173342Z&X-Goog-Expires=900&X-Goog-SignedHeaders=host&X-Goog-Signature=70da6f8e8b95dab83927e0de1e5d151ab79d82b790e007b3a7cc22b90a98b3961940d14e271521f0cfd3ad1db177a93e7b57513d1f6e2806234441753a55a40662c4264053c7d1fdf5db261b878a49228af144f530b3ecfdefcc41b5eb46809b6783969b84f6a1256fc1aeda134d3400ef626b754f4497b5249c6c608f4335994ba25a1c796536cbfaec8fbc6af8368f814664614969d81d956116bb0d19798cc1610ba91039e0211197b7365c98f9c54699a44fc1e908fe0856b0620c91106bfbb8fc38849051602ec34ded21b2e07eedc4d15c05f2e2635bdc5315a227b82e81f5763c4dc98ce4206f149f53008ad3b90450d00fcb13e4382e175456e91b20",
+      "applicationArchiveUrl": "https://expo.dev/artifacts/eas/m1xQH9difyFYUWgoyZfTJj.ipa"
+    },
+    "fingerprint": {
+      "id": "019c865d-4b12-7858-bae6-97f786f852c3",
+      "hash": "076e73c9e94b9bab07a4b2ccd862736312b87b8b"
+    },
+    "initiatingActor": {
+      "id": "ac40966d-468b-4627-9ed0-6b4a8588d35a",
+      "displayName": "belalijawi"
+    },
+    "logFiles": [
+      "https://job-logs.eascdn.net/production/a20a652a-c1f3-47a9-9189-c1e79d7b8f82/1771780787290-3838b208-457e-4174-9fe4-114dd6c1beb6.txt?X-Goog-Algorithm=GOOG4-RSA-SHA256&X-Goog-Credential=www-production%40exponentjs.iam.gserviceaccount.com%2F20260225%2Fauto%2Fstorage%2Fgoog4_request&X-Goog-Date=20260225T173342Z&X-Goog-Expires=900&X-Goog-SignedHeaders=host&X-Goog-Signature=25a3772144d2695c6a4dbe3372042d070efa3a5fcf00ab6798400d10654f27d33a8f5eeb4cfddc5152b04d06061a4345e6572bbd1a1cc81726dd09a79c3d7539498c21f9d3d4e260c1fec522b0384c79f04b898055c438377c44043a8b202fdbdc2776e92c56cc82d8e4236f68c8b9fdf65fb2699ec331e994a8defb35cceec5b9622a9b732a7aa6e34b662b05e032c2980a5740e85ad51a8835011e0c07cea398c1018d649ab1822f5d19b35a752c44c9f141ebf5ec05de06ebe70783281aa2b500bfcf9d39985825b688f579870a8e474760e71daf7a3897c3229271e187416ed58ade73ec84523c248baf90bd8b78d0aa87b56b7178ec82f2b6d897357140",
+      "https://job-logs.eascdn.net/production/a20a652a-c1f3-47a9-9189-c1e79d7b8f82/1771780791495-bfd57148-db6a-4a93-9562-dc18e26b7a01.txt?X-Goog-Algorithm=GOOG4-RSA-SHA256&X-Goog-Credential=www-production%40exponentjs.iam.gserviceaccount.com%2F20260225%2Fauto%2Fstorage%2Fgoog4_request&X-Goog-Date=20260225T173342Z&X-Goog-Expires=900&X-Goog-SignedHeaders=host&X-Goog-Signature=9944e12c13af78c0f15b6fcfb2f5067d1272ebe4f43eeb1161b2c540fa8bfcb70add9c6fe068dedb258898727feaa45d3327ba78501d9402e465434396f88644d2ba0e7ee1747c1caddd5d035a19994eb0a6573bf918afb5c87aea9a9b0005080d1d0b51d662fa50e66e6d3887ee2720129a1d52fe8be8aa79d633466f704b7ec076e74250ee5d7010d585ec9cf057c2b317517c9a18aca997b6c61bd2d68b62819c1a3bea91884520e9210fac66615196249c825556bbe19f63d6f96f1240ce4fcbca341cfdf838831a08a3f1fbd3f54aa9cc199c6d23bcbe95bd478258d4e3931c8999056f05f622261a3cdc148fdc2dccf5f5b85c8a91ab1a0c51b8197b05",
+      "https://job-logs.eascdn.net/production/a20a652a-c1f3-47a9-9189-c1e79d7b8f82/1771780791742-fba10fe8-97bb-4647-8348-b8180c39c27d.txt?X-Goog-Algorithm=GOOG4-RSA-SHA256&X-Goog-Credential=www-production%40exponentjs.iam.gserviceaccount.com%2F20260225%2Fauto%2Fstorage%2Fgoog4_request&X-Goog-Date=20260225T173342Z&X-Goog-Expires=900&X-Goog-SignedHeaders=host&X-Goog-Signature=64d21c021d0b6f6a9fefb3c49d452762dcf00ae660e3e1401a7a42e481bfabd92c16796166ea0cd925909daf1aa81306aeeca3c70a4ef4af168fe18558c25aeac020b7351856618233ce45560a4988af566ebe878bdf40a1cf7b2e1caf1a1d4e96eeeb8237c554c7d9b309f582548f0bdcc58a5c515ee5ab53e8969cb122abe4a8051cccc7a7b553ec25351e7685f7e49547224ca181f3f8aae1ec5058a544cbdb961987ff97cce907b8a1e854cf735a80404dd41efbfb41a28ffe4d718557fc7eed60bde8fbdf465316d08728324a07ae431b39fc6949c06571180b821f779413b5e5f219c8a19bce7bae795a4f18790f7ceb25ced312d55a4e1802e7044a4d",
+      "https://job-logs.eascdn.net/production/a20a652a-c1f3-47a9-9189-c1e79d7b8f82/1771780791924-28f190df-2f67-426a-859a-652ba79cd0c7.txt?X-Goog-Algorithm=GOOG4-RSA-SHA256&X-Goog-Credential=www-production%40exponentjs.iam.gserviceaccount.com%2F20260225%2Fauto%2Fstorage%2Fgoog4_request&X-Goog-Date=20260225T173342Z&X-Goog-Expires=900&X-Goog-SignedHeaders=host&X-Goog-Signature=0a86df7d6a297b07c74b72103f72f5f1e2c2d2252d48f257e15811f846bd60630abf16d62ceb35aef5625496e0800ea8c9ea8caf880bea4503a00e18c93ebd9fb2d92ac2a507247c4b8ef5201c4b9350dc3569771a0ec8bc85d2f15027497fb11973e53b3157cf2cf7240f401474abb7ed49b16d1954ad0166e39b9baa4a34f1b19ce566b3fb9657ddcbe46d777fa81ab7a831a719e52187c27c8b21cfa65f9bc1433fbe3887fc067065bd0ebd54509dd41a2994814d5ddd637f2111216342186138f1e696111112b69dc55a5db9ecf9b2c87f2bc7ac555b96cb18374e76a50735fdf626edbd760f917de6037e735fe0ea1bd8ec8cd7aa873e392bc5dfafd725"
+    ],
+    "project": {
+      "id": "826f6518-cc97-4065-bbfd-e0e8e51cb475",
+      "name": "tahajjud-plus",
+      "slug": "tahajjud-plus",
+      "ownerAccount": {
+        "id": "21e56b93-b012-48ae-9701-ab0893a46da2",
+        "name": "belalijawi"
+      }
+    },
+    "distribution": "STORE",
+    "buildProfile": "production",
+    "sdkVersion": "54.0.0",
+    "appVersion": "1.5.3",
+    "appBuildVersion": "10",
+    "gitCommitHash": "af9b44ffb94c480abc334d33d7ffaa058d2d53d0",
+    "gitCommitMessage": "feat: Production build v1.5.1 (Build 4) - iPad Optimization & Crash Fixes",
+    "priority": "NORMAL",
+    "createdAt": "2026-02-22T17:19:46.922Z",
+    "updatedAt": "2026-02-22T17:25:24.299Z",
+    "message": "Build 11: Atomic Deletion & Notification Safety",
+    "completedAt": "2026-02-22T17:25:16.791Z",
+    "expirationDate": "2026-03-24T17:19:46.949Z",
+    "isForIosSimulator": false,
+    "metrics": {
+      "buildWaitTime": 238,
+      "buildQueueTime": 47991,
+      "buildDuration": 277457
+    }
+  },
+  {
+    "id": "86098154-c740-4975-ac32-471914d4b04f",
+    "status": "FINISHED",
+    "platform": "IOS",
+    "artifacts": {
+      "buildUrl": "https://expo.dev/artifacts/eas/hxZaCgmehL3m8MsmjDXGNt.ipa",
+      "xcodeBuildLogsUrl": "https://job-logs.eascdn.net/production-xcode-logs/86098154-c740-4975-ac32-471914d4b04f?X-Goog-Algorithm=GOOG4-RSA-SHA256&X-Goog-Credential=www-production%40exponentjs.iam.gserviceaccount.com%2F20260225%2Fauto%2Fstorage%2Fgoog4_request&X-Goog-Date=20260225T173342Z&X-Goog-Expires=900&X-Goog-SignedHeaders=host&X-Goog-Signature=001be2d6264ded4fbdc13d49b2d1dd0841ebe45d3c96fba75e463f23d10cd36e953a6384869c033b1e4fcf9c8333d97b24c9688098e3d2c4b9da2534fafa81752ebec299d7036e95abea809f84745af93886e06057d76d4e6e4b6b0580c1a0bb9cc533cf8817e479cdbfa49e53e6aac855c06295be9cbc9bd769d3682927adf4f0a2a3203302726bef7c6bc6cc675cd6c51d17919900fc05d1fa6136c18ad4f2a16bbe77d2dc327f3b3a59f96a399f4c201fe2dd111644489479f7f5474e1efc04ae800f5c79faba3d4299bdd67cf8deb29a9bee654fefbbab89d57959c85f74d0b53bd246eab1d9778b368b545b564fdde5ec5911be1500ad224c78d1693750",
+      "applicationArchiveUrl": "https://expo.dev/artifacts/eas/hxZaCgmehL3m8MsmjDXGNt.ipa"
+    },
+    "fingerprint": {
+      "id": "019c8647-93d7-7d77-adbe-eca80cfb9363",
+      "hash": "319ad59d97dd03d1bb3a87556a5325c211b4b738"
+    },
+    "initiatingActor": {
+      "id": "ac40966d-468b-4627-9ed0-6b4a8588d35a",
+      "displayName": "belalijawi"
+    },
+    "logFiles": [
+      "https://job-logs.eascdn.net/production/86098154-c740-4975-ac32-471914d4b04f/1771779363963-c33a68c9-2750-46cf-805b-126ebe708555.txt?X-Goog-Algorithm=GOOG4-RSA-SHA256&X-Goog-Credential=www-production%40exponentjs.iam.gserviceaccount.com%2F20260225%2Fauto%2Fstorage%2Fgoog4_request&X-Goog-Date=20260225T173342Z&X-Goog-Expires=900&X-Goog-SignedHeaders=host&X-Goog-Signature=a03782feb58059fd71fad1ffdae19ffb2153c5c90e50bf2edd7c6c332796b80e0526fabfc21f330775ba2228e0fb23a5f556a2e37cdaa75a40828b0bd90a04d045f6027c0c69b101860d9a1a49353f5bd764a01817d1d4117eba9f3c9f7480fa51b3f316d99e9e14f0d5ce16665db735f99f5a27e7285ab4b8577a663706eca4333a75bacd8b12cf2fac9019788b438517fe585428cc9753ae8f5e55ca0458b2426bac8528f149a0e7501419c64a37a172cf9c973e8c4ddeb40a5a5a2d36f815a54049286c184b8bbd7330ef581a0f353e328ade4e9d8a35803ee25727f5eff8a8422a700d550a8dfb7aea2ce319210e876fd5660fca161a12f7be433d736552",
+      "https://job-logs.eascdn.net/production/86098154-c740-4975-ac32-471914d4b04f/1771779372548-dc218db6-9a33-4780-a064-016f79ea6d45.txt?X-Goog-Algorithm=GOOG4-RSA-SHA256&X-Goog-Credential=www-production%40exponentjs.iam.gserviceaccount.com%2F20260225%2Fauto%2Fstorage%2Fgoog4_request&X-Goog-Date=20260225T173342Z&X-Goog-Expires=900&X-Goog-SignedHeaders=host&X-Goog-Signature=0ac522dd17dddbd116bbf3a56a62b6e17beb9f1b2e6eacca68708cea0734d75d3f850b96fb57d8525a5ac58158cb7549e2b071eb48a74b1acc0f508f40bea827e7f47301002aeba38de5e7a0c8432407bfc9350adc6834772c0291ffc46262b32ba72536342f94ff7a085627f796ea4248b1f8fe18ef5516ff06f632e9686300efd123c0a2b4ef667b391742a2c1a3616ba339d4be16d0b04613b94aafcd6e01336cd3b23d4c232a35a80ac6e3101e31d4ffe823c7a2cf584c52395dafa7f6de33eb5775910f093692d447c23e434b666fa3b3a60654a744d30497afa85ae68fbb1d383d70796d237af5ab0ac37c94ebf044a578c2629e838eaccf472a11dec3",
+      "https://job-logs.eascdn.net/production/86098154-c740-4975-ac32-471914d4b04f/1771779372779-a12f23d2-aaec-42ca-88c8-787e8a2d3449.txt?X-Goog-Algorithm=GOOG4-RSA-SHA256&X-Goog-Credential=www-production%40exponentjs.iam.gserviceaccount.com%2F20260225%2Fauto%2Fstorage%2Fgoog4_request&X-Goog-Date=20260225T173342Z&X-Goog-Expires=900&X-Goog-SignedHeaders=host&X-Goog-Signature=32e6c0002df9cf44b0af6dfcbb6f727a042b21d8362dd669de54c5d1e62697286127af1cee67047e957271890ac90458354505189c19865fc8664479434a532a7405eef0494bcfc3492a8f5000aee07629eff937e4466974c0d94b7fa3832df0324c9a8bab1a9c6533818312d93652073a62fb399e9933d0b21df446a41f019986aaa65ad358a70714834cf6c7f154408e8ecf9e7663d882006e50bd60d2e4dd27ca2e6e67b5ed4a73947fdfe655dbaec39aa98f4bc03531b35692aa35d12f72b8f5fca97e587ae6a0f3adbf87df9cb62a0c44a623accfbe91dc01d0d7a52919d60ffb23cf239d9ac75596362f0b1b25f28859448e204f02f8179e4960223aaa",
+      "https://job-logs.eascdn.net/production/86098154-c740-4975-ac32-471914d4b04f/1771779372966-49f9cf41-8d2c-4ce4-93c1-6585156036a8.txt?X-Goog-Algorithm=GOOG4-RSA-SHA256&X-Goog-Credential=www-production%40exponentjs.iam.gserviceaccount.com%2F20260225%2Fauto%2Fstorage%2Fgoog4_request&X-Goog-Date=20260225T173342Z&X-Goog-Expires=900&X-Goog-SignedHeaders=host&X-Goog-Signature=5fc9676c06eda545f0a8a86d07f1c6539966d0f8f5f19e9bfc52833bce834906d095f4546075e400452977c3945c8d6a82c87089c040881a85373c70dc4b359259b52e413235270a64c0a9d8fd6bc6e9417c2be0d936823bb279889fe896b24bb2132f826050909695e4003ece953d5003f797f05cbc2a6cff30f6bfb1a713915809462e0f1eff5fd6c57b6e41a21bc9b05b83c4c1a60f8bfcb807e39ccc2a400ec01a3871728f98f2f7a4b6a2de7bed1cf735fb0edee3a45756802d02036db1b24ed52cfcd35694972e559d2162fa9c627260a8c95c032a27b7c9c33d954a56ad56b623d530a7328e9581a88c5e64e2cbc0f72e5bae925c15b4c3b1b728afcb"
+    ],
+    "project": {
+      "id": "826f6518-cc97-4065-bbfd-e0e8e51cb475",
+      "name": "tahajjud-plus",
+      "slug": "tahajjud-plus",
+      "ownerAccount": {
+        "id": "21e56b93-b012-48ae-9701-ab0893a46da2",
+        "name": "belalijawi"
+      }
+    },
+    "distribution": "STORE",
+    "buildProfile": "production",
+    "sdkVersion": "54.0.0",
+    "appVersion": "1.5.3",
+    "appBuildVersion": "10",
+    "gitCommitHash": "af9b44ffb94c480abc334d33d7ffaa058d2d53d0",
+    "gitCommitMessage": "feat: Production build v1.5.1 (Build 4) - iPad Optimization & Crash Fixes",
+    "priority": "NORMAL",
+    "createdAt": "2026-02-22T16:56:03.774Z",
+    "updatedAt": "2026-02-22T17:01:46.707Z",
+    "completedAt": "2026-02-22T17:01:41.864Z",
+    "expirationDate": "2026-03-24T16:56:03.795Z",
+    "isForIosSimulator": false,
+    "metrics": {
+      "buildWaitTime": 72,
+      "buildQueueTime": 50212,
+      "buildDuration": 283571
+    }
+  },
+  {
+    "id": "132debbf-7ee6-448b-a8c7-29023336b38e",
+    "status": "ERRORED",
+    "platform": "ANDROID",
+    "error": {
+      "errorCode": "EAS_BUILD_UNKNOWN_GRADLE_ERROR",
+      "message": "Gradle build failed with unknown error. See logs for the \"Run gradlew\" phase for more information."
+    },
+    "artifacts": {},
+    "fingerprint": {
+      "id": "019c8631-78be-7139-b39e-f11e08571845",
+      "hash": "5ba760f6758dc5c488e28067aa7193426e9d72a2"
+    },
+    "initiatingActor": {
+      "id": "ac40966d-468b-4627-9ed0-6b4a8588d35a",
+      "displayName": "belalijawi"
+    },
+    "logFiles": [
+      "https://job-logs.eascdn.net/production/132debbf-7ee6-448b-a8c7-29023336b38e/1771777915241-b4b1974c-c884-4869-bd59-8e00f8b03e46.txt?X-Goog-Algorithm=GOOG4-RSA-SHA256&X-Goog-Credential=www-production%40exponentjs.iam.gserviceaccount.com%2F20260225%2Fauto%2Fstorage%2Fgoog4_request&X-Goog-Date=20260225T173342Z&X-Goog-Expires=900&X-Goog-SignedHeaders=host&X-Goog-Signature=1379469e7ef9fdc3ff703a03085422fd4d721b19a3d444b40a6eedacc4acc4d07e300c36dc6cee7081fdea4b4979b3c4e490eddcb8c82cb4416b353199a10c73c7a1732601ac25190b770aa55d1781dcc9f6ec494249947965edc425e004df2a416c5f0be8299462b5b59aa48b9a57d2a32e7d27f60924ccc471983a2abfe99c9880414710c2e8d2174cae39c0cf9ef517c0bb2ae5babfcc8ade95fa4dd43ab69e6af8baa755887cec4bc9e081601acef8f31a4d1e7b2f3fdfd642ee86b803e18fbe671ad0049c3780011c2b8b370871b9ac627b217934fc453e0336863ad2d0d91a523164beda28b85f59a112d1b0e899becfe57a79bf2d7f822f8c6631ed77",
+      "https://job-logs.eascdn.net/production/132debbf-7ee6-448b-a8c7-29023336b38e/1771778275054-437528ec-9742-4d91-9ba3-d1935e4b345c.txt?X-Goog-Algorithm=GOOG4-RSA-SHA256&X-Goog-Credential=www-production%40exponentjs.iam.gserviceaccount.com%2F20260225%2Fauto%2Fstorage%2Fgoog4_request&X-Goog-Date=20260225T173342Z&X-Goog-Expires=900&X-Goog-SignedHeaders=host&X-Goog-Signature=50c184e486fc74dfc9a430d103aad9750ebd56777df8bdf6b045186297785642b76490b2f91081359009a31c6ef69f187df1ef2c189a84645dcae01431348197eaf6f790183f262fc529a2e6e96d5d37f80a3cfa3dfeb721165bfb1588e1a2eba0231f4ed0db912f74b5a2d992d0cdcbf5ef4c3078384b58c4cdaf7e6b824a08be9209022e92c75075670748d1651db48ffe51d93ec51e99462623b9d3e28ee8899bec9fd25eae5a77e42af5a70ee425781d0e0c26e9b377deb3261410ec08b3e5f760b5dcbc62bad9e3e3b4be707da924e1acfd1eb1bc2cdd89a2021bfe51653691aef943c5b4c0037da66b36b59a645fbd4bb2c9f6fa6d8741bc6d9ea28dad",
+      "https://job-logs.eascdn.net/production/132debbf-7ee6-448b-a8c7-29023336b38e/1771778279519-ab4d3608-304c-4e1b-8ac0-d59cc21b5364.txt?X-Goog-Algorithm=GOOG4-RSA-SHA256&X-Goog-Credential=www-production%40exponentjs.iam.gserviceaccount.com%2F20260225%2Fauto%2Fstorage%2Fgoog4_request&X-Goog-Date=20260225T173342Z&X-Goog-Expires=900&X-Goog-SignedHeaders=host&X-Goog-Signature=231f08cd4db39e03eec15af7ecc4d37730b0104e5ed311cf8ab208182ed5b4bc173e69260234fc09a904da61d97e12289911cd49c69dd75b8eaab630b6df0ac80263f179a9d1938a1a25a21b4af4e9234e40e8eb9ec4df2438487259fb41cddf38214abdf7f4298b1c71c70f8973f5497dff7fabc4ba917b02a0d4a421046bc2e0a65c9766308734c73df754b4ec0f770f9bf6551e1b6b611684ed148f20033c8c499ebb47adf07471011aac90f441018daad3126ff27c5d586c54dee47670835349791e572e01a9d66c43f22f476414cc590b8fdbe6ca111566aa31ff20fc01d9bac84259ac40363a581d61f339c76a7285ac33610d86624ea3f78305ab3848",
+      "https://job-logs.eascdn.net/production/132debbf-7ee6-448b-a8c7-29023336b38e/1771778279719-9ca70b76-5b9e-467e-961e-ef9d82013ef4.txt?X-Goog-Algorithm=GOOG4-RSA-SHA256&X-Goog-Credential=www-production%40exponentjs.iam.gserviceaccount.com%2F20260225%2Fauto%2Fstorage%2Fgoog4_request&X-Goog-Date=20260225T173342Z&X-Goog-Expires=900&X-Goog-SignedHeaders=host&X-Goog-Signature=1e0ed6d3808df77fcb971e76127affdc179dca265f01b3a69fb6130c35c6212bba8d8256b0fb651bd4f56c04e4f7dae9cafdd51f6091ffdeb76e297a12d09eb9361c1647040e4c87c35b1a4e59c8e304bb1b5e987f05d59eac5c7acdaca64a61b58a40d1007292d6319f17c2842d1185793ca3fa867096f46c426c93c3b35e5d212288e3fd293fb5763d2751e907d2b453673f6904ce758ede267a4831a6075d6297e88487991754301d71b3f2e0cf9dfa9e961a9b19fa43bff41b18110adf0b021d54fae7604b15bc0daa49ac643249bf20f74beb3c37f22300c201dd8c89f1fa77bb37e76fab5e211194efc9421a3e7b2bc9fd635d7931d77f82d88c90726d",
+      "https://job-logs.eascdn.net/production/132debbf-7ee6-448b-a8c7-29023336b38e/1771778279904-ae8b5da9-04ff-4393-a85c-e300ec363a06.txt?X-Goog-Algorithm=GOOG4-RSA-SHA256&X-Goog-Credential=www-production%40exponentjs.iam.gserviceaccount.com%2F20260225%2Fauto%2Fstorage%2Fgoog4_request&X-Goog-Date=20260225T173342Z&X-Goog-Expires=900&X-Goog-SignedHeaders=host&X-Goog-Signature=56eda7eff4701c1193e466d29541b163c1318df8ab82eea8e5bed05b62c6f05e1530995a4ef7b7e4dd4f01c9bd403bc80437be4952d48b0b5c77f81ee6de77de5bfc3f961b5b06376c02f543d51dbfc3e34ff56f9a206ab4a6c8cf319185addab3c59f7bbed5781928d14c16caa485b8822cd655b90edbf46583bb4017ce712fc95251e53c968316e3f6d4a765b5394aa67cdf84c3c9f8d9b6c010bb354986907f13a70e4b4d7c9d59b9e9d62974088a280a1b2bf6d9daafaabce224d2bf16ac3383a134355096e74578da8f5383357e19ee6b542f7bb5b945a3bfd8b6188a74ad25e5c775850f8b9442b62a0d3b09ba20c15451d0ebc50323ea2de966728409"
+    ],
+    "project": {
+      "id": "826f6518-cc97-4065-bbfd-e0e8e51cb475",
+      "name": "tahajjud-plus",
+      "slug": "tahajjud-plus",
+      "ownerAccount": {
+        "id": "21e56b93-b012-48ae-9701-ab0893a46da2",
+        "name": "belalijawi"
+      }
+    },
+    "distribution": "STORE",
+    "buildProfile": "production",
+    "sdkVersion": "54.0.0",
+    "appVersion": "1.5.3",
+    "appBuildVersion": "4",
+    "gitCommitHash": "af9b44ffb94c480abc334d33d7ffaa058d2d53d0",
+    "gitCommitMessage": "feat: Production build v1.5.1 (Build 4) - iPad Optimization & Crash Fixes",
+    "priority": "NORMAL",
+    "createdAt": "2026-02-22T16:31:55.035Z",
+    "updatedAt": "2026-02-22T16:41:23.768Z",
+    "completedAt": "2026-02-22T16:41:16.147Z",
+    "expirationDate": "2026-03-24T16:31:55.064Z",
+    "isForIosSimulator": false,
+    "metrics": {
+      "buildWaitTime": 360467,
+      "buildQueueTime": 44539,
+      "buildDuration": 155832
+    }
+  }
+]

@@ -77,8 +77,8 @@ export function QuranTab() {
     }
 
     return (
-        <SafeAreaView style={styles.container}>
-            <View style={[{ flex: 1 }, tabletContentStyle()]}>
+        <SafeAreaView style={styles.container} edges={['top', 'left', 'right']}>
+            <View style={[styles.container, tabletContentStyle()]}>
                 <View style={styles.header}>
                     <Text style={[styles.title, { color: colors.accent }]}>The Holy Quran</Text>
                     <Text style={styles.subtitle}>Guidance for the heart</Text>
@@ -133,6 +133,7 @@ export function QuranTab() {
                     <ActivityIndicator size="large" color="#f8fafc" style={{ marginTop: 50 }} />
                 ) : (
                     <FlatList
+                        style={{ flex: 1 }}
                         data={filteredSurahs}
                         keyExtractor={(item) => item.number.toString()}
                         contentContainerStyle={styles.listContent}
@@ -253,7 +254,7 @@ const styles = StyleSheet.create({
     },
     listContent: {
         paddingHorizontal: 20,
-        paddingBottom: 130,
+        paddingBottom: 180,
     },
     card: {
         borderRadius: 20,

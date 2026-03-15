@@ -19,19 +19,19 @@ interface GoalCardProps {
     value: number;
     icon: React.ComponentType<any>;
     onIncrement: () => void;
-    onDecrement: () => void;
     target?: number;
     disabled?: boolean;
     disabledMessage?: string;
     accentColor: string;
+    onCorrect: (amount: number) => void;
 }
 
-function GoalCard({ title, value, icon: Icon, onIncrement, onDecrement, target = 30, disabled = false, disabledMessage, accentColor }: GoalCardProps) {
+function GoalCard({ title, value, icon: Icon, onIncrement, onCorrect, target = 30, disabled = false, disabledMessage, accentColor }: GoalCardProps) {
     const scale = useSharedValue(1);
-    const progress = (value / target) * 100;
+    const progress = Math.min((value / target) * 100, 100);
     const radius = 35;
     const circumference = 2 * Math.PI * radius;
-    const strokeDashoffset = circumference - (progress / 100) * circumference;
+    const strokeDashoffset = Math.max(circumference - (progress / 100) * circumference, 0);
 
     const animatedStyle = useAnimatedStyle(() => ({
         transform: [{ scale: scale.value }]
@@ -55,13 +55,26 @@ function GoalCard({ title, value, icon: Icon, onIncrement, onDecrement, target =
             onPress={handlePress}
             onLongPress={() => {
                 haptic.medium();
-                Alert.alert(
+                Alert.prompt(
                     "Correction",
-                    `Remove 1 ${title.toLowerCase()}?`,
+                    `Enter amount of ${title.toLowerCase()} to remove:`,
                     [
                         { text: "Cancel", style: "cancel" },
-                        { text: "Remove", style: "destructive", onPress: () => { haptic.warning(); onDecrement(); } }
-                    ]
+                        {
+                            text: "Remove",
+                            style: "destructive",
+                            onPress: (amount: string | undefined) => {
+                                if (amount) {
+                                    const num = parseInt(amount, 10);
+                                    if (!isNaN(num) && num > 0) {
+                                        onCorrect(num);
+                                    }
+                                }
+                            }
+                        }
+                    ],
+                    'plain-text',
+                    ''
                 );
             }}
             activeOpacity={0.9}
@@ -119,6 +132,7 @@ export function RamadanTab() {
     const [fastDays, setFastDays] = useState(0);
     const [quranGoal, setQuranGoal] = useState(0);
     const [isRamadanActive, setIsRamadanActive] = useState(false);
+    const [ramadanDay, setRamadanDay] = useState(0);
     const [daysUntil, setDaysUntil] = useState(0);
     const [lastFastDate, setLastFastDate] = useState<string | null>(null);
 
@@ -127,9 +141,11 @@ export function RamadanTab() {
 
     useEffect(() => {
         const now = new Date();
-        const diff = differenceInDays(RAMADAN_START, now);
-        setDaysUntil(Math.max(0, diff));
+        const diff = differenceInDays(now, RAMADAN_START);
+        setDaysUntil(Math.max(0, differenceInDays(RAMADAN_START, now)));
         setIsRamadanActive(now >= RAMADAN_START);
+        const currentDay = Math.floor(diff) + 1;
+        setRamadanDay(currentDay > 0 && currentDay <= 30 ? currentDay : 0);
 
         loadLocationAndTimes();
         loadGoals();
@@ -211,12 +227,12 @@ export function RamadanTab() {
     };
 
     return (
-        <SafeAreaView style={styles.safeArea}>
+        <SafeAreaView style={styles.safeArea} edges={['top', 'left', 'right']}>
             <ScrollView style={styles.container} contentContainerStyle={[styles.content, tabletContentStyle()]} showsVerticalScrollIndicator={false}>
                 <View style={styles.header}>
                     <Text style={[styles.headerTitle, { color: colors.accent }]}>Ramadan 2026</Text>
                     <Text style={styles.headerSubtitle}>
-                        {isRamadanActive ? 'Ramadan Mubarak' : `${daysUntil} days until the blessed month`}
+                        {isRamadanActive ? `Day ${ramadanDay} • Ramadan Mubarak` : `${daysUntil} days until the blessed month`}
                     </Text>
                 </View>
 
@@ -231,6 +247,9 @@ export function RamadanTab() {
                     <BlurView intensity={40} tint="dark" style={StyleSheet.absoluteFill} />
                     <View style={styles.countdownContent}>
                         <Moon color={colors.accent} size={32} />
+                        {isRamadanActive && (
+                            <Text style={[styles.dayBadge, { color: colors.accent }]}>DAY {ramadanDay}</Text>
+                        )}
                         <Text style={[styles.countdownTime, { color: colors.primaryText }]}>{countdown || '--:--:--'}</Text>
                         {!isRamadanActive && (
                             <Text style={styles.contingencyNote}>Subject to local moon sighting 🌙</Text>
@@ -270,11 +289,12 @@ export function RamadanTab() {
                             setLastFastDate(today);
                             saveGoals(n, quranGoal, today);
                         }}
-                        onDecrement={() => {
-                            const n = Math.max(0, fastDays - 1);
+                        onCorrect={(amount) => {
+                            const n = Math.max(0, fastDays - amount);
                             setFastDays(n);
-                            setLastFastDate(null); // Reset date lock if removing
-                            saveGoals(n, quranGoal, null);
+                            if (n === 0) setLastFastDate(null);
+                            saveGoals(n, quranGoal, n === 0 ? null : lastFastDate);
+                            haptic.warning();
                         }}
                     />
                     <GoalCard
@@ -287,10 +307,11 @@ export function RamadanTab() {
                             setQuranGoal(n);
                             saveGoals(fastDays, n);
                         }}
-                        onDecrement={() => {
-                            const n = Math.max(0, quranGoal - 1);
+                        onCorrect={(amount) => {
+                            const n = Math.max(0, quranGoal - amount);
                             setQuranGoal(n);
                             saveGoals(fastDays, n);
+                            haptic.warning();
                         }}
                     />
                 </View>
@@ -326,7 +347,7 @@ export function RamadanTab() {
 const styles = StyleSheet.create({
     safeArea: { flex: 1, backgroundColor: 'transparent' },
     container: { flex: 1 },
-    content: { padding: 24, paddingBottom: 100 },
+    content: { padding: 24, paddingBottom: 180 },
     header: { marginBottom: 32 },
     headerTitle: { fontSize: 32, fontWeight: '900', letterSpacing: -1 },
     headerSubtitle: { color: '#94a3b8', fontSize: 16, fontWeight: '600', marginTop: 4 },
@@ -339,7 +360,8 @@ const styles = StyleSheet.create({
         marginBottom: 32,
     },
     countdownContent: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 24 },
-    countdownTime: { fontSize: 24, fontWeight: '900', marginVertical: 12 },
+    countdownTime: { fontSize: 24, fontWeight: '900', marginVertical: 8 },
+    dayBadge: { fontSize: 14, fontWeight: '900', letterSpacing: 2, marginTop: 12 },
     contingencyNote: { color: '#64748b', fontSize: 10, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 0.5, marginTop: -4, marginBottom: 12 },
     timeLabels: { flexDirection: 'row', width: '100%', justifyContent: 'space-around', marginTop: 12 },
     timeLabelItem: { alignItems: 'center' },

@@ -19,7 +19,7 @@
     <key>CFBundlePackageType</key>
     <string>$(PRODUCT_BUNDLE_PACKAGE_TYPE)</string>
     <key>CFBundleShortVersionString</key>
-    <string>1.0.0</string>
+    <string>1.5.3</string>
     <key>CFBundleSignature</key>
     <string>????</string>
     <key>CFBundleURLTypes</key>
@@ -30,9 +30,17 @@
           <string>com.tahajjudplus.app</string>
         </array>
       </dict>
+      <dict>
+        <key>CFBundleTypeRole</key>
+        <string>Editor</string>
+        <key>CFBundleURLSchemes</key>
+        <array>
+          <string>com.googleusercontent.apps.434827238021-l54qkp6ts99g1vsf5ha314tfj056sk50</string>
+        </array>
+      </dict>
     </array>
     <key>CFBundleVersion</key>
-    <string>1</string>
+    <string>12</string>
     <key>LSMinimumSystemVersion</key>
     <string>12.0</string>
     <key>LSRequiresIPhoneOS</key>
@@ -45,13 +53,13 @@
       <true/>
     </dict>
     <key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
-    <string>Allow $(PRODUCT_NAME) to access your location</string>
+    <string>Tahajjud+ uses your location to calculate the five daily Islamic prayer times (Fajr, Dhuhr, Asr, Maghrib, and Isha) specific to your city, and to orient the Qibla compass toward Mecca. For example, a user in Dubai will see prayer times calculated for Dubai and a compass pointing from Dubai toward the Kaaba in Mecca.</string>
     <key>NSLocationAlwaysUsageDescription</key>
-    <string>Allow $(PRODUCT_NAME) to access your location</string>
+    <string>Tahajjud+ uses your location to calculate the five daily Islamic prayer times specific to your city and to orient the Qibla compass toward Mecca. For example, a user in London will receive prayer times calculated for London.</string>
     <key>NSLocationWhenInUseUsageDescription</key>
-    <string>Allow $(PRODUCT_NAME) to access your location</string>
-    <key>RCTNewArchEnabled</key>
-    <true/>
+    <string>Tahajjud+ uses your location to calculate the five daily Islamic prayer times (Fajr, Dhuhr, Asr, Maghrib, and Isha) specific to your city, and to orient the Qibla compass toward Mecca. For example, a user in Dubai will see prayer times calculated for Dubai and a compass pointing from Dubai toward the Kaaba in Mecca.</string>
+    <key>NSLocalNetworkUsageDescription</key>
+    <string>Tahajjud+ uses the local network to connect to Firebase for syncing your Tahajjud prayer logs and journal entries across your devices. For example, a Tahajjud letter you write on your iPhone will sync and appear on your iPad.</string>
     <key>UILaunchStoryboardName</key>
     <string>SplashScreen</string>
     <key>UIRequiredDeviceCapabilities</key>
@@ -78,5 +86,9 @@
     <string>Dark</string>
     <key>UIViewControllerBasedStatusBarAppearance</key>
     <false/>
+    <key>UIBackgroundModes</key>
+    <array>
+      <string>audio</string>
+    </array>
   </dict>
 </plist>
