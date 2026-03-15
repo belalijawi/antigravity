@@ -6,8 +6,6 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { QuranService, SurahDetail, Edition, Ayah } from '../services/QuranService';
 import { Audio, AVPlaybackStatus, InterruptionModeIOS, InterruptionModeAndroid } from 'expo-av';
 import { useTheme } from '../context/ThemeContext';
-import { usePurchases } from '../context/PurchasesContext';
-import Paywall from './Paywall';
 
 interface Props {
     surahNumber: number;
@@ -66,8 +64,6 @@ export function SurahReader({ surahNumber, edition = 'en.sahih', onEditionChange
     const [initialScrollDone, setInitialScrollDone] = useState(false);
     const [bookmarkedAyah, setBookmarkedAyah] = useState<number | null>(null);
     const lastReadAyahRef = useRef<number>(1);
-    const [showPaywall, setShowPaywall] = useState(false);
-    const { isPremium } = usePurchases();
 
     // Audio State & Refs (Refs prevent stale closures in playback callbacks)
     const [isPlaying, setIsPlaying] = useState(false);
@@ -416,13 +412,6 @@ export function SurahReader({ surahNumber, edition = 'en.sahih', onEditionChange
     };
 
     const handleEditionSelect = (item: typeof VERIFIED_EDITIONS[0]) => {
-        if (item.isPremium && !isPremium) {
-            setModalVisible(false);
-            setTimeout(() => {
-                setShowPaywall(true);
-            }, 500);
-            return;
-        }
         onEditionChange(item.identifier);
         setModalVisible(false);
     };
@@ -602,9 +591,6 @@ export function SurahReader({ surahNumber, edition = 'en.sahih', onEditionChange
                                                 item.identifier === edition && styles.yellowText
                                             ]}>
                                                 {item.displayName}
-                                                {item.isPremium && !isPremium && (
-                                                    <Text style={{ fontSize: 10, color: '#f59e0b' }}>  PLUS</Text>
-                                                )}
                                             </Text>
                                             <View style={styles.verifiedBadge}>
                                                 <Check color="#10b981" size={10} strokeWidth={3} />
@@ -623,15 +609,6 @@ export function SurahReader({ surahNumber, edition = 'en.sahih', onEditionChange
                         />
                     </View>
                 </View>
-            </Modal>
-
-            {/* Premium Paywall Modal */}
-            <Modal
-                animationType="slide"
-                visible={showPaywall}
-                onRequestClose={() => setShowPaywall(false)}
-            >
-                <Paywall onClose={() => setShowPaywall(false)} />
             </Modal>
         </View>
     );
