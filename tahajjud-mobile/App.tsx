@@ -269,9 +269,9 @@ function AppNavigator() {
   const handleOnboardingComplete = async (name?: string) => {
     try {
       await AsyncStorage.setItem('onboarded', 'true');
-      if (name) {
+      if (name && name.trim().length > 0) {
         // Save to AsyncStorage AND update the ThemeContext immediately
-        await setUserName(name);
+        await setUserName(name.trim());
       }
       setIsOnboarded(true);
     } catch (e) {

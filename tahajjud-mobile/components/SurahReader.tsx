@@ -37,7 +37,7 @@ const BISMILLAH_MAP: Record<string, string> = {
 
 const VERIFIED_EDITIONS = [
     { identifier: 'en.sahih', displayName: 'English', subName: 'Saheeh International', isPremium: false },
-    { identifier: 'ar.alafasy', displayName: 'Arabic', subName: 'Mishary Rashid Alafasy', isPremium: true },
+    { identifier: 'quran-uthmani', displayName: 'Arabic', subName: 'Original Text (Uthmani)', isPremium: true },
     { identifier: 'en.khattab', displayName: 'English', subName: 'The Clear Quran (Khattab)', isPremium: true },
     { identifier: 'fr.hamidullah', displayName: 'French', subName: 'Muhammad Hamidullah', isPremium: true },
     { identifier: 'es.cortes', displayName: 'Spanish', subName: 'Julio Cortes', isPremium: true },

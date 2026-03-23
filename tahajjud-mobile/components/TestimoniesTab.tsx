@@ -1,17 +1,20 @@
-import React, { useState } from 'react';
-import { View, Text, FlatList, TouchableOpacity, StyleSheet, Linking, Share, ScrollView, Platform, Alert } from 'react-native';
+import React, { useState, useRef, useEffect } from 'react';
+import { View, Text, FlatList, TouchableOpacity, StyleSheet, Linking, Share, ScrollView, Platform, Alert, RefreshControl } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Heart, Send, Share2, BookHeart, Sparkles } from 'lucide-react-native';
 import { BlurView } from 'expo-blur';
 import { LinearGradient } from 'expo-linear-gradient';
 import Animated, { FadeInDown, FadeIn } from 'react-native-reanimated';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { getFirebaseDb } from '../utils/firebase';
+import { collection, query, where, getDocs } from 'firebase/firestore';
 import { useTheme } from '../context/ThemeContext';
 import { haptic } from '../utils/haptic';
 import { initialTestimonies, Testimony, storyTopics } from '../data/testimonies';
 import { captureRef } from 'react-native-view-shot';
 import { QuoteShareCard } from './QuoteShareCard';
 import { checkAchievements } from '../utils/achievements';
-import { useRef } from 'react';
+
 
 const TestimonyCard = ({ item, onShare }: { item: Testimony, onShare: (item: Testimony) => void }) => {
     const [liked, setLiked] = useState(false);
@@ -86,11 +89,69 @@ export function TestimoniesTab() {
     const { colors } = useTheme();
     const [selectedTopic, setSelectedTopic] = useState('All');
     const [sharingQuote, setSharingQuote] = useState<Testimony | null>(null);
+    const [testimonies, setTestimonies] = useState<Testimony[]>(initialTestimonies);
+    const [isRefreshing, setIsRefreshing] = useState(false);
     const viewShotRef = useRef<View>(null);
 
+    useEffect(() => {
+        loadTestimonies();
+    }, []);
+
+    const loadTestimonies = async () => {
+        try {
+            // Check cache first for instant load
+            const cached = await AsyncStorage.getItem('cached-testimonies');
+            if (cached) {
+                setTestimonies(JSON.parse(cached));
+            }
+
+            // Sync with backend
+            const db = getFirebaseDb();
+            if (db) {
+                const q = query(
+                    collection(db, 'community'),
+                    where('type', '==', 'testimony')
+                );
+
+                const snapshot = await getDocs(q);
+                if (!snapshot.empty) {
+                    const freshData: any[] = [];
+                    snapshot.forEach(doc => {
+                        const data = doc.data();
+                        freshData.push({
+                            id: doc.id,
+                            title: data.title || '',
+                            body: data.body || '',
+                            author: data.author || 'Anonymous',
+                            location: data.location || '',
+                            reactions: data.reactions || 0,
+                            tags: data.tags || [],
+                            createdAt: data.createdAt || 0
+                        });
+                    });
+
+                    // Sort descending by timestamp in-memory to avoid index requirements
+                    freshData.sort((a, b) => b.createdAt - a.createdAt);
+
+                    setTestimonies(freshData);
+                    await AsyncStorage.setItem('cached-testimonies', JSON.stringify(freshData));
+                }
+            }
+        } catch (e) {
+            console.error("Failed to load testimonies:", e);
+        }
+    };
+
+    const handleRefresh = async () => {
+        haptic.light();
+        setIsRefreshing(true);
+        await loadTestimonies();
+        setIsRefreshing(false);
+    };
+
     const filteredStories = selectedTopic === 'All'
-        ? initialTestimonies
-        : initialTestimonies.filter(t => t.tags.includes(selectedTopic));
+        ? testimonies
+        : testimonies.filter(t => t.tags.includes(selectedTopic));
 
     const handleShareStory = async () => {
         Linking.openURL('mailto:tahajjud.letters@gmail.com?subject=My Tahajjud Story&body=Here is my story...');
@@ -123,6 +184,14 @@ export function TestimoniesTab() {
                 renderItem={({ item }) => <TestimonyCard item={item} onShare={handleShareQuote} />}
                 keyExtractor={item => item.id}
                 contentContainerStyle={[styles.listContent, { flexGrow: 1 }]}
+                refreshControl={
+                    <RefreshControl
+                        refreshing={isRefreshing}
+                        onRefresh={handleRefresh}
+                        tintColor={colors.accent}
+                        colors={[colors.accent]}
+                    />
+                }
                 ListHeaderComponent={
                     <View>
                         <View style={styles.header}>
