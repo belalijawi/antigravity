@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { View, Text, TouchableOpacity, StyleSheet, Alert } from "react-native";
-import { Trophy, CheckCircle } from "lucide-react-native";
+import { Trophy, CheckCircle, Flame } from "lucide-react-native";
 import { LinearGradient } from 'expo-linear-gradient';
 import { BlurView } from 'expo-blur';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -13,9 +13,27 @@ import Animated, {
 
 import { useTheme } from '../context/ThemeContext';
 
+const BEST_STREAK_KEY = 'tahajjud-best-streak';
+
+// Milestone thresholds and their labels
+const MILESTONES = [
+    { days: 3, label: '3', color: '#94a3b8' },
+    { days: 7, label: '7', color: '#f59e0b' },
+    { days: 30, label: '30', color: '#f97316' },
+    { days: 100, label: '100', color: '#a855f7' },
+];
+
+function getMilestone(streak: number) {
+    for (let i = MILESTONES.length - 1; i >= 0; i--) {
+        if (streak >= MILESTONES[i].days) return MILESTONES[i];
+    }
+    return null;
+}
+
 export function Tracker() {
     const { colors } = useTheme();
     const [streak, setStreak] = useState(0);
+    const [bestStreak, setBestStreak] = useState(0);
     const [history, setHistory] = useState<string[]>([]);
     const [todayLogged, setTodayLogged] = useState(false);
     const buttonScale = useSharedValue(1);
@@ -30,7 +48,11 @@ export function Tracker() {
 
     const loadHistory = async () => {
         try {
-            const storedHistory = await AsyncStorage.getItem("tahajjud-tracker");
+            const [storedHistory, storedBest] = await Promise.all([
+                AsyncStorage.getItem("tahajjud-tracker"),
+                AsyncStorage.getItem(BEST_STREAK_KEY),
+            ]);
+            if (storedBest) setBestStreak(parseInt(storedBest, 10));
             if (storedHistory) {
                 const parsed = JSON.parse(storedHistory);
                 setHistory(parsed);
@@ -68,6 +90,15 @@ export function Tracker() {
             checkDate = subDays(checkDate, 1);
         }
         setStreak(count);
+
+        // Update best streak if this is a new personal best
+        AsyncStorage.getItem(BEST_STREAK_KEY).then(stored => {
+            const prev = stored ? parseInt(stored, 10) : 0;
+            if (count > prev) {
+                setBestStreak(count);
+                AsyncStorage.setItem(BEST_STREAK_KEY, count.toString());
+            }
+        });
     };
 
     const checkToday = (dates: string[]) => {
@@ -87,6 +118,8 @@ export function Tracker() {
         Alert.alert("Alhamdulillah", "Tonight's prayer has been logged.");
     };
 
+    const milestone = getMilestone(streak);
+
     return (
         <View style={styles.container}>
             <LinearGradient
@@ -100,14 +133,38 @@ export function Tracker() {
             <View style={styles.content}>
                 <View style={styles.iconCircle}>
                     <BlurView intensity={20} tint="dark" style={[StyleSheet.absoluteFill, { borderRadius: 32 }]} />
-                    <Trophy size={18} color={streak > 0 ? colors.accent : colors.secondaryText} />
+                    {streak >= 3
+                        ? <Flame size={18} color={milestone?.color ?? colors.accent} />
+                        : <Trophy size={18} color={streak > 0 ? colors.accent : colors.secondaryText} />
+                    }
                 </View>
 
-                <Text style={styles.title}>Consistency</Text>
+                <Text style={styles.title}>Streak</Text>
 
                 <View style={styles.streakPanel}>
-                    <Text style={[styles.streakValue, { color: colors.accent }]}>{streak}</Text>
-                    <Text style={[styles.streakLabel, { color: colors.secondaryText }]}>Day Streak</Text>
+                    <Text style={[styles.streakValue, { color: milestone?.color ?? colors.accent }]}>{streak}</Text>
+                    <Text style={[styles.streakLabel, { color: colors.secondaryText }]}>
+                        {streak === 1 ? 'day' : 'days'}
+                    </Text>
+                </View>
+
+                {/* Milestone badges row */}
+                <View style={styles.milestonesRow}>
+                    {MILESTONES.map(m => (
+                        <View
+                            key={m.days}
+                            style={[
+                                styles.badge,
+                                streak >= m.days
+                                    ? { backgroundColor: m.color + '22', borderColor: m.color + '66' }
+                                    : { backgroundColor: 'rgba(255,255,255,0.03)', borderColor: 'rgba(255,255,255,0.08)' }
+                            ]}
+                        >
+                            <Text style={[styles.badgeText, { color: streak >= m.days ? m.color : '#475569' }]}>
+                                {m.label}
+                            </Text>
+                        </View>
+                    ))}
                 </View>
 
                 <TouchableOpacity
@@ -198,5 +255,23 @@ const styles = StyleSheet.create({
         fontWeight: '900',
         textTransform: 'uppercase',
         letterSpacing: 1,
-    }
+    },
+    milestonesRow: {
+        flexDirection: 'row',
+        gap: 4,
+        justifyContent: 'center',
+    },
+    badge: {
+        paddingHorizontal: 6,
+        paddingVertical: 2,
+        borderRadius: 6,
+        borderWidth: 1,
+        alignItems: 'center',
+        justifyContent: 'center',
+    },
+    badgeText: {
+        fontSize: 9,
+        fontWeight: '900',
+        letterSpacing: 0.5,
+    },
 });

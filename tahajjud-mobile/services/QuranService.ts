@@ -27,7 +27,7 @@ export interface SurahDetail {
         name: string;
         englishName: string;
     };
-    audioAyahs?: Ayah[]; // Optional audio URLs mapping
+    audioAyahs?: Ayah[];
 }
 
 export interface Edition {
@@ -39,33 +39,69 @@ export interface Edition {
     type: string;
 }
 
+// Tanzil-sourced local dataset (quran-json package) — verified Saheeh International + Uthmani Arabic
+// All 6,236 ayahs bundled locally: zero network dependency, zero API errors
+const LOCAL_QURAN_DATA: any[] = require('quran-json/dist/quran_en.json');
+
+const LOCAL_SURAH_LIST: SurahMeta[] = LOCAL_QURAN_DATA.map((s: any) => ({
+    number: s.id,
+    name: s.name,
+    englishName: s.transliteration,
+    englishNameTranslation: s.translation,
+    numberOfAyahs: s.total_verses,
+    revelationType: s.type.charAt(0).toUpperCase() + s.type.slice(1),
+}));
+
+function buildSurahDetailFromLocal(surahData: any, edition: string, useArabic: boolean): SurahDetail {
+    return {
+        number: surahData.id,
+        name: surahData.name,
+        englishName: surahData.transliteration,
+        englishNameTranslation: surahData.translation,
+        revelationType: surahData.type.charAt(0).toUpperCase() + surahData.type.slice(1),
+        numberOfAyahs: surahData.total_verses,
+        ayahs: surahData.verses.map((v: any) => ({
+            number: v.id,
+            text: useArabic ? v.text : v.translation,
+            numberInSurah: v.id,
+        })),
+        edition: {
+            identifier: edition,
+            language: useArabic ? 'ar' : 'en',
+            name: useArabic ? 'Uthmani (Tanzil)' : 'Saheeh International (Tanzil)',
+            englishName: useArabic ? 'Uthmani (Tanzil)' : 'Saheeh International (Tanzil)',
+        },
+    };
+}
+
 const BASE_URL = 'https://api.alquran.cloud/v1';
 
 export const QuranService = {
-    // Get list of all 114 Surahs
+    // Get list of all 114 Surahs — served from local Tanzil dataset
     async getSurahList(): Promise<SurahMeta[]> {
-        try {
-            const response = await fetch(`${BASE_URL}/surah`);
-            const data = await response.json();
-            if (data.code === 200) {
-                return data.data;
-            }
-            throw new Error('Failed to fetch Surah list');
-        } catch (error) {
-            console.error(error);
-            return [];
-        }
+        return LOCAL_SURAH_LIST;
     },
 
-    // Get specific Surah in specific edition (language)
+    // Get specific Surah — local for Arabic/English, API for all other translations
     async getSurah(number: number, edition: string = 'en.sahih'): Promise<SurahDetail | null> {
-        // Handle Mustafa Khattab's "The Clear Quran" via secondary API
+        // ✅ Local Tanzil data — verified, offline, instant
+        if (edition === 'en.sahih') {
+            const surahData = LOCAL_QURAN_DATA[number - 1];
+            if (!surahData) return null;
+            return buildSurahDetailFromLocal(surahData, edition, false);
+        }
+
+        if (edition === 'quran-uthmani') {
+            const surahData = LOCAL_QURAN_DATA[number - 1];
+            if (!surahData) return null;
+            return buildSurahDetailFromLocal(surahData, edition, true);
+        }
+
+        // The Clear Quran (Khattab) via secondary API
         if (edition === 'en.khattab') {
             try {
                 const response = await fetch(`https://quranapi.pages.dev/api/${number}.json`);
                 const data = await response.json();
-
-                // Map the secondary API response to our SurahDetail interface
                 return {
                     number: data.surahNo,
                     name: data.surahNameArabic,
@@ -74,7 +110,7 @@ export const QuranService = {
                     revelationType: data.revelationPlace === 'Mecca' ? 'Meccan' : 'Medinan',
                     numberOfAyahs: data.totalAyah,
                     ayahs: data.english.map((text: string, index: number) => ({
-                        number: index + 1, // This is a simplification, but sufficient for display
+                        number: index + 1,
                         text: text,
                         numberInSurah: index + 1
                     })),
@@ -91,6 +127,7 @@ export const QuranService = {
             }
         }
 
+        // All other translations — fetched from alquran.cloud API
         try {
             const response = await fetch(`${BASE_URL}/surah/${number}/${edition}`);
             const data = await response.json();

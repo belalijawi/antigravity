@@ -8,14 +8,14 @@ import { WelcomeScreen } from './components/WelcomeScreen';
 import { HomeTab } from './components/HomeTab';
 import { GuideTab } from './components/GuideTab';
 import { DuasTab } from './components/DuasTab';
-import { RamadanTab } from './components/RamadanTab';
 import { QuranTab } from './components/QuranTab';
 import { BlurView } from 'expo-blur';
 import { LinearGradient } from 'expo-linear-gradient';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { Moon, BookHeart, Scroll, BookOpen } from 'lucide-react-native';
-import { ThemeProvider, useTheme } from './context/ThemeContext';
+import { Moon, BookHeart, Scroll, BookOpen, Infinity } from 'lucide-react-native';
+import { TasbeehTab } from './components/TasbeehTab';
+import { ThemeProvider, useTheme, ThemeColors } from './context/ThemeContext';
 import { haptic } from './utils/haptic';
 import { Audio, InterruptionModeIOS, InterruptionModeAndroid } from 'expo-av';
 
@@ -27,36 +27,35 @@ LogBox.ignoreLogs([
 const Tab = createBottomTabNavigator();
 
 const NebulaBackground = () => {
+  const { colors } = useTheme();
   // Generate stars only once
   const stars = React.useMemo(() => {
     return Array.from({ length: 120 }).map((_, i) => ({
       id: i,
       top: Math.random() * 100,
       left: Math.random() * 100,
-      size: Math.random() * 1.5 + 1, // 1px to 2.5px
-      opacity: Math.random() * 0.4 + 0.1, // 0.1 to 0.5 (More subtle)
+      size: Math.random() * 1.5 + 1,
+      opacity: Math.random() * 0.4 + 0.1,
     }));
   }, []);
 
   return (
     <View style={StyleSheet.absoluteFill}>
       <LinearGradient
-        colors={['#000000', '#020617', '#000000']}
+        colors={['#000000', colors.background, '#000000']}
         style={StyleSheet.absoluteFill}
       />
 
-      {/* Vibrant Cosmic Layers */}
-      <View style={[styles.nebulaLayer, { top: -50, right: -50, backgroundColor: 'rgba(79, 70, 229, 0.25)', width: 500, height: 500 }]} />
-      <View style={[styles.nebulaLayer, { bottom: -100, left: -100, backgroundColor: 'rgba(139, 92, 246, 0.2)', width: 600, height: 600 }]} />
-      <View style={[styles.nebulaLayer, { top: '25%', left: '10%', backgroundColor: 'rgba(236, 72, 153, 0.1)', width: 300, height: 300 }]} />
-      <View style={[styles.nebulaLayer, { bottom: '20%', right: '5%', backgroundColor: 'rgba(56, 189, 248, 0.15)', width: 450, height: 450 }]} />
+      {/* Theme-aware Cosmic Layers */}
+      <View style={[styles.nebulaLayer, { top: -50, right: -50, backgroundColor: colors.nebula[0], width: 500, height: 500 }]} />
+      <View style={[styles.nebulaLayer, { bottom: -100, left: -100, backgroundColor: colors.nebula[1], width: 600, height: 600 }]} />
+      <View style={[styles.nebulaLayer, { top: '25%', left: '10%', backgroundColor: colors.nebula[2], width: 300, height: 300 }]} />
+      <View style={[styles.nebulaLayer, { bottom: '20%', right: '5%', backgroundColor: colors.nebula[3], width: 450, height: 450 }]} />
 
-      {/* BlurView and starfield are skipped on Android — unsupported & causes lag/black flashes */}
       {Platform.OS === 'ios' && (
         <BlurView intensity={30} tint="dark" style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(0,0,0,0.3)' }]} />
       )}
 
-      {/* Subtle Starfield — iOS only for performance */}
       {Platform.OS === 'ios' && stars.map((star) => (
         <View
           key={star.id}
@@ -180,23 +179,23 @@ function MainApp() {
               }}
             />
             <Tab.Screen
-              name="Ramadan"
-              component={RamadanTab}
-              options={{
-                tabBarIcon: ({ color, focused }) => (
-                  <View style={styles.iconWrapper}>
-                    <Moon size={18} color={color} strokeWidth={focused ? 2.5 : 3} fill={focused ? color : 'transparent'} />
-                  </View>
-                ),
-              }}
-            />
-            <Tab.Screen
               name="Quran"
               component={QuranTab}
               options={{
                 tabBarIcon: ({ color, focused }) => (
                   <View style={styles.iconWrapper}>
                     <BookOpen size={18} color={color} strokeWidth={focused ? 2.5 : 2} />
+                  </View>
+                ),
+              }}
+            />
+            <Tab.Screen
+              name="Tasbeeh"
+              component={TasbeehTab}
+              options={{
+                tabBarIcon: ({ color, focused }) => (
+                  <View style={styles.iconWrapper}>
+                    <Infinity size={18} color={color} strokeWidth={focused ? 2.5 : 2} />
                   </View>
                 ),
               }}

@@ -4,16 +4,19 @@ import * as Location from "expo-location";
 import { BlurView } from 'expo-blur';
 import { getPrayerTimes } from "../lib/api";
 import { calculateLastThird, NightCalculation, PrayerTimes } from "../lib/prayer-times";
-import { Moon, Bell, BellOff } from "lucide-react-native";
+import { Moon, Bell, BellOff, Lock } from "lucide-react-native";
 import { LinearGradient } from 'expo-linear-gradient';
 import { PrayerCard } from "./PrayerCard";
-import { format } from "date-fns";
-import { isNotificationEnabled, requestNotificationPermissions, scheduleAllPrayerNotifications, cancelNotification, NOTIFICATION_ENABLED_KEY } from '../utils/notifications';
+import { format, addDays } from "date-fns";
+import { isNotificationEnabled, requestNotificationPermissions, scheduleAllPrayerNotifications, scheduleFutureTahajjudNotifications, scheduleFuturePrayerNotifications, cancelNotification, NOTIFICATION_ENABLED_KEY } from '../utils/notifications';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useTheme } from '../context/ThemeContext';
+import { updateWidget } from '../utils/widgetBridge';
+import { usePurchases } from '../context/PurchasesContext';
 
 export function NightCalculator({ onNightCalcReady, refreshKey }: { onNightCalcReady?: (calc: NightCalculation) => void, refreshKey?: number } = {}) {
     const { colors } = useTheme();
+    const { isPremium } = usePurchases();
     const [location, setLocation] = useState<{ lat: number; lng: number } | null>(null);
     const [prayerTimes, setPrayerTimes] = useState<PrayerTimes | null>(null);
     const [nightCalc, setNightCalc] = useState<NightCalculation | null>(null);
@@ -26,6 +29,7 @@ export function NightCalculator({ onNightCalcReady, refreshKey }: { onNightCalcR
     const [selectedMethod, setSelectedMethod] = useState<number>(2); // Default ISNA
     const [lastScheduledKey, setLastScheduledKey] = useState<string | null>(null);
     const [internalRefresh, setInternalRefresh] = useState(0);
+    const [cityName, setCityName] = useState<string | null>(null);
 
     useEffect(() => {
         const timer = setInterval(() => setCurrentTime(new Date()), 60000);
@@ -33,46 +37,154 @@ export function NightCalculator({ onNightCalcReady, refreshKey }: { onNightCalcR
     }, []);
 
     useEffect(() => {
-        fetchLocation();
+        let watchSub: Location.LocationSubscription | null = null;
+
+        const start = async () => {
+            await fetchLocation();
+
+            // Watch for movement while app is open — only fires when user moves >1 km
+            const { status } = await Location.requestForegroundPermissionsAsync();
+            if (status === 'granted') {
+                watchSub = await Location.watchPositionAsync(
+                    {
+                        accuracy: Location.Accuracy.Balanced,
+                        distanceInterval: 1000, // metres — only fires after 1 km of movement
+                        timeInterval: 5 * 60 * 1000, // no more than once every 5 minutes
+                    },
+                    async (loc) => {
+                        await applyNewLocation(loc.coords.latitude, loc.coords.longitude);
+                    }
+                );
+            }
+        };
+
+        start();
+
         const subscription = AppState.addEventListener('change', (nextAppState: AppStateStatus) => {
             if (nextAppState === 'active') {
-                fetchLocation();
+                fetchLocation(); // Re-fetch on foreground in case user has moved
             }
         });
-        return () => subscription.remove();
+
+        return () => {
+            subscription.remove();
+            watchSub?.remove();
+        };
     }, []);
 
     useEffect(() => {
         AsyncStorage.getItem('tahajjud_buffer_minutes').then(val => {
-            if (val) setSelectedBuffer(parseInt(val, 10));
+            const saved = val ? parseInt(val, 10) : 15;
+            // Free users are always locked to 15 min
+            setSelectedBuffer(isPremium ? saved : 15);
         });
         AsyncStorage.getItem('prayer_calculation_method').then(val => {
             if (val) setSelectedMethod(parseInt(val, 10));
         });
     }, []);
 
+    // Silently prefetch and cache prayer times for the next 6 nights,
+    // then schedule wake-up + daily prayer notifications so they fire without an app open.
+    const prefetchFutureNights = async (
+        lat: number, lng: number, method: number, buffer: number,
+        tahajjudEnabled: boolean, allPrayersEnabled: boolean
+    ) => {
+        try {
+            const tahajjudNights: { targetTime: Date; buffer: number }[] = [];
+            const futurePrayers: { name: string; time: Date }[] = [];
+
+            for (let i = 1; i <= 6; i++) {
+                const night = addDays(new Date(), i);
+                const nextDay = addDays(new Date(), i + 1);
+                const [nightTimes, nextDayTimes] = await Promise.all([
+                    getPrayerTimes(lat, lng, night, method),
+                    getPrayerTimes(lat, lng, nextDay, method),
+                ]);
+                if (tahajjudEnabled) {
+                    const calc = calculateLastThird(nightTimes.maghrib, nextDayTimes.fajr);
+                    tahajjudNights.push({ targetTime: new Date(calc.lastThirdStart), buffer });
+                }
+                if (allPrayersEnabled) {
+                    futurePrayers.push(
+                        { name: 'Fajr',    time: nightTimes.fajr },
+                        { name: 'Dhuhr',   time: nightTimes.dhuhr },
+                        { name: 'Asr',     time: nightTimes.asr },
+                        { name: 'Maghrib', time: nightTimes.maghrib },
+                        { name: 'Isha',    time: nightTimes.isha },
+                    );
+                }
+            }
+
+            if (tahajjudNights.length > 0) await scheduleFutureTahajjudNotifications(tahajjudNights);
+            if (futurePrayers.length > 0)  await scheduleFuturePrayerNotifications(futurePrayers);
+
+            console.log(`[DEBUG] Pre-scheduled ${tahajjudNights.length} Tahajjud + ${futurePrayers.length} daily prayers for next 6 days`);
+        } catch (err) {
+            console.warn('[DEBUG] prefetchFutureNights failed (non-critical):', err);
+        }
+    };
+
+    // Haversine distance in km between two coordinates
+    const distanceKm = (lat1: number, lon1: number, lat2: number, lon2: number): number => {
+        const R = 6371;
+        const dLat = (lat2 - lat1) * Math.PI / 180;
+        const dLon = (lon2 - lon1) * Math.PI / 180;
+        const a = Math.sin(dLat / 2) ** 2 +
+            Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * Math.sin(dLon / 2) ** 2;
+        return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    };
+
+    // Reverse geocode to get a readable city name
+    const resolveCityName = async (lat: number, lng: number): Promise<string | null> => {
+        try {
+            const results = await Location.reverseGeocodeAsync({ latitude: lat, longitude: lng });
+            if (results.length > 0) {
+                const r = results[0];
+                return r.city || r.subregion || r.region || r.country || null;
+            }
+        } catch {}
+        return null;
+    };
+
+    const applyNewLocation = async (lat: number, lng: number) => {
+        const prevLoc = location;
+        const movedFar = prevLoc
+            ? distanceKm(prevLoc.lat, prevLoc.lng, lat, lng) > 30
+            : false;
+
+        setLocation({ lat, lng });
+
+        // Reverse geocode city name
+        const city = await resolveCityName(lat, lng);
+        setCityName(city);
+
+        // If user travelled >30 km, force notification reschedule for new location
+        if (movedFar) {
+            setLastScheduledKey(null);
+            console.log(`[DEBUG] Significant location change detected (>30km). Rescheduling notifications.`);
+        }
+    };
+
     const fetchLocation = async () => {
         try {
             const { status } = await Location.requestForegroundPermissionsAsync();
             if (status !== 'granted') {
                 setLocationDenied(true);
-                // Fall back to Makkah so prayer times still work
                 setLocation({ lat: 21.4225, lng: 39.8262 });
+                setCityName('Makkah');
                 return;
             }
             setLocationDenied(false);
             const loc = await Location.getCurrentPositionAsync({
-                accuracy: Location.Accuracy.High
+                accuracy: Location.Accuracy.Balanced,
             });
-            setLocation({
-                lat: loc.coords.latitude,
-                lng: loc.coords.longitude
-            });
+            await applyNewLocation(loc.coords.latitude, loc.coords.longitude);
         } catch (error) {
             console.error('Error fetching location:', error);
             if (!location) {
                 setLocationDenied(true);
                 setLocation({ lat: 21.4225, lng: 39.8262 });
+                setCityName('Makkah');
             }
         }
     };
@@ -110,6 +222,9 @@ export function NightCalculator({ onNightCalcReady, refreshKey }: { onNightCalcR
                 setNightCalc(calc);
                 onNightCalcReady?.(calc);
 
+                // Update home screen widget with latest prayer times + streak
+                updateWidget(activeTimes).catch(() => {});
+
                 // Schedule all enabled prayer notifications (Daily + Tahajjud)
                 const allPrayers = await AsyncStorage.getItem('notification_all_prayers_enabled');
                 const isEnabled = allPrayers === 'true';
@@ -127,6 +242,12 @@ export function NightCalculator({ onNightCalcReady, refreshKey }: { onNightCalcR
                     });
                     setLastScheduledKey(currentKey);
                     console.log(`[DEBUG] Unified notifications scheduled for ${today.toDateString()}`);
+
+                    // Pre-fetch + schedule the next 6 nights so the alarm fires even if
+                    // the user doesn't open the app every day.
+                    if (isTahajjudEnabled || isEnabled) {
+                        prefetchFutureNights(location!.lat, location!.lng, selectedMethod, selectedBuffer, isTahajjudEnabled, isEnabled);
+                    }
                 }
             } catch (err) {
                 console.error(err);
@@ -219,7 +340,14 @@ export function NightCalculator({ onNightCalcReady, refreshKey }: { onNightCalcR
 
             <View style={styles.mainDisplay}>
                 <View style={styles.timeBadge}>
-                    <Text style={styles.label}>Last Third Begins</Text>
+                    <View style={styles.labelRow}>
+                        <Text style={styles.label}>Last Third Begins</Text>
+                        {cityName && (
+                            <TouchableOpacity onPress={fetchLocation} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                                <Text style={styles.cityBadge}>📍 {cityName}</Text>
+                            </TouchableOpacity>
+                        )}
+                    </View>
                     <Text style={[styles.timeText, { color: colors.accent }]}>{format(nightCalc.lastThirdStart, "h:mm a")}</Text>
                     <View style={styles.statusRow}>
                         <View style={[styles.pulseDot, (currentTime >= nightCalc.lastThirdStart && currentTime < nightCalc.nightEnd) && styles.pulseDotActive]} />
@@ -241,26 +369,58 @@ export function NightCalculator({ onNightCalcReady, refreshKey }: { onNightCalcR
                         </Text>
                     </TouchableOpacity>
 
-                    <View style={styles.prepRow}>
-                        {[0, 15, 30, 45].map((mins) => (
+                    {isPremium ? (
+                        // Premium: custom 0–60 min stepper
+                        <View style={styles.prepRow}>
                             <TouchableOpacity
-                                key={mins}
-                                style={[styles.bufferTab, selectedBuffer === mins && styles.bufferTabActive]}
+                                style={styles.stepperBtn}
                                 onPress={() => {
-                                    setSelectedBuffer(mins);
-                                    AsyncStorage.setItem('tahajjud_buffer_minutes', mins.toString());
-                                    if (notificationEnabled) {
-                                        setLastScheduledKey(null); // Force re-sync
-                                        setInternalRefresh(prev => prev + 1);
-                                    }
+                                    const next = Math.max(0, selectedBuffer - 5);
+                                    setSelectedBuffer(next);
+                                    AsyncStorage.setItem('tahajjud_buffer_minutes', next.toString());
+                                    if (notificationEnabled) { setLastScheduledKey(null); setInternalRefresh(p => p + 1); }
                                 }}
                             >
-                                <Text style={[styles.bufferTabText, selectedBuffer === mins && styles.bufferTabTextActive]}>
-                                    {mins === 0 ? "Now" : mins}
-                                </Text>
+                                <Text style={styles.stepperBtnText}>−</Text>
                             </TouchableOpacity>
-                        ))}
-                    </View>
+                            <View style={styles.stepperValue}>
+                                <Text style={[styles.bufferTabTextActive, { fontSize: 13 }]}>
+                                    {selectedBuffer === 0 ? 'At start' : `${selectedBuffer} min`}
+                                </Text>
+                            </View>
+                            <TouchableOpacity
+                                style={styles.stepperBtn}
+                                onPress={() => {
+                                    const next = Math.min(60, selectedBuffer + 5);
+                                    setSelectedBuffer(next);
+                                    AsyncStorage.setItem('tahajjud_buffer_minutes', next.toString());
+                                    if (notificationEnabled) { setLastScheduledKey(null); setInternalRefresh(p => p + 1); }
+                                }}
+                            >
+                                <Text style={styles.stepperBtnText}>+</Text>
+                            </TouchableOpacity>
+                        </View>
+                    ) : (
+                        // Free: fixed 15 min with upgrade hint
+                        <TouchableOpacity
+                            style={styles.prepRow}
+                            onPress={() => Alert.alert('Tahajjud+ Premium', 'Upgrade to set a custom wake-up buffer from 0 to 60 minutes before the last third.')}
+                            activeOpacity={0.7}
+                        >
+                            <View style={[styles.bufferTab, styles.bufferTabActive]}>
+                                <Text style={styles.bufferTabTextActive}>15 min</Text>
+                            </View>
+                            <View style={[styles.bufferTab, { opacity: 0.35 }]}>
+                                <Lock size={9} color="#64748b" />
+                            </View>
+                            <View style={[styles.bufferTab, { opacity: 0.35 }]}>
+                                <Lock size={9} color="#64748b" />
+                            </View>
+                            <View style={[styles.bufferTab, { opacity: 0.35 }]}>
+                                <Lock size={9} color="#64748b" />
+                            </View>
+                        </TouchableOpacity>
+                    )}
                 </View>
             </View>
 
@@ -327,7 +487,9 @@ const styles = StyleSheet.create({
     errorText: { color: '#ef4444', fontSize: 11 },
     mainDisplay: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 },
     timeBadge: { flex: 1 },
-    label: { fontSize: 9, color: '#cbd5e1', fontWeight: '900', textTransform: 'uppercase', letterSpacing: 1.5, marginBottom: 2 },
+    labelRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 2 },
+    label: { fontSize: 9, color: '#cbd5e1', fontWeight: '900', textTransform: 'uppercase', letterSpacing: 1.5 },
+    cityBadge: { fontSize: 9, color: '#64748b', fontWeight: '700' },
     timeText: { fontSize: 36, fontWeight: '900', letterSpacing: -1 },
     statusRow: { flexDirection: 'row', alignItems: 'center', marginTop: 2, gap: 5 },
     pulseDot: { width: 5, height: 5, borderRadius: 2.5, backgroundColor: '#475569' },
@@ -361,6 +523,33 @@ const styles = StyleSheet.create({
         alignItems: 'center',
         borderWidth: 1,
         borderColor: 'rgba(255, 255, 255, 0.05)'
+    },
+    stepperBtn: {
+        width: 32,
+        height: 28,
+        borderRadius: 8,
+        backgroundColor: 'rgba(255,255,255,0.06)',
+        borderWidth: 1,
+        borderColor: 'rgba(255,255,255,0.12)',
+        justifyContent: 'center',
+        alignItems: 'center',
+    },
+    stepperBtnText: {
+        color: '#f8fafc',
+        fontSize: 16,
+        fontWeight: '300',
+        lineHeight: 18,
+    },
+    stepperValue: {
+        minWidth: 64,
+        height: 28,
+        borderRadius: 8,
+        backgroundColor: 'rgba(255,255,255,0.08)',
+        borderWidth: 1,
+        borderColor: 'rgba(255,255,255,0.15)',
+        justifyContent: 'center',
+        alignItems: 'center',
+        paddingHorizontal: 8,
     },
     bufferTabActive: { backgroundColor: 'rgba(248, 250, 252, 0.1)', borderColor: 'rgba(248, 250, 252, 0.2)' },
     bufferTabText: { fontSize: 9, color: '#64748b', fontWeight: '900' },

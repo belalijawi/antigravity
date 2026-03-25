@@ -1,25 +1,55 @@
 import { PrayerTimes } from "./prayer-times";
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const ALADHAN_API_URL = "https://api.aladhan.com/v1";
+const PRAYER_CACHE_PREFIX = 'prayer_times_v2_';
 
-// Ireland bounding box: roughly 51.4°N to 55.4°N, -10.5°W to -5.5°W
-const IRELAND_BOUNDS = {
-    latMin: 51.4,
-    latMax: 55.4,
-    lonMin: -10.5,
-    lonMax: -5.5,
-};
+// Ireland bounding box
+const IRELAND_BOUNDS = { latMin: 51.4, latMax: 55.4, lonMin: -10.5, lonMax: -5.5 };
 
-/**
- * Check if coordinates are within Ireland
- */
+// UK bounding box (England, Scotland, Wales — excludes Ireland)
+const UK_BOUNDS = { latMin: 49.8, latMax: 60.9, lonMin: -8.6, lonMax: 1.8 };
+
 function isInIreland(latitude: number, longitude: number): boolean {
     return (
-        latitude >= IRELAND_BOUNDS.latMin &&
-        latitude <= IRELAND_BOUNDS.latMax &&
-        longitude >= IRELAND_BOUNDS.lonMin &&
-        longitude <= IRELAND_BOUNDS.lonMax
+        latitude >= IRELAND_BOUNDS.latMin && latitude <= IRELAND_BOUNDS.latMax &&
+        longitude >= IRELAND_BOUNDS.lonMin && longitude <= IRELAND_BOUNDS.lonMax
     );
+}
+
+function isInUK(latitude: number, longitude: number): boolean {
+    return (
+        latitude >= UK_BOUNDS.latMin && latitude <= UK_BOUNDS.latMax &&
+        longitude >= UK_BOUNDS.lonMin && longitude <= UK_BOUNDS.lonMax
+    );
+}
+
+function buildCacheKey(latitude: number, longitude: number, dateStr: string): string {
+    return `${PRAYER_CACHE_PREFIX}${latitude.toFixed(2)}_${longitude.toFixed(2)}_${dateStr}`;
+}
+
+async function loadFromCache(key: string): Promise<PrayerTimes | null> {
+    try {
+        const raw = await AsyncStorage.getItem(key);
+        if (!raw) return null;
+        const p = JSON.parse(raw);
+        return {
+            fajr: new Date(p.fajr),
+            sunrise: new Date(p.sunrise),
+            dhuhr: new Date(p.dhuhr),
+            asr: new Date(p.asr),
+            maghrib: new Date(p.maghrib),
+            isha: new Date(p.isha),
+        };
+    } catch {
+        return null;
+    }
+}
+
+async function saveToCache(key: string, times: PrayerTimes): Promise<void> {
+    try {
+        await AsyncStorage.setItem(key, JSON.stringify(times));
+    } catch {}
 }
 
 export async function getPrayerTimes(latitude: number, longitude: number, date?: Date, method: number = 2): Promise<PrayerTimes> {
@@ -27,21 +57,27 @@ export async function getPrayerTimes(latitude: number, longitude: number, date?:
     // API uses DD-MM-YYYY format
     const dateStr = `${d.getDate()}-${d.getMonth() + 1}-${d.getFullYear()}`;
 
-    // Auto-detect Ireland and use custom method (matches MCND/ICCI)
+    // Return cached result if available — prayer times for a given date never change
+    const cacheKey = buildCacheKey(latitude, longitude, dateStr);
+    const cached = await loadFromCache(cacheKey);
+    if (cached) return cached;
+
     let finalMethod = method;
     let customParams = '';
 
     if (isInIreland(latitude, longitude)) {
-        // Use custom method 99 with Ireland-specific angles
-        // Fajr: 20° (more conservative than MWL 18°)
-        // Isha: 14° (less conservative than MWL 17°)
+        // Ireland: custom method matching MCND/ICCI
+        // Fajr 20°, Isha 14° — calibrated against MCND Coolmine March 2026
+        // Tune format: Imsak,Fajr,Sunrise,Dhuhr,Asr,Maghrib,Sunset,Isha,Midnight
         finalMethod = 99;
         customParams = '&methodSettings=20,null,14';
-
-        // Fine-tune with minute offsets to match MCND exactly
-        // Format: Imsak,Fajr,Sunrise,Dhuhr,Asr,Maghrib,Sunset,Isha,Midnight
-        // Based on Feb 12, 2026 comparison with MCND times
-        customParams += '&tune=0,28,0,1,1,-1,0,6,0';
+        customParams += '&tune=0,38,0,3,1,4,0,3,0';
+    } else if (isInUK(latitude, longitude)) {
+        // UK: MWL method calibrated to match East London Mosque (LUPT)
+        // Verified against ELM timetable March 2026
+        // Tune format: Imsak,Fajr,Sunrise,Dhuhr,Asr,Maghrib,Sunset,Isha,Midnight
+        finalMethod = 3;
+        customParams = '&tune=0,17,0,6,1,1,0,-28,0';
     }
 
     // Method parameter allows customizing Fajr/Isha calculation angles
@@ -63,7 +99,7 @@ export async function getPrayerTimes(latitude: number, longitude: number, date?:
             return timeDate;
         };
 
-        return {
+        const result: PrayerTimes = {
             fajr: parseTime(timings.Fajr),
             sunrise: parseTime(timings.Sunrise),
             dhuhr: parseTime(timings.Dhuhr),
@@ -71,6 +107,10 @@ export async function getPrayerTimes(latitude: number, longitude: number, date?:
             maghrib: parseTime(timings.Maghrib),
             isha: parseTime(timings.Isha)
         };
+
+        // Persist to cache so future loads are instant and work offline
+        await saveToCache(cacheKey, result);
+        return result;
     } catch (error) {
         console.error("Error fetching prayer times:", error);
         throw error;

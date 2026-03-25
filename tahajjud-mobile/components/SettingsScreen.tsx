@@ -17,7 +17,8 @@ import { getFirebaseAuth } from '../utils/firebase';
 import { BlurView } from 'expo-blur';
 import { LinearGradient } from 'expo-linear-gradient';
 import Animated, { FadeInDown, FadeInUp } from 'react-native-reanimated';
-import { useTheme, ThemeType } from '../context/ThemeContext';
+import { useTheme, ThemeType, PREMIUM_THEMES, THEME_LABELS } from '../context/ThemeContext';
+import { usePurchases } from '../context/PurchasesContext';
 import { PrivacyPolicy } from './PrivacyPolicy';
 import { haptic } from '../utils/haptic';
 import { tabletContentStyle } from '../utils/layout';
@@ -27,6 +28,7 @@ interface SettingsScreenProps {
 }
 export const SettingsScreen: React.FC<SettingsScreenProps> = ({ onClose }) => {
     const { theme, setTheme, colors, userName, setUserName } = useTheme();
+    const { isPremium } = usePurchases();
     const [isDeleting, setIsDeleting] = useState(false);
     const insets = useSafeAreaInsets();
     const [isSyncEnabled, setIsSyncEnabled] = useState(false);
@@ -421,31 +423,49 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ onClose }) => {
                         </View>
 
                         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.themeSelector}>
-                            {(['silver', 'teal'] as ThemeType[]).map((t) => (
-                                <TouchableOpacity
-                                    key={t}
-                                    onPress={() => setTheme(t)}
-                                    style={[
-                                        styles.themeOption,
-                                        theme === t && styles.themeOptionActive,
-                                        { borderColor: theme === t ? colors.accent : 'rgba(255, 255, 255, 0.1)' }
-                                    ]}
-                                >
-                                    <LinearGradient
-                                        colors={
-                                            t === 'silver' ? ['#f1f5f9', '#cbd5e1'] :
-                                                ['#22d3ee', '#06b6d4']
-                                        }
-                                        style={styles.themePreview}
-                                    />
-                                    {theme === t && (
-                                        <View style={[styles.activeDot, { backgroundColor: '#ffffff' }]} />
-                                    )}
-                                    <Text style={[styles.themeLabel, { color: theme === t ? colors.primaryText : colors.secondaryText }]}>
-                                        {t === 'silver' ? 'White' : 'Blue'}
-                                    </Text>
-                                </TouchableOpacity>
-                            ))}
+                            {(['silver', 'teal', 'emerald', 'gold', 'rose', 'purple'] as ThemeType[]).map((t) => {
+                                const isPremiumTheme = PREMIUM_THEMES.includes(t);
+                                const isLocked = isPremiumTheme && !isPremium;
+                                const GRADIENTS: Record<ThemeType, [string, string]> = {
+                                    silver: ['#f1f5f9', '#cbd5e1'],
+                                    teal: ['#22d3ee', '#06b6d4'],
+                                    emerald: ['#34d399', '#10b981'],
+                                    gold: ['#fbbf24', '#f59e0b'],
+                                    rose: ['#f472b6', '#ec4899'],
+                                    purple: ['#a78bfa', '#8b5cf6'],
+                                };
+                                return (
+                                    <TouchableOpacity
+                                        key={t}
+                                        onPress={() => {
+                                            if (isLocked) {
+                                                Alert.alert('Premium Theme', 'Upgrade to Tahajjud+ to unlock all themes.');
+                                                return;
+                                            }
+                                            haptic.light();
+                                            setTheme(t);
+                                        }}
+                                        style={[
+                                            styles.themeOption,
+                                            theme === t && styles.themeOptionActive,
+                                            { borderColor: theme === t ? colors.accent : 'rgba(255, 255, 255, 0.1)' }
+                                        ]}
+                                    >
+                                        <LinearGradient colors={GRADIENTS[t]} style={styles.themePreview} />
+                                        {isLocked && (
+                                            <View style={styles.themeLockOverlay}>
+                                                <Lock size={12} color="#fff" />
+                                            </View>
+                                        )}
+                                        {theme === t && !isLocked && (
+                                            <View style={[styles.activeDot, { backgroundColor: '#ffffff' }]} />
+                                        )}
+                                        <Text style={[styles.themeLabel, { color: theme === t ? colors.primaryText : colors.secondaryText }]}>
+                                            {THEME_LABELS[t].split(' ').pop()}
+                                        </Text>
+                                    </TouchableOpacity>
+                                );
+                            })}
                         </ScrollView>
                     </View>
                 </Animated.View>
@@ -973,6 +993,14 @@ const styles = StyleSheet.create({
         width: 6,
         height: 6,
         borderRadius: 3,
+    },
+    themeLockOverlay: {
+        position: 'absolute',
+        top: 8,
+        right: 8,
+        backgroundColor: 'rgba(0,0,0,0.5)',
+        borderRadius: 8,
+        padding: 2,
     },
     methodSelector: {
         paddingHorizontal: 20,

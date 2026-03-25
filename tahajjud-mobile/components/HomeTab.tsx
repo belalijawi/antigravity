@@ -8,6 +8,7 @@ import { QiblaCompass } from './QiblaCompass';
 import { Tracker } from './Tracker';
 import { HadithCard } from './HadithCard';
 import { DuaNetwork } from './DuaNetwork';
+import { HistoryCalendar } from './HistoryCalendar';
 import { SettingsScreen } from './SettingsScreen';
 import { LinearGradient } from 'expo-linear-gradient';
 import { BlurView } from 'expo-blur';
@@ -200,9 +201,17 @@ export function HomeTab() {
                         />
                     </Animated.View>
 
-                    {/* Full Width: Qibla Compass */}
+                    {/* Full Width: Prayer History Calendar */}
                     <Animated.View
                         entering={FadeInDown.delay(1000).duration(800)}
+                        style={styles.fullWidthCard}
+                    >
+                        <HistoryCalendar />
+                    </Animated.View>
+
+                    {/* Full Width: Qibla Compass */}
+                    <Animated.View
+                        entering={FadeInDown.delay(1200).duration(800)}
                         style={styles.fullWidthCard}
                     >
                         <QiblaCompass />

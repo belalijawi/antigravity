@@ -16,6 +16,7 @@ import { BlurView } from 'expo-blur';
 import { LinearGradient } from 'expo-linear-gradient';
 import Animated, { FadeInDown, FadeInUp } from 'react-native-reanimated';
 import { useTheme } from '../context/ThemeContext';
+import { usePurchases } from '../context/PurchasesContext';
 import { tabletContentStyle } from '../utils/layout';
 
 interface DuaCardProps {
@@ -131,8 +132,11 @@ const DuaCard = React.memo(({ dua, isBookmarked, onToggleBookmark, isPlaying, on
 });
 
 
+const FREE_DUA_LIMIT = 3;
+
 export function DuasTab() {
     const { colors } = useTheme();
+    const { isPremium } = usePurchases();
     const [searchQuery, setSearchQuery] = useState('');
     const [selectedCategory, setSelectedCategory] = useState('All');
     const [bookmarkedIds, setBookmarkedIds] = useState<string[]>([]);
@@ -203,6 +207,16 @@ export function DuasTab() {
     const handleSaveDua = async () => {
         if (!newDuaTranslation.trim()) {
             Alert.alert('Empty Letter', 'Please write something in your letter to Allah.');
+            return;
+        }
+
+        // Free limit check
+        if (!isPremium && personalDuas.length >= FREE_DUA_LIMIT) {
+            Alert.alert(
+                'Upgrade to Tahajjud+',
+                `Free users can save up to ${FREE_DUA_LIMIT} personal duas. Upgrade to save unlimited letters to Allah.`,
+                [{ text: 'Not now', style: 'cancel' }, { text: 'Upgrade', style: 'default', onPress: () => setIsModalVisible(false) }]
+            );
             return;
         }
 
@@ -525,6 +539,13 @@ export function DuasTab() {
                             onPress={() => setIsModalVisible(true)}
                         >
                             <Mail color="#020617" size={24} />
+                            {!isPremium && (
+                                <View style={styles.fabBadge}>
+                                    <Text style={styles.fabBadgeText}>
+                                        {personalDuas.length}/{FREE_DUA_LIMIT}
+                                    </Text>
+                                </View>
+                            )}
                         </TouchableOpacity>
                     </View>
                 )}
@@ -868,6 +889,24 @@ const styles = StyleSheet.create({
         shadowOpacity: 0.4,
         shadowRadius: 16,
         overflow: 'visible', // Ensure shadow is seen
+    },
+    fabBadge: {
+        position: 'absolute',
+        top: -4,
+        right: -4,
+        backgroundColor: '#0f172a',
+        borderRadius: 10,
+        paddingHorizontal: 5,
+        paddingVertical: 2,
+        borderWidth: 1,
+        borderColor: 'rgba(255,255,255,0.15)',
+        minWidth: 28,
+        alignItems: 'center',
+    },
+    fabBadgeText: {
+        color: '#94a3b8',
+        fontSize: 9,
+        fontWeight: '800',
     },
     modalContainer: {
         flex: 1,

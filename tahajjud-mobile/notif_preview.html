@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta name="viewport" content="width=390">
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { background: #1c1c1e; font-family: -apple-system, BlinkMacSystemFont, sans-serif; padding: 20px; display: flex; flex-direction: column; gap: 16px; }
+
+.label { color: #8e8e93; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 4px; }
+
+/* iOS banner notification */
+.banner {
+  background: rgba(40,40,42,0.95);
+  backdrop-filter: blur(30px);
+  border-radius: 16px;
+  padding: 14px 16px;
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  box-shadow: 0 4px 30px rgba(0,0,0,0.5);
+  border: 1px solid rgba(255,255,255,0.08);
+}
+.app-icon {
+  width: 40px; height: 40px; border-radius: 10px; flex-shrink: 0;
+  background: linear-gradient(135deg, #0f0f1a 0%, #1a1a3e 50%, #0a0a1a 100%);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 22px;
+  border: 1px solid rgba(255,255,255,0.1);
+}
+.banner-content { flex: 1; min-width: 0; }
+.banner-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 2px; }
+.app-name { font-size: 12px; font-weight: 600; color: #8e8e93; }
+.time-ago { font-size: 12px; color: #8e8e93; }
+.banner-title { font-size: 15px; font-weight: 600; color: #fff; margin-bottom: 2px; }
+.banner-body { font-size: 14px; color: #ebebf5cc; line-height: 1.35; }
+
+/* Prayer notification variant */
+.prayer-banner .app-icon { background: linear-gradient(135deg, #0e3a5c 0%, #1a6fa8 100%); }
+</style>
+</head>
+<body>
+
+<div class="label">Tahajjud Wake-Up Alarm</div>
+<div class="banner">
+  <div class="app-icon">🌙</div>
+  <div class="banner-content">
+    <div class="banner-header">
+      <span class="app-name">Tahajjud+</span>
+      <span class="time-ago">now</span>
+    </div>
+    <div class="banner-title">🌙 Time for Tahajjud</div>
+    <div class="banner-body">The last third of the night has begun (2:22 AM). Your Lord is waiting.</div>
+  </div>
+</div>
+
+<div class="label">Tahajjud Prep Reminder (e.g. 30 mins early)</div>
+<div class="banner">
+  <div class="app-icon">⏰</div>
+  <div class="banner-content">
+    <div class="banner-header">
+      <span class="app-name">Tahajjud+</span>
+      <span class="time-ago">now</span>
+    </div>
+    <div class="banner-title">⏰ Tahajjud Reminder</div>
+    <div class="banner-body">Tahajjud (Last Third) begins at 2:22 AM (in 30 mins). Get ready.</div>
+  </div>
+</div>
+
+<div class="label">Daily Prayer Notification</div>
+<div class="banner prayer-banner">
+  <div class="app-icon">🕌</div>
+  <div class="banner-content">
+    <div class="banner-header">
+      <span class="app-name">Tahajjud+</span>
+      <span class="time-ago">now</span>
+    </div>
+    <div class="banner-title">🕌 Fajr Prayer</div>
+    <div class="banner-body">It is time for Fajr. Take a break and connect with your Creator.</div>
+  </div>
+</div>
+
+</body>
+</html>

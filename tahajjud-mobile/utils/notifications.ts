@@ -157,7 +157,11 @@ export async function scheduleAllPrayerNotifications(
 
         // Clear all ID keys from AsyncStorage as well to keep them in sync
         const keys = await AsyncStorage.getAllKeys();
-        const notificationKeys = keys.filter(k => k.startsWith(NOTIFICATION_ID_KEY_PREFIX) || k === 'tahajjud_notification_id');
+        const notificationKeys = keys.filter(k =>
+            k.startsWith(NOTIFICATION_ID_KEY_PREFIX) ||
+            k === 'tahajjud_notification_id' ||
+            k === 'tahajjud_future_ids'
+        );
         if (notificationKeys.length > 0) {
             await AsyncStorage.multiRemove(notificationKeys);
         }
@@ -196,6 +200,66 @@ export async function scheduleAllPrayerNotifications(
 }
 
 /**
+ * Schedule Tahajjud wake-up notifications for future nights (days 1–6 ahead).
+ * Called AFTER scheduleAllPrayerNotifications so tonight is already handled.
+ * Does NOT cancel existing notifications.
+ */
+export async function scheduleFutureTahajjudNotifications(
+    nights: Array<{ targetTime: Date; buffer: number }>
+): Promise<void> {
+    ensureNotificationHandler();
+    const ids: string[] = [];
+    for (const { targetTime, buffer } of nights) {
+        const id = await internalScheduleTahajjudNotificationRaw(targetTime, buffer);
+        if (id) ids.push(id);
+    }
+    // Append new IDs to the stored list so cancelNotification can find them
+    try {
+        const existing = JSON.parse(await AsyncStorage.getItem('tahajjud_future_ids') || '[]');
+        await AsyncStorage.setItem('tahajjud_future_ids', JSON.stringify([...existing, ...ids]));
+    } catch {}
+}
+
+/**
+ * Schedule daily prayer notifications for future days (days 1–6 ahead).
+ * Each entry is a flat list of {name, time} pairs — one per prayer per day.
+ * Does NOT cancel existing notifications.
+ */
+export async function scheduleFuturePrayerNotifications(
+    prayers: Array<{ name: string; time: Date }>
+): Promise<void> {
+    ensureNotificationHandler();
+    for (const { name, time } of prayers) {
+        // Re-use the internal helper; for future days we don't overwrite today's ID keys
+        // — that's fine because cancelAllScheduledNotificationsAsync clears everything on next load.
+        const now = new Date();
+        const safetyMargin = 3 * 60 * 1000;
+        if (time <= new Date(now.getTime() + safetyMargin)) continue;
+        try {
+            const key = name.toLowerCase();
+            const content = PRAYER_CONTENT[key];
+            const title = content?.title ?? `🕌 ${name} Prayer`;
+            const body   = content?.body  ?? `It is time for ${name}.`;
+            await Notifications.scheduleNotificationAsync({
+                content: {
+                    title,
+                    body,
+                    priority: Notifications.AndroidNotificationPriority.HIGH,
+                    sound: 'default',
+                },
+                trigger: {
+                    type: Notifications.SchedulableTriggerInputTypes.DATE,
+                    date: time,
+                    ...(Platform.OS === 'android' && { channelId: 'prayers' }),
+                },
+            });
+        } catch (err) {
+            console.warn(`[DEBUG] Failed to schedule future ${name}:`, err);
+        }
+    }
+}
+
+/**
  * Internal helper for Tahajjud scheduling
  */
 async function internalScheduleTahajjudNotification(targetTime: Date, bufferMinutes: number) {
@@ -218,13 +282,14 @@ async function internalScheduleTahajjudNotification(targetTime: Date, bufferMinu
         content: {
             title,
             body,
-            sound: "tahajjud_alert.wav",
+            sound: 'tahajjud_alert.wav',
             priority: Notifications.AndroidNotificationPriority.MAX,
             vibrate: [0, 1000, 500, 1000],
         },
         trigger: {
+            type: Notifications.SchedulableTriggerInputTypes.DATE,
             date: timeToWake,
-            channelId: 'tahajjud',
+            ...(Platform.OS === 'android' && { channelId: 'tahajjud' }),
         },
     });
 
@@ -234,31 +299,102 @@ async function internalScheduleTahajjudNotification(targetTime: Date, bufferMinu
 }
 
 /**
+ * Like internalScheduleTahajjudNotification but returns the notification ID
+ * (used for future-night scheduling where we don't overwrite tonight's key)
+ */
+async function internalScheduleTahajjudNotificationRaw(targetTime: Date, bufferMinutes: number): Promise<string | null> {
+    const now = new Date();
+    const timeToWake = new Date(targetTime.getTime() - bufferMinutes * 60 * 1000);
+    if (timeToWake <= new Date(now.getTime() + 3 * 60 * 1000)) return null;
+
+    const title = bufferMinutes > 0 ? '⏰ Tahajjud Reminder' : '🌙 Time for Tahajjud';
+    const formattedTahajjudTime = targetTime.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+    const body = bufferMinutes > 0
+        ? `Tahajjud (Last Third) begins at ${formattedTahajjudTime} (in ${bufferMinutes} mins). Get ready.`
+        : `The last third of the night has begun (${formattedTahajjudTime}). Your Lord is waiting.`;
+
+    try {
+        const notificationId = await Notifications.scheduleNotificationAsync({
+            content: {
+                title,
+                body,
+                sound: 'tahajjud_alert.wav',
+                priority: Notifications.AndroidNotificationPriority.MAX,
+                vibrate: [0, 1000, 500, 1000],
+            },
+            trigger: {
+                type: Notifications.SchedulableTriggerInputTypes.DATE,
+                date: timeToWake,
+                ...(Platform.OS === 'android' && { channelId: 'tahajjud' }),
+            },
+        });
+        return notificationId;
+    } catch {
+        return null;
+    }
+}
+
+// Unique title + body for each prayer — and for Tahajjud at-the-time vs. prep reminder
+const PRAYER_CONTENT: Record<string, { emoji: string; title: string; body: string }> = {
+    fajr: {
+        emoji: '🌅',
+        title: 'Fajr',
+        body: "It's Fajr time. Start your day with Allah.",
+    },
+    dhuhr: {
+        emoji: '☀️',
+        title: 'Dhuhr',
+        body: "Time for Dhuhr. Take a moment and pray.",
+    },
+    asr: {
+        emoji: '🌤',
+        title: 'Asr',
+        body: "Asr is here. Don't delay.",
+    },
+    maghrib: {
+        emoji: '🌇',
+        title: 'Maghrib',
+        body: "Maghrib time. Pray before it passes.",
+    },
+    isha: {
+        emoji: '🌃',
+        title: 'Isha',
+        body: "End your day with Isha.",
+    },
+};
+
+/**
  * Internal helper that doesn't call cancelNotification to avoid redundant AsyncStorage hits
  */
 async function internalSchedulePrayerNotification(prayerName: string, targetTime: Date) {
     const now = new Date();
     const scheduleTime = new Date(targetTime);
-    const safetyMargin = 3 * 60 * 1000; // Increased to 3 minutes to be very safe against app-load jitter
+    const safetyMargin = 3 * 60 * 1000;
 
     if (scheduleTime <= new Date(now.getTime() + safetyMargin)) {
         console.log(`[DEBUG] Skipping ${prayerName}: too close or in past`);
         return;
     }
 
+    const key = prayerName.toLowerCase();
+    const content = PRAYER_CONTENT[key];
+    const title = content?.title ?? `🕌 ${prayerName} Prayer`;
+    const body   = content?.body  ?? `It is time for ${prayerName}.`;
+
     const notificationId = await Notifications.scheduleNotificationAsync({
         content: {
-            title: `🕌 ${prayerName} Prayer`,
-            body: `It is time for ${prayerName}. Take a break and connect with your Creator.`,
+            title,
+            body,
             priority: Notifications.AndroidNotificationPriority.HIGH,
-            sound: true,
+            sound: 'default',
         },
         trigger: {
+            type: Notifications.SchedulableTriggerInputTypes.DATE,
             date: scheduleTime,
-            channelId: 'prayers',
+            ...(Platform.OS === 'android' && { channelId: 'prayers' }),
         },
     });
 
-    await AsyncStorage.setItem(`${NOTIFICATION_ID_KEY_PREFIX}${prayerName.toLowerCase()}`, notificationId);
+    await AsyncStorage.setItem(`${NOTIFICATION_ID_KEY_PREFIX}${key}`, notificationId);
     console.log(`[DEBUG] ${prayerName} scheduled for ${scheduleTime.toLocaleString()}`);
 }

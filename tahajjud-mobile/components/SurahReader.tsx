@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useRef, useCallback } from 'react';
-import { View, Text, StyleSheet, ActivityIndicator, TouchableOpacity, Modal, FlatList, SafeAreaView, ViewToken, Pressable, Platform } from 'react-native';
-import { ArrowLeft, Globe, X, Check, Bookmark, Play, Pause, SkipBack, SkipForward, Volume2 } from 'lucide-react-native';
+import { View, Text, StyleSheet, ActivityIndicator, TouchableOpacity, Modal, FlatList, SafeAreaView, ViewToken, Pressable, Platform, Animated } from 'react-native';
+import { ArrowLeft, Globe, X, Check, Bookmark, Play, Pause, SkipBack, SkipForward, Volume2, Timer } from 'lucide-react-native';
 import { BlurView } from 'expo-blur';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { QuranService, SurahDetail, Edition, Ayah } from '../services/QuranService';
@@ -80,6 +80,89 @@ export function SurahReader({ surahNumber, edition = 'en.sahih', onEditionChange
     const playAyahRef = useRef<(index: number) => Promise<void>>(null);
     const handleNextAyahRef = useRef<() => void>(null);
 
+    // Sleep timer
+    const SLEEP_OPTIONS = [15, 30, 60] as const;
+    const [sleepTimerMins, setSleepTimerMins] = useState<0 | 15 | 30 | 60>(0);
+    const [sleepSecondsLeft, setSleepSecondsLeft] = useState(0);
+    const sleepIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+    const clearSleepTimer = () => {
+        if (sleepIntervalRef.current) {
+            clearInterval(sleepIntervalRef.current);
+            sleepIntervalRef.current = null;
+        }
+        setSleepTimerMins(0);
+        setSleepSecondsLeft(0);
+        // Restore full volume
+        soundRef.current?.setVolumeAsync(1.0).catch(() => {});
+    };
+
+    const cycleSleepTimer = () => {
+        clearSleepTimer();
+        const next = sleepTimerMins === 0 ? 15 : sleepTimerMins === 15 ? 30 : sleepTimerMins === 30 ? 60 : 0;
+        if (next === 0) return;
+        const totalSeconds = next * 60;
+        setSleepTimerMins(next);
+        setSleepSecondsLeft(totalSeconds);
+        let remaining = totalSeconds;
+        sleepIntervalRef.current = setInterval(async () => {
+            remaining -= 1;
+            setSleepSecondsLeft(remaining);
+            // Fade volume in last 30 seconds
+            if (remaining <= 30 && soundRef.current) {
+                const vol = Math.max(0.01, remaining / 30);
+                try { await soundRef.current.setVolumeAsync(vol); } catch (_) {}
+            }
+            if (remaining <= 0) {
+                clearInterval(sleepIntervalRef.current!);
+                sleepIntervalRef.current = null;
+                setSleepTimerMins(0);
+                setSleepSecondsLeft(0);
+                // Stop playback
+                try {
+                    await soundRef.current?.pauseAsync();
+                    await soundRef.current?.setVolumeAsync(1.0);
+                } catch (_) {}
+                setIsPlaying(false);
+            }
+        }, 1000);
+    };
+
+    // Cleanup sleep timer on unmount
+    useEffect(() => {
+        return () => {
+            if (sleepIntervalRef.current) clearInterval(sleepIntervalRef.current);
+        };
+    }, []);
+
+    const formatSleepTime = (secs: number) => {
+        const m = Math.floor(secs / 60);
+        const s = secs % 60;
+        return `${m}:${s.toString().padStart(2, '0')}`;
+    };
+
+    // Audio bar slide animation
+    const [showAudioBar, setShowAudioBar] = useState(false);
+    const audioBarAnim = useRef(new Animated.Value(150)).current;
+
+    const showBar = useCallback(() => {
+        setShowAudioBar(true);
+        Animated.spring(audioBarAnim, {
+            toValue: 0,
+            useNativeDriver: true,
+            tension: 80,
+            friction: 12,
+        }).start();
+    }, [audioBarAnim]);
+
+    const hideBar = useCallback(() => {
+        Animated.timing(audioBarAnim, {
+            toValue: 150,
+            duration: 250,
+            useNativeDriver: true,
+        }).start(() => setShowAudioBar(false));
+    }, [audioBarAnim]);
+
     const { colors } = useTheme();
 
     useEffect(() => {
@@ -89,6 +172,7 @@ export function SurahReader({ surahNumber, edition = 'en.sahih', onEditionChange
     const loadSurah = async () => {
         setLoading(true);
         setInitialScrollDone(false);
+        hideBar();
 
         // Re-assert audio mode for this surah session
         try {
@@ -230,6 +314,7 @@ export function SurahReader({ surahNumber, edition = 'en.sahih', onEditionChange
             currentAyahIndexRef.current = index;
             setIsPlaying(true);
             setAudioLoading(false);
+            showBar();
 
             // 3. Start pre-loading the next ayah immediately for seamless background transition
             // We delay this slightly to let the current playback start smoothly
@@ -288,8 +373,9 @@ export function SurahReader({ surahNumber, edition = 'en.sahih', onEditionChange
             setIsPlaying(false);
             setCurrentAyahIndex(null);
             currentAyahIndexRef.current = null;
+            hideBar();
         }
-    }, []);
+    }, [hideBar]);
 
     // Sync refs every render
     playAyahRef.current = playAyah;
@@ -349,14 +435,26 @@ export function SurahReader({ surahNumber, edition = 'en.sahih', onEditionChange
                 </TouchableOpacity>
             </View>
 
-            {currentAyahIndex !== null && surah && (
-                <View style={styles.audioInfo}>
-                    <Volume2 size={12} color="#94a3b8" />
-                    <Text style={styles.audioInfoText}>
-                        Ayah {currentAyahIndex + 1} of {surah.numberOfAyahs}
+            <View style={styles.audioFooter}>
+                {currentAyahIndex !== null && surah && (
+                    <View style={styles.audioInfo}>
+                        <Volume2 size={12} color="#94a3b8" />
+                        <Text style={styles.audioInfoText}>
+                            Ayah {currentAyahIndex + 1} of {surah.numberOfAyahs}
+                        </Text>
+                    </View>
+                )}
+                {/* Sleep timer button */}
+                <TouchableOpacity
+                    onPress={cycleSleepTimer}
+                    style={[styles.sleepTimerBtn, sleepTimerMins > 0 && { backgroundColor: colors.accent + '33', borderColor: colors.accent + '66' }]}
+                >
+                    <Timer size={13} color={sleepTimerMins > 0 ? colors.accent : '#94a3b8'} />
+                    <Text style={[styles.sleepTimerText, sleepTimerMins > 0 && { color: colors.accent }]}>
+                        {sleepTimerMins === 0 ? 'Sleep' : formatSleepTime(sleepSecondsLeft)}
                     </Text>
-                </View>
-            )}
+                </TouchableOpacity>
+            </View>
         </>
     );
 
@@ -541,9 +639,9 @@ export function SurahReader({ surahNumber, edition = 'en.sahih', onEditionChange
                 }}
             />
 
-            {/* Floating Audio Player */}
-            {audioAyahs.length > 0 && (
-                <View style={styles.audioPlayerContainer}>
+            {/* Floating Audio Player — slides up on play, hidden on load */}
+            {showAudioBar && (
+                <Animated.View style={[styles.audioPlayerContainer, { transform: [{ translateY: audioBarAnim }] }]}>
                     {Platform.OS === 'ios' ? (
                         <BlurView intensity={80} tint="dark" style={styles.audioPlayerBlur}>
                             {renderAudioControlsContent()}
@@ -553,7 +651,7 @@ export function SurahReader({ surahNumber, edition = 'en.sahih', onEditionChange
                             {renderAudioControlsContent()}
                         </View>
                     )}
-                </View>
+                </Animated.View>
             )}
 
             {/* Modern Language Picker Modal */}
@@ -878,11 +976,18 @@ const styles = StyleSheet.create({
         justifyContent: 'center',
         alignItems: 'center',
     },
+    audioFooter: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        width: '100%',
+        paddingHorizontal: 4,
+        marginTop: 8,
+    },
     audioInfo: {
         flexDirection: 'row',
         alignItems: 'center',
         gap: 6,
-        marginTop: 8,
     },
     audioInfoText: {
         color: '#94a3b8',
@@ -890,5 +995,21 @@ const styles = StyleSheet.create({
         fontWeight: 'bold',
         textTransform: 'uppercase',
         letterSpacing: 1,
-    }
+    },
+    sleepTimerBtn: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 4,
+        paddingHorizontal: 10,
+        paddingVertical: 5,
+        borderRadius: 12,
+        borderWidth: 1,
+        borderColor: 'rgba(255,255,255,0.15)',
+        backgroundColor: 'rgba(255,255,255,0.06)',
+    },
+    sleepTimerText: {
+        color: '#94a3b8',
+        fontSize: 11,
+        fontWeight: '600',
+    },
 });
