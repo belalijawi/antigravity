@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Alert, Switch, Platform, Linking, Modal, ActivityIndicator, TextInput } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
-import { X, ChevronRight, User, Cloud, Shield, Bell, LogOut, Mail, Globe, Lock, MessageSquare, Palette, Moon, Trash2 } from 'lucide-react-native';
+import { X, ChevronRight, User, Cloud, Shield, Bell, LogOut, Mail, Globe, Lock, MessageSquare, Palette, Moon, Trash2, Star } from 'lucide-react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as LocalAuthentication from 'expo-local-authentication';
 import { GoogleAuthProvider, OAuthProvider, signInWithCredential } from 'firebase/auth';
@@ -20,6 +20,7 @@ import Animated, { FadeInDown, FadeInUp } from 'react-native-reanimated';
 import { useTheme, ThemeType, PREMIUM_THEMES, THEME_LABELS } from '../context/ThemeContext';
 import { usePurchases } from '../context/PurchasesContext';
 import { PrivacyPolicy } from './PrivacyPolicy';
+import Paywall from './Paywall';
 import { haptic } from '../utils/haptic';
 import { tabletContentStyle } from '../utils/layout';
 
@@ -30,6 +31,8 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ onClose }) => {
     const { theme, setTheme, colors, userName, setUserName } = useTheme();
     const { isPremium } = usePurchases();
     const [isDeleting, setIsDeleting] = useState(false);
+    const [localPaywallVisible, setLocalPaywallVisible] = useState(false);
+    const openPaywall = () => setLocalPaywallVisible(true);
     const insets = useSafeAreaInsets();
     const [isSyncEnabled, setIsSyncEnabled] = useState(false);
     const [isBiometricEnabled, setIsBiometricEnabled] = useState(false);
@@ -408,6 +411,25 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ onClose }) => {
                 showsVerticalScrollIndicator={false}
                 contentContainerStyle={[styles.scrollContent, tabletContentStyle()]}
             >
+                {!isPremium && (
+                    <Animated.View entering={FadeInDown.delay(50).duration(600)}>
+                        <TouchableOpacity
+                            onPress={openPaywall}
+                            style={styles.upgradeBanner}
+                            activeOpacity={0.85}
+                        >
+                            <LinearGradient
+                                colors={[colors.accentGradient[0], colors.accentGradient[1]]}
+                                start={{ x: 0, y: 0 }}
+                                end={{ x: 1, y: 0 }}
+                                style={StyleSheet.absoluteFill}
+                            />
+                            <Star size={20} color="#000" fill="#000" />
+                            <Text style={styles.upgradeBannerText}>Upgrade to Tahajjud+</Text>
+                            <ChevronRight size={18} color="#000" />
+                        </TouchableOpacity>
+                    </Animated.View>
+                )}
                 <Animated.View entering={FadeInDown.delay(100).duration(800)} style={styles.section}>
                     <Text style={[styles.sectionHeader, { color: colors.secondaryText }]}>Appearance</Text>
                     <View style={styles.card}>
@@ -439,7 +461,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ onClose }) => {
                                         key={t}
                                         onPress={() => {
                                             if (isLocked) {
-                                                Alert.alert('Premium Theme', 'Upgrade to Tahajjud+ to unlock all themes.');
+                                                openPaywall();
                                                 return;
                                             }
                                             haptic.light();
@@ -755,6 +777,16 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ onClose }) => {
                     </View>
                 </View>
             </Modal>
+
+            {/* Paywall Modal — rendered here so it works inside the Settings modal */}
+            <Modal
+                visible={localPaywallVisible}
+                animationType="slide"
+                presentationStyle="fullScreen"
+                onRequestClose={() => setLocalPaywallVisible(false)}
+            >
+                <Paywall onClose={() => setLocalPaywallVisible(false)} />
+            </Modal>
         </View >
     );
 };
@@ -1001,6 +1033,24 @@ const styles = StyleSheet.create({
         backgroundColor: 'rgba(0,0,0,0.5)',
         borderRadius: 8,
         padding: 2,
+    },
+    upgradeBanner: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'center',
+        gap: 10,
+        marginHorizontal: 20,
+        marginBottom: 16,
+        paddingVertical: 14,
+        paddingHorizontal: 20,
+        borderRadius: 16,
+        overflow: 'hidden',
+    },
+    upgradeBannerText: {
+        color: '#000',
+        fontWeight: '700',
+        fontSize: 16,
+        flex: 1,
     },
     methodSelector: {
         paddingHorizontal: 20,

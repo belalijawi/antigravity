@@ -16,7 +16,7 @@ import { usePurchases } from '../context/PurchasesContext';
 
 export function NightCalculator({ onNightCalcReady, refreshKey }: { onNightCalcReady?: (calc: NightCalculation) => void, refreshKey?: number } = {}) {
     const { colors } = useTheme();
-    const { isPremium } = usePurchases();
+    const { isPremium, openPaywall } = usePurchases();
     const [location, setLocation] = useState<{ lat: number; lng: number } | null>(null);
     const [prayerTimes, setPrayerTimes] = useState<PrayerTimes | null>(null);
     const [nightCalc, setNightCalc] = useState<NightCalculation | null>(null);
@@ -404,7 +404,7 @@ export function NightCalculator({ onNightCalcReady, refreshKey }: { onNightCalcR
                         // Free: fixed 15 min with upgrade hint
                         <TouchableOpacity
                             style={styles.prepRow}
-                            onPress={() => Alert.alert('Tahajjud+ Premium', 'Upgrade to set a custom wake-up buffer from 0 to 60 minutes before the last third.')}
+                            onPress={() => openPaywall()}
                             activeOpacity={0.7}
                         >
                             <View style={[styles.bufferTab, styles.bufferTabActive]}>

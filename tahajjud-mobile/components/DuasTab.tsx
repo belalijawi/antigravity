@@ -136,7 +136,7 @@ const FREE_DUA_LIMIT = 3;
 
 export function DuasTab() {
     const { colors } = useTheme();
-    const { isPremium } = usePurchases();
+    const { isPremium, openPaywall } = usePurchases();
     const [searchQuery, setSearchQuery] = useState('');
     const [selectedCategory, setSelectedCategory] = useState('All');
     const [bookmarkedIds, setBookmarkedIds] = useState<string[]>([]);
@@ -212,11 +212,7 @@ export function DuasTab() {
 
         // Free limit check
         if (!isPremium && personalDuas.length >= FREE_DUA_LIMIT) {
-            Alert.alert(
-                'Upgrade to Tahajjud+',
-                `Free users can save up to ${FREE_DUA_LIMIT} personal duas. Upgrade to save unlimited letters to Allah.`,
-                [{ text: 'Not now', style: 'cancel' }, { text: 'Upgrade', style: 'default', onPress: () => setIsModalVisible(false) }]
-            );
+            openPaywall();
             return;
         }
 

@@ -71,6 +71,7 @@
       "expo-apple-authentication"
     ],
     "extra": {
+      "revenueCatAppleKey": "appl_nyGORtabGsjtnLjpdnujergeIfI",
       "eas": {
         "projectId": "826f6518-cc97-4065-bbfd-e0e8e51cb475"
       }

@@ -1,6 +1,6 @@
 import 'react-native-gesture-handler';
 import React, { useEffect, useState } from 'react';
-import { View, StatusBar, LogBox, Platform, StyleSheet, Dimensions } from 'react-native';
+import { View, StatusBar, LogBox, Platform, StyleSheet, Dimensions, Modal } from 'react-native';
 import { NavigationContainer, DarkTheme } from '@react-navigation/native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -16,6 +16,8 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Moon, BookHeart, Scroll, BookOpen, Infinity } from 'lucide-react-native';
 import { TasbeehTab } from './components/TasbeehTab';
 import { ThemeProvider, useTheme, ThemeColors } from './context/ThemeContext';
+import { PurchasesProvider, usePurchases } from './context/PurchasesContext';
+import Paywall from './components/Paywall';
 import { haptic } from './utils/haptic';
 import { Audio, InterruptionModeIOS, InterruptionModeAndroid } from 'expo-av';
 
@@ -224,9 +226,11 @@ const styles = StyleSheet.create({
 export default function App() {
   return (
     <SafeAreaProvider>
-      <ThemeProvider>
-        <AppNavigator />
-      </ThemeProvider>
+      <PurchasesProvider>
+        <ThemeProvider>
+          <AppNavigator />
+        </ThemeProvider>
+      </PurchasesProvider>
     </SafeAreaProvider>
   );
 }
@@ -290,5 +294,17 @@ function AppNavigator() {
     return <WelcomeScreen onComplete={handleOnboardingComplete} />;
   }
 
-  return <MainApp />;
+  return <MainAppWithPaywall />;
+}
+
+function MainAppWithPaywall() {
+  const { paywallVisible, closePaywall } = usePurchases();
+  return (
+    <>
+      <MainApp />
+      <Modal visible={paywallVisible} animationType="slide" presentationStyle="fullScreen">
+        <Paywall onClose={closePaywall} />
+      </Modal>
+    </>
+  );
 }

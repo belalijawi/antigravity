@@ -5,6 +5,9 @@ import Purchases from 'react-native-purchases';
 interface PurchasesContextType {
     isPremium: boolean;
     isLoading: boolean;
+    paywallVisible: boolean;
+    openPaywall: () => void;
+    closePaywall: () => void;
     checkPremiumStatus: () => Promise<void>;
 }
 
@@ -21,6 +24,10 @@ export const usePurchases = () => {
 export const PurchasesProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
     const [isPremium, setIsPremium] = useState<boolean>(false);
     const [isLoading, setIsLoading] = useState<boolean>(true);
+    const [paywallVisible, setPaywallVisible] = useState<boolean>(false);
+
+    const openPaywall = () => setPaywallVisible(true);
+    const closePaywall = () => setPaywallVisible(false);
 
     const checkPremiumStatus = async () => {
         setIsLoading(true);
@@ -31,13 +38,9 @@ export const PurchasesProvider: React.FC<{ children: React.ReactNode }> = ({ chi
 
     useEffect(() => {
         const init = async () => {
-            // Initialize the SDK
             await RevenueCatService.initialize();
-
-            // Check initial status
             await checkPremiumStatus();
 
-            // Add listener for automatic updates if purchase status changes in the background
             Purchases.addCustomerInfoUpdateListener((info) => {
                 const hasPremium = typeof info.entitlements.active[ENTITLEMENT_ID] !== 'undefined';
                 setIsPremium(hasPremium);
@@ -52,7 +55,7 @@ export const PurchasesProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     }, []);
 
     return (
-        <PurchasesContext.Provider value={{ isPremium, isLoading, checkPremiumStatus }}>
+        <PurchasesContext.Provider value={{ isPremium, isLoading, paywallVisible, openPaywall, closePaywall, checkPremiumStatus }}>
             {children}
         </PurchasesContext.Provider>
     );

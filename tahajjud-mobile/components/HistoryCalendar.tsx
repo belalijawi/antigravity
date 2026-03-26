@@ -24,7 +24,7 @@ function getFirstDayOfWeek(year: number, month: number): number {
 
 export function HistoryCalendar() {
     const { colors } = useTheme();
-    const { isPremium } = usePurchases();
+    const { isPremium, openPaywall } = usePurchases();
     const today = new Date();
     const [viewYear, setViewYear] = useState(today.getFullYear());
     const [viewMonth, setViewMonth] = useState(today.getMonth());
@@ -55,7 +55,7 @@ export function HistoryCalendar() {
 
     const prevMonth = () => {
         if (!isPremium) {
-            Alert.alert('Tahajjud+ Premium', 'Upgrade to view your full prayer history across all months.');
+            openPaywall();
             return;
         }
         if (viewMonth === 0) { setViewYear(y => y - 1); setViewMonth(11); }
@@ -143,7 +143,7 @@ export function HistoryCalendar() {
                             <TouchableOpacity
                                 key={dateStr}
                                 activeOpacity={isLocked ? 0.6 : 1}
-                                onPress={isLocked ? () => Alert.alert('Tahajjud+ Premium', 'Upgrade to view your full 30-day prayer history.') : undefined}
+                                onPress={isLocked ? () => openPaywall() : undefined}
                                 style={[
                                     styles.cell,
                                     isLogged && !isLocked && styles.cellLogged,
@@ -185,7 +185,7 @@ export function HistoryCalendar() {
                 {!isPremium && (
                     <TouchableOpacity
                         style={styles.upgradeBanner}
-                        onPress={() => Alert.alert('Tahajjud+ Premium', 'Upgrade to unlock your full prayer history across all months.')}
+                        onPress={() => openPaywall()}
                         activeOpacity={0.7}
                     >
                         <Lock size={11} color="#f59e0b" />

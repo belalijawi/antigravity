@@ -1,14 +1,13 @@
 import Purchases, { LOG_LEVEL, PurchasesOffering, CustomerInfo } from 'react-native-purchases';
 import { Platform } from 'react-native';
 
-// TODO: Replace with your actual RevenueCat Public API Keys
 const API_KEYS = {
-    apple: 'YOUR_APPLE_API_KEY',
-    google: 'YOUR_GOOGLE_API_KEY',
+    apple: 'appl_nyGORtabGsjtnLjpdnujergeIfI',
+    google: '',
 };
 
 // The name of the Entitlement you create in RevenueCat (e.g., 'Premium', 'Pro')
-export const ENTITLEMENT_ID = 'Premium';
+export const ENTITLEMENT_ID = 'Tahajjud+ Premium';
 
 class RevenueCatService {
     /**
