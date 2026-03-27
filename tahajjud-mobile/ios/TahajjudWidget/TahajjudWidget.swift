@@ -277,6 +277,188 @@ struct MediumWidgetView: View {
     }
 }
 
+// MARK: - Large Widget
+
+struct LargeWidgetView: View {
+    let entry: TahajjudEntry
+
+    var isGateOpen: Bool {
+        guard let t = entry.widgetData.tahajjudStart else { return false }
+        return Date() >= t
+    }
+
+    var countdownText: String {
+        let diff = entry.widgetData.nextPrayerTime.timeIntervalSince(Date())
+        if diff <= 0 { return "Now" }
+        let h = Int(diff) / 3600
+        let m = (Int(diff) % 3600) / 60
+        return h > 0 ? "\(h)h \(m)m" : "\(m)m"
+    }
+
+    var prayerEmoji: String {
+        switch entry.widgetData.nextPrayer.lowercased() {
+        case "fajr":    return "🌅"
+        case "dhuhr":   return "☀️"
+        case "asr":     return "🌤"
+        case "maghrib": return "🌇"
+        case "isha":    return "🌃"
+        default:        return "🕌"
+        }
+    }
+
+    var body: some View {
+        ZStack {
+            // Background
+            LinearGradient(
+                colors: [Color(hex: "020617"), Color(hex: "0a0f2e")],
+                startPoint: .topLeading, endPoint: .bottomTrailing
+            )
+
+            // Nebula glows
+            Circle()
+                .fill(Color(hex: "4f46e5").opacity(0.22))
+                .frame(width: 260, height: 260)
+                .offset(x: 120, y: -100)
+                .blur(radius: 50)
+            Circle()
+                .fill(Color(hex: "7c3aed").opacity(0.12))
+                .frame(width: 180, height: 180)
+                .offset(x: -80, y: 120)
+                .blur(radius: 40)
+
+            VStack(alignment: .leading, spacing: 0) {
+
+                // ── Header ──────────────────────────────────────────
+                HStack {
+                    Text("🌙")
+                        .font(.system(size: 17))
+                    Text("Tahajjud+")
+                        .font(.system(size: 15, weight: .bold))
+                        .foregroundColor(.white)
+                    Spacer()
+                    Text(Date(), style: .date)
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundColor(Color(hex: "475569"))
+                }
+                .padding(.bottom, 16)
+
+                // ── Tahajjud block ───────────────────────────────────
+                VStack(alignment: .leading, spacing: 6) {
+                    Text(isGateOpen ? "🔓  GATE IS OPEN" : "WAKE FOR TAHAJJUD")
+                        .font(.system(size: 10, weight: .bold))
+                        .foregroundColor(isGateOpen ? Color(hex: "a78bfa") : Color(hex: "64748b"))
+                        .kerning(1.2)
+
+                    if let tahajjud = entry.widgetData.tahajjudStart {
+                        Text(tahajjud, style: .time)
+                            .font(.system(size: 52, weight: .heavy))
+                            .foregroundColor(isGateOpen ? Color(hex: "a78bfa") : .white)
+                            .minimumScaleFactor(0.7)
+
+                        if !isGateOpen {
+                            HStack(spacing: 4) {
+                                Image(systemName: "moon.stars.fill")
+                                    .font(.system(size: 11))
+                                    .foregroundColor(Color(hex: "7c3aed"))
+                                Text("in ")
+                                    .font(.system(size: 12))
+                                    .foregroundColor(Color(hex: "94a3b8"))
+                                + Text(tahajjud, style: .relative)
+                                    .font(.system(size: 12, weight: .semibold))
+                                    .foregroundColor(Color(hex: "a78bfa"))
+                            }
+                        } else {
+                            Text("The last third of the night has begun")
+                                .font(.system(size: 12, weight: .medium))
+                                .foregroundColor(Color(hex: "a78bfa").opacity(0.8))
+                        }
+                    } else {
+                        Text("Open the app to calculate")
+                            .font(.system(size: 14))
+                            .foregroundColor(Color(hex: "475569"))
+                    }
+                }
+                .padding(14)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(
+                    RoundedRectangle(cornerRadius: 16)
+                        .fill(Color(hex: isGateOpen ? "3730a3" : "1e1b4b").opacity(0.4))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 16)
+                                .stroke(Color(hex: "4f46e5").opacity(0.25), lineWidth: 1)
+                        )
+                )
+
+                // ── Divider ──────────────────────────────────────────
+                Rectangle()
+                    .fill(Color.white.opacity(0.06))
+                    .frame(height: 1)
+                    .padding(.vertical, 14)
+
+                // ── Next prayer ──────────────────────────────────────
+                HStack(spacing: 12) {
+                    Text(prayerEmoji)
+                        .font(.system(size: 28))
+
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("NEXT PRAYER")
+                            .font(.system(size: 9, weight: .bold))
+                            .foregroundColor(Color(hex: "64748b"))
+                            .kerning(1)
+                        Text(entry.widgetData.nextPrayer)
+                            .font(.system(size: 20, weight: .bold))
+                            .foregroundColor(.white)
+                    }
+
+                    Spacer()
+
+                    VStack(alignment: .trailing, spacing: 2) {
+                        Text(entry.widgetData.nextPrayerTime, style: .time)
+                            .font(.system(size: 16, weight: .semibold))
+                            .foregroundColor(Color(hex: "cbd5e1"))
+                        Text("in \(countdownText)")
+                            .font(.system(size: 12, weight: .bold))
+                            .foregroundColor(Color(hex: "22d3ee"))
+                    }
+                }
+
+                // ── Divider ──────────────────────────────────────────
+                Rectangle()
+                    .fill(Color.white.opacity(0.06))
+                    .frame(height: 1)
+                    .padding(.vertical, 14)
+
+                // ── Streak ───────────────────────────────────────────
+                HStack(spacing: 12) {
+                    Text(entry.widgetData.streak > 0 ? "🔥" : "🌙")
+                        .font(.system(size: 28))
+
+                    VStack(alignment: .leading, spacing: 2) {
+                        if entry.widgetData.streak > 0 {
+                            Text("\(entry.widgetData.streak) night\(entry.widgetData.streak == 1 ? "" : "s")")
+                                .font(.system(size: 20, weight: .bold))
+                                .foregroundColor(Color(hex: "f59e0b"))
+                            Text("Tahajjud streak")
+                                .font(.system(size: 11))
+                                .foregroundColor(Color(hex: "94a3b8"))
+                        } else {
+                            Text("Start your streak")
+                                .font(.system(size: 17, weight: .bold))
+                                .foregroundColor(.white)
+                            Text("Pray Tahajjud tonight")
+                                .font(.system(size: 11))
+                                .foregroundColor(Color(hex: "94a3b8"))
+                        }
+                    }
+
+                    Spacer()
+                }
+            }
+            .padding(18)
+        }
+    }
+}
+
 // MARK: - Widget definition
 
 struct TahajjudWidget: Widget {
@@ -289,7 +471,7 @@ struct TahajjudWidget: Widget {
         }
         .configurationDisplayName("Tahajjud+")
         .description("Next prayer time and Tahajjud streak.")
-        .supportedFamilies([.systemSmall, .systemMedium])
+        .supportedFamilies([.systemSmall, .systemMedium, .systemLarge])
     }
 }
 
@@ -303,6 +485,8 @@ struct TahajjudWidgetEntryView: View {
             SmallWidgetView(entry: entry)
         case .systemMedium:
             MediumWidgetView(entry: entry)
+        case .systemLarge:
+            LargeWidgetView(entry: entry)
         default:
             SmallWidgetView(entry: entry)
         }
