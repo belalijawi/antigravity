@@ -12,7 +12,12 @@ import { HistoryCalendar } from './HistoryCalendar';
 import { SettingsScreen } from './SettingsScreen';
 import { LinearGradient } from 'expo-linear-gradient';
 import { BlurView } from 'expo-blur';
-import Animated, { FadeInUp, FadeInDown } from 'react-native-reanimated';
+import Animated, {
+    FadeInUp, FadeInDown,
+    useSharedValue, useAnimatedStyle,
+    withRepeat, withSequence, withTiming,
+    cancelAnimation,
+} from 'react-native-reanimated';
 import { useTheme } from '../context/ThemeContext';
 import { tabletContentStyle } from '../utils/layout';
 import { NightCalculation } from '../lib/prayer-times';
@@ -35,6 +40,65 @@ export function HomeTab() {
     const isGateOpen = nightCalc
         ? currentTime >= nightCalc.lastThirdStart && currentTime < nightCalc.nightEnd
         : false;
+
+    // ── Gate-open animations ──────────────────────────────────────
+    const moonPulse   = useSharedValue(1);
+    const moonOpacity = useSharedValue(0.4);
+    const badgePulse  = useSharedValue(0);
+    const s1 = useSharedValue(0);
+    const s2 = useSharedValue(0);
+    const s3 = useSharedValue(0);
+    const s4 = useSharedValue(0);
+    const s5 = useSharedValue(0);
+
+    useEffect(() => {
+        if (isGateOpen) {
+            moonPulse.value = withRepeat(
+                withSequence(withTiming(1.28, { duration: 2400 }), withTiming(1.0, { duration: 2400 })),
+                -1, false,
+            );
+            moonOpacity.value = withRepeat(
+                withSequence(withTiming(0.7, { duration: 2400 }), withTiming(0.2, { duration: 2400 })),
+                -1, false,
+            );
+            badgePulse.value = withRepeat(
+                withSequence(withTiming(1, { duration: 1600 }), withTiming(0.15, { duration: 1600 })),
+                -1, false,
+            );
+            s1.value = withRepeat(withSequence(withTiming(1, { duration: 900 }), withTiming(0, { duration: 700 })), -1, false);
+            s2.value = withRepeat(withSequence(withTiming(0, { duration: 500 }), withTiming(1, { duration: 700 }), withTiming(0, { duration: 600 })), -1, false);
+            s3.value = withRepeat(withSequence(withTiming(0, { duration: 1100 }), withTiming(1, { duration: 600 }), withTiming(0, { duration: 500 })), -1, false);
+            s4.value = withRepeat(withSequence(withTiming(1, { duration: 1400 }), withTiming(0, { duration: 900 })), -1, false);
+            s5.value = withRepeat(withSequence(withTiming(0, { duration: 800 }), withTiming(0.9, { duration: 700 }), withTiming(0, { duration: 900 })), -1, false);
+        } else {
+            cancelAnimation(moonPulse);  cancelAnimation(moonOpacity);
+            cancelAnimation(badgePulse);
+            cancelAnimation(s1); cancelAnimation(s2); cancelAnimation(s3); cancelAnimation(s4); cancelAnimation(s5);
+            moonPulse.value   = withTiming(1,   { duration: 700 });
+            moonOpacity.value = withTiming(0.4, { duration: 700 });
+            badgePulse.value  = withTiming(0,   { duration: 500 });
+            s1.value = withTiming(0); s2.value = withTiming(0); s3.value = withTiming(0);
+            s4.value = withTiming(0); s5.value = withTiming(0);
+        }
+    }, [isGateOpen]);
+
+    const moonAura1Style = useAnimatedStyle(() => ({
+        transform: [{ scale: moonPulse.value }],
+        opacity: moonOpacity.value,
+    }));
+    const moonAura2Style = useAnimatedStyle(() => ({
+        transform: [{ scale: 0.85 + (moonPulse.value - 1) * 0.5 }],
+        opacity: moonOpacity.value * 0.5,
+    }));
+    const badgeGlowStyle = useAnimatedStyle(() => ({
+        shadowOpacity: badgePulse.value * 0.9,
+        shadowRadius: 6 + badgePulse.value * 10,
+    }));
+    const s1Style = useAnimatedStyle(() => ({ opacity: s1.value }));
+    const s2Style = useAnimatedStyle(() => ({ opacity: s2.value }));
+    const s3Style = useAnimatedStyle(() => ({ opacity: s3.value }));
+    const s4Style = useAnimatedStyle(() => ({ opacity: s4.value }));
+    const s5Style = useAnimatedStyle(() => ({ opacity: s5.value }));
 
     return (
         <SafeAreaView style={styles.safeArea}>
@@ -140,15 +204,22 @@ export function HomeTab() {
                             {/* Terminator Shadow (Crescent Effect) */}
                             <View style={styles.moonShadow} />
                         </View>
-                        {/* Atmospheric Glow */}
-                        <View style={[styles.moonAura, { borderColor: 'rgba(248, 250, 252, 0.25)' }]} />
-                        <View style={[styles.moonAura, { width: 140, height: 140, borderRadius: 70, opacity: 0.15, borderColor: 'rgba(255, 255, 255, 0.2)' }]} />
+                        {/* Atmospheric Glow — pulses when gate is open */}
+                        <Animated.View style={[styles.moonAura, { borderColor: isGateOpen ? colors.accent + 'BB' : 'rgba(248, 250, 252, 0.25)' }, moonAura1Style]} />
+                        <Animated.View style={[styles.moonAura, { width: 152, height: 152, borderRadius: 76, borderColor: isGateOpen ? colors.accent + '55' : 'rgba(255, 255, 255, 0.15)' }, moonAura2Style]} />
+
+                        {/* Star sparkles — visible only when gate is open */}
+                        <Animated.View style={[styles.starDot,   { top: 6,  left: 6  }, s1Style]} />
+                        <Animated.View style={[styles.starDot,   { top: 14, right: 4 }, s2Style]} />
+                        <Animated.View style={[styles.starDotSm, { bottom: 10, left: 16 }, s3Style]} />
+                        <Animated.View style={[styles.starDot,   { bottom: 4, right: 14 }, s4Style]} />
+                        <Animated.View style={[styles.starDotSm, { top: 32,  left: 0  }, s5Style]} />
                     </View>
 
                     <View style={styles.heroContent}>
                         <Text style={[styles.heroSubtitle, { color: colors.accent }]}>Tonight's Journey</Text>
                         <Text style={styles.heroTitle}>Enter the Silent Hour</Text>
-                        <View style={styles.heroBadge}>
+                        <Animated.View style={[styles.heroBadge, isGateOpen && styles.heroBadgeOpen, badgeGlowStyle]}>
                             <View style={[styles.pulseDot, isGateOpen && styles.pulseDotActive]} />
                             <Text style={[styles.heroBadgeText, { color: isGateOpen ? colors.accent : '#64748b' }]}>
                                 {isGateOpen
@@ -159,7 +230,7 @@ export function HomeTab() {
                                             : 'Gate is Closed')
                                         : 'Calculating...'}
                             </Text>
-                        </View>
+                        </Animated.View>
                     </View>
                 </Animated.View>
 
@@ -401,6 +472,28 @@ const styles = StyleSheet.create({
         paddingVertical: 6,
         borderRadius: 20,
         gap: 8,
+        borderWidth: 1,
+        borderColor: 'transparent',
+        shadowColor: '#ffffff',
+        shadowOffset: { width: 0, height: 0 },
+    },
+    heroBadgeOpen: {
+        backgroundColor: 'rgba(255, 255, 255, 0.06)',
+        borderColor: 'rgba(255, 255, 255, 0.2)',
+    },
+    starDot: {
+        position: 'absolute',
+        width: 3,
+        height: 3,
+        borderRadius: 1.5,
+        backgroundColor: '#e2e8f0',
+    },
+    starDotSm: {
+        position: 'absolute',
+        width: 2,
+        height: 2,
+        borderRadius: 1,
+        backgroundColor: '#e2e8f0',
     },
     pulseDot: {
         width: 6,

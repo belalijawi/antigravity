@@ -1,9 +1,145 @@
-import React from 'react';
-import { View, Text, StyleSheet, ScrollView } from 'react-native';
-import { Book, Lightbulb } from 'lucide-react-native';
+import React, { useState } from 'react';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity } from 'react-native';
+import { Moon, Droplets, Heart, BookOpen, Hand, Star, ChevronDown, ChevronUp, Lightbulb, CheckCircle, Clock } from 'lucide-react-native';
 import { LinearGradient } from 'expo-linear-gradient';
-import { BlurView } from 'expo-blur';
+import Animated, { FadeInDown, FadeInUp } from 'react-native-reanimated';
 import { useTheme } from '../context/ThemeContext';
+
+const STEPS = [
+    {
+        number: 1,
+        icon: Clock,
+        title: 'Wake Up in the Last Third',
+        description: "The most blessed time for Tahajjud is the last third of the night — roughly 1–2 hours before Fajr. Use the app's Night Calculator to find your exact window each night.",
+        tip: 'Set an alarm tonight. Even once is a beginning.',
+    },
+    {
+        number: 2,
+        icon: Droplets,
+        title: 'Make Wudu',
+        description: 'Begin with purification. Perform a fresh wudu before your prayer. This physical act of cleansing mirrors the spiritual renewal happening in your heart.',
+        tip: "If you're already in a state of wudu, you may begin immediately.",
+    },
+    {
+        number: 3,
+        icon: Heart,
+        title: 'Set Your Intention (Niyyah)',
+        description: "Make a silent intention in your heart to pray Tahajjud for the sake of Allah alone. The Niyyah does not need to be spoken aloud — Allah knows what is in your heart.",
+        tip: '"Actions are by intentions." — Sahih Bukhari',
+    },
+    {
+        number: 4,
+        icon: BookOpen,
+        title: "Pray 2 Rak'ahs at a Time",
+        description: "Tahajjud is prayed in sets of 2 rak'ahs. You may pray a minimum of 2 and up to 12. The Prophet ﷺ would often pray 8 rak'ahs of the night prayer followed by Witr.",
+        tip: "Start with just 2 rak'ahs. Quality over quantity — full focus over many distracted ones.",
+    },
+    {
+        number: 5,
+        icon: Star,
+        title: 'Recite Slowly and Deeply',
+        description: 'After Al-Fatiha, the Prophet ﷺ would recite long surahs at night — such as Al-Baqarah, Aal-Imraan, and An-Nisa. If you are a beginner, any surah recited with presence of heart is beautiful.',
+        tip: 'Slow your recitation down. Let every word land.',
+    },
+    {
+        number: 6,
+        icon: Hand,
+        title: "Make Du'a After Prayer",
+        description: "The last third of the night is the most powerful time for du'a. After your prayer, raise your hands and speak to Allah directly. Ask for everything — your dunya and your akhira.",
+        tip: '"Our Lord descends to the lowest heaven and says: Who is calling on Me that I may answer?" — Sahih Bukhari',
+    },
+];
+
+const FAQS = [
+    {
+        q: 'Do I have to pray every single night?',
+        a: "No — Tahajjud is a voluntary (nafl) prayer. Even praying it occasionally brings great reward. The Prophet ﷺ said: 'The most beloved deeds to Allah are those done consistently, even if small.'",
+    },
+    {
+        q: 'What if I sleep through my alarm?',
+        a: "Do not be disheartened. Shaytan ties three knots at the back of your neck while you sleep. Waking up and breaking those knots is itself an act of worship. Try again tomorrow.",
+    },
+    {
+        q: 'Can I pray Tahajjud before sleeping?',
+        a: 'No — Tahajjud must be prayed after sleeping and waking up. If you have not slept, it becomes Qiyam al-Layl (voluntary night prayer), which is also highly rewarded.',
+    },
+    {
+        q: 'Do I need to pray Witr after Tahajjud?',
+        a: "Yes — if you haven't already prayed Witr after Isha, end your night prayer with Witr. The Prophet ﷺ said: 'Make Witr the last of your night prayer.' — Sahih Bukhari",
+    },
+    {
+        q: 'How long should each prayer session be?',
+        a: "There is no fixed minimum. The Prophet ﷺ sometimes stood so long his feet would swell. But even 5 sincere minutes before Fajr holds immense value with Allah.",
+    },
+    {
+        q: "What du'as should I make?",
+        a: "Speak to Allah in your own language — He understands every tongue. You may also use the du'as in the app's Duas tab, including specific Tahajjud supplications from the Sunnah.",
+    },
+];
+
+interface StepProps {
+    step: typeof STEPS[0];
+    index: number;
+    colors: any;
+}
+
+function StepCard({ step, index, colors }: StepProps) {
+    const Icon = step.icon;
+    return (
+        <Animated.View entering={FadeInDown.delay(index * 70).duration(450)} style={styles.stepCard}>
+            <LinearGradient
+                colors={['rgba(248, 250, 252, 0.07)', 'rgba(248, 250, 252, 0.02)']}
+                style={StyleSheet.absoluteFill}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 1 }}
+            />
+            <View style={styles.stepHeader}>
+                <View style={styles.stepNumberBadge}>
+                    <Text style={styles.stepNumber}>{step.number}</Text>
+                </View>
+                <View style={styles.stepIconContainer}>
+                    <Icon size={16} color={colors.primaryText} strokeWidth={2} />
+                </View>
+                <Text style={[styles.stepTitle, { color: colors.primaryText }]}>{step.title}</Text>
+            </View>
+            <Text style={[styles.stepDescription, { color: colors.secondaryText }]}>{step.description}</Text>
+            <View style={[styles.tipRow, { borderTopColor: 'rgba(255,255,255,0.06)' }]}>
+                <Lightbulb size={11} color={colors.accent} strokeWidth={2.5} />
+                <Text style={[styles.tipText, { color: colors.accent }]}>{step.tip}</Text>
+            </View>
+        </Animated.View>
+    );
+}
+
+interface FAQProps {
+    item: typeof FAQS[0];
+    index: number;
+    colors: any;
+}
+
+function FAQItem({ item, index, colors }: FAQProps) {
+    const [open, setOpen] = useState(false);
+    return (
+        <Animated.View entering={FadeInDown.delay(index * 60).duration(400)}>
+            <TouchableOpacity
+                style={[styles.faqItem, { borderColor: 'rgba(255,255,255,0.08)' }]}
+                onPress={() => setOpen(v => !v)}
+                activeOpacity={0.8}
+            >
+                <View style={styles.faqHeader}>
+                    <Text style={[styles.faqQuestion, { color: colors.primaryText }]}>{item.q}</Text>
+                    {open
+                        ? <ChevronUp size={15} color={colors.secondaryText} />
+                        : <ChevronDown size={15} color={colors.secondaryText} />
+                    }
+                </View>
+                {open && (
+                    <Text style={[styles.faqAnswer, { color: colors.secondaryText }]}>{item.a}</Text>
+                )}
+            </TouchableOpacity>
+        </Animated.View>
+    );
+}
 
 export function EducationalContent() {
     const { colors } = useTheme();
@@ -14,122 +150,195 @@ export function EducationalContent() {
             contentContainerStyle={styles.container}
             showsVerticalScrollIndicator={false}
         >
-            <View style={styles.card}>
-                <LinearGradient
-                    colors={['rgba(248, 250, 252, 0.1)', 'rgba(203, 213, 225, 0.1)', 'rgba(15, 23, 42, 0.05)']}
-                    style={StyleSheet.absoluteFill}
-                    start={{ x: 0, y: 0 }}
-                    end={{ x: 1, y: 1 }}
-                />
-                <BlurView intensity={30} tint="dark" style={StyleSheet.absoluteFill} />
+            {/* Hero */}
+            <Animated.View entering={FadeInUp.duration(550)} style={styles.hero}>
+                <Moon size={38} color={colors.primaryText} strokeWidth={1.5} />
+                <Text style={[styles.heroTitle, { color: colors.primaryText }]}>How to Pray Tahajjud</Text>
+                <Text style={[styles.heroSubtitle, { color: colors.secondaryText }]}>
+                    A complete step-by-step guide for beginners and those returning to the night prayer.
+                </Text>
+            </Animated.View>
 
-                <View style={styles.header}>
-                    <View style={styles.iconContainer}>
-                        <Lightbulb size={20} color={colors.primaryText} strokeWidth={2.5} />
-                    </View>
-                    <Text style={[styles.title, { color: colors.accent }]}>The Honor of the Believer</Text>
-                </View>
-
-                <View style={styles.contentBody}>
-                    <Text style={[styles.text, { color: colors.secondaryText }]}>
-                        Tahajjud is a voluntary night prayer performed after Isha and before Fajr. It is one of the most beloved acts of worship to Allah.
-                    </Text>
-
-                    <Text style={[styles.quoteText, { color: colors.primaryText, borderLeftColor: colors.primaryText }]}>
-                        "The best prayer after the obligatory prayers is the night prayer."
-                    </Text>
-
-                    <Text style={[styles.sectionTitle, { color: colors.accent }]}>Spiritual Guide</Text>
-                    <View style={styles.guideItem}>
-                        <View style={styles.guideDot} />
-                        <Text style={[styles.bulletText, { color: colors.secondaryText }]}>Make intention (Niyyah)</Text>
-                    </View>
-                    <View style={styles.guideItem}>
-                        <View style={styles.guideDot} />
-                        <Text style={[styles.bulletText, { color: colors.secondaryText }]}>Pray 2 rak'ahs at a time</Text>
-                    </View>
-                    <View style={styles.guideItem}>
-                        <View style={styles.guideDot} />
-                        <Text style={[styles.bulletText, { color: colors.secondaryText }]}>Best time: The last third of the night</Text>
-                    </View>
-                </View>
+            {/* Steps */}
+            <View style={styles.section}>
+                <Text style={[styles.sectionLabel, { color: colors.accent }]}>THE 6 STEPS</Text>
+                {STEPS.map((step, i) => (
+                    <StepCard key={step.number} step={step} index={i} colors={colors} />
+                ))}
             </View>
+
+            {/* Witr Reminder */}
+            <Animated.View entering={FadeInDown.delay(420).duration(450)} style={styles.witrCard}>
+                <CheckCircle size={20} color={colors.accent} strokeWidth={2} />
+                <View style={{ flex: 1 }}>
+                    <Text style={[styles.witrTitle, { color: colors.primaryText }]}>Don't Forget Witr</Text>
+                    <Text style={[styles.witrDesc, { color: colors.secondaryText }]}>
+                        Always end your night prayer with Witr — at least 1 rak'ah.{'\n'}
+                        "Pray Witr before Fajr enters." — Sahih Muslim
+                    </Text>
+                </View>
+            </Animated.View>
+
+            {/* FAQ */}
+            <View style={styles.section}>
+                <Text style={[styles.sectionLabel, { color: colors.accent }]}>COMMON QUESTIONS</Text>
+                {FAQS.map((item, i) => (
+                    <FAQItem key={i} item={item} index={i} colors={colors} />
+                ))}
+            </View>
+
+            {/* Closing */}
+            <Animated.View entering={FadeInDown.delay(500).duration(450)} style={styles.closing}>
+                <Text style={[styles.closingText, { color: colors.secondaryText }]}>
+                    "Start with two rak'ahs. Be sincere. Show up.{'\n'}Allah sees your effort."
+                </Text>
+            </Animated.View>
         </ScrollView>
     );
 }
 
 const styles = StyleSheet.create({
     container: {
-        width: '100%',
         paddingHorizontal: 16,
-        paddingTop: 40,
-        paddingBottom: 120, // Increased to clear hotbar
+        paddingTop: 24,
+        paddingBottom: 120,
+        gap: 24,
     },
-    card: {
-        borderRadius: 32,
-        padding: 24,
+    hero: {
+        alignItems: 'center',
+        paddingVertical: 8,
+        paddingHorizontal: 12,
+        gap: 10,
+    },
+    heroTitle: {
+        fontSize: 26,
+        fontWeight: '800',
+        textAlign: 'center',
+        letterSpacing: -0.5,
+        marginTop: 4,
+    },
+    heroSubtitle: {
+        fontSize: 14,
+        textAlign: 'center',
+        lineHeight: 22,
+    },
+    section: {
+        gap: 10,
+    },
+    sectionLabel: {
+        fontSize: 11,
+        fontWeight: '800',
+        letterSpacing: 2,
+        marginBottom: 4,
+        paddingLeft: 4,
+    },
+    stepCard: {
+        borderRadius: 20,
+        padding: 18,
         borderWidth: 1,
         borderColor: 'rgba(255, 255, 255, 0.08)',
         overflow: 'hidden',
-        backgroundColor: 'transparent',
+        gap: 10,
     },
-    header: {
-        alignItems: 'center',
-        justifyContent: 'center',
-        marginBottom: 24,
-        gap: 12,
-    },
-    iconContainer: {
-        width: 44,
-        height: 44,
-        backgroundColor: 'rgba(248, 250, 252, 0.1)',
-        borderRadius: 14,
-        justifyContent: 'center',
-        alignItems: 'center',
-        borderWidth: 1,
-        borderColor: 'rgba(248, 250, 252, 0.2)',
-    },
-    title: {
-        fontSize: 20,
-        fontWeight: 'bold',
-        letterSpacing: -0.5,
-        textAlign: 'center',
-    },
-    contentBody: {
-        gap: 16,
-    },
-    sectionTitle: {
-        fontSize: 14,
-        fontWeight: 'bold',
-        marginTop: 8,
-        textTransform: 'uppercase',
-        letterSpacing: 2,
-        textAlign: 'center',
-    },
-    text: {
-        lineHeight: 24,
-        fontSize: 15,
-    },
-    quoteText: {
-        lineHeight: 24,
-        fontSize: 15,
-        fontStyle: 'italic',
-        paddingLeft: 16,
-        borderLeftWidth: 2,
-    },
-    guideItem: {
+    stepHeader: {
         flexDirection: 'row',
         alignItems: 'center',
-        gap: 12,
+        gap: 10,
     },
-    guideDot: {
-        width: 6,
-        height: 6,
-        borderRadius: 3,
-        backgroundColor: '#475569',
+    stepNumberBadge: {
+        width: 26,
+        height: 26,
+        borderRadius: 13,
+        backgroundColor: 'rgba(255,255,255,0.12)',
+        alignItems: 'center',
+        justifyContent: 'center',
     },
-    bulletText: {
+    stepNumber: {
+        fontSize: 12,
+        fontWeight: '800',
+        color: '#f8fafc',
+    },
+    stepIconContainer: {
+        width: 30,
+        height: 30,
+        borderRadius: 8,
+        backgroundColor: 'rgba(255,255,255,0.06)',
+        alignItems: 'center',
+        justifyContent: 'center',
+    },
+    stepTitle: {
+        flex: 1,
+        fontSize: 15,
+        fontWeight: '700',
+    },
+    stepDescription: {
         fontSize: 14,
-        fontWeight: '500',
+        lineHeight: 22,
+    },
+    tipRow: {
+        flexDirection: 'row',
+        alignItems: 'flex-start',
+        gap: 6,
+        marginTop: 2,
+        paddingTop: 10,
+        borderTopWidth: 1,
+    },
+    tipText: {
+        flex: 1,
+        fontSize: 12,
+        fontStyle: 'italic',
+        lineHeight: 18,
+    },
+    witrCard: {
+        flexDirection: 'row',
+        alignItems: 'flex-start',
+        gap: 12,
+        borderRadius: 16,
+        padding: 16,
+        backgroundColor: 'rgba(255,255,255,0.04)',
+        borderWidth: 1,
+        borderColor: 'rgba(255,255,255,0.1)',
+    },
+    witrTitle: {
+        fontSize: 15,
+        fontWeight: '700',
+        marginBottom: 5,
+    },
+    witrDesc: {
+        fontSize: 13,
+        lineHeight: 21,
+    },
+    faqItem: {
+        borderRadius: 14,
+        padding: 16,
+        backgroundColor: 'rgba(255,255,255,0.03)',
+        borderWidth: 1,
+        gap: 8,
+    },
+    faqHeader: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 8,
+    },
+    faqQuestion: {
+        flex: 1,
+        fontSize: 14,
+        fontWeight: '600',
+        lineHeight: 20,
+    },
+    faqAnswer: {
+        fontSize: 13,
+        lineHeight: 21,
+    },
+    closing: {
+        paddingHorizontal: 8,
+        paddingBottom: 8,
+        alignItems: 'center',
+    },
+    closingText: {
+        fontSize: 14,
+        fontStyle: 'italic',
+        textAlign: 'center',
+        lineHeight: 24,
     },
 });

@@ -1,8 +1,8 @@
 import React from 'react';
 import { View, Text, ScrollView, StyleSheet } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
-import { Heart, Sparkles, Moon, BookOpen, Trophy, Sunrise } from 'lucide-react-native';
-
+import { Heart, Sparkles, Moon, BookOpen, Trophy, Sunrise, Shield, Zap } from 'lucide-react-native';
+import Animated, { FadeInDown, FadeInUp } from 'react-native-reanimated';
+import { LinearGradient } from 'expo-linear-gradient';
 import { useTheme } from '../context/ThemeContext';
 
 interface BenefitCardProps {
@@ -10,19 +10,40 @@ interface BenefitCardProps {
     title: string;
     description: string;
     colors: any;
+    index: number;
 }
 
-function BenefitCard({ icon, title, description, colors }: BenefitCardProps) {
+function BenefitCard({ icon, title, description, colors, index }: BenefitCardProps) {
     return (
-        <View style={styles.card}>
-            <View style={styles.iconContainer}>
-                {icon}
-            </View>
+        <Animated.View entering={FadeInDown.delay(index * 80).duration(450)} style={styles.card}>
+            <LinearGradient
+                colors={['rgba(248,250,252,0.06)', 'rgba(248,250,252,0.01)']}
+                style={StyleSheet.absoluteFill}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 1 }}
+            />
+            <View style={styles.iconContainer}>{icon}</View>
             <View style={styles.cardContent}>
                 <Text style={[styles.cardTitle, { color: colors.primaryText }]}>{title}</Text>
                 <Text style={[styles.cardDescription, { color: colors.secondaryText }]}>{description}</Text>
             </View>
-        </View>
+        </Animated.View>
+    );
+}
+
+interface QuoteCardProps {
+    text: string;
+    source: string;
+    colors: any;
+    index: number;
+}
+
+function QuoteCard({ text, source, colors, index }: QuoteCardProps) {
+    return (
+        <Animated.View entering={FadeInDown.delay(index * 80).duration(450)} style={[styles.quoteCard, { borderLeftColor: colors.accent }]}>
+            <Text style={[styles.quoteText, { color: colors.primaryText }]}>"{text}"</Text>
+            <Text style={[styles.quoteSource, { color: colors.secondaryText }]}>— {source}</Text>
+        </Animated.View>
     );
 }
 
@@ -31,118 +52,166 @@ export function WhyTahajjud() {
 
     return (
         <View style={styles.safeArea}>
-            <ScrollView style={styles.container} contentContainerStyle={styles.contentContainer}>
+            <ScrollView style={styles.container} contentContainerStyle={styles.contentContainer} showsVerticalScrollIndicator={false}>
+
                 {/* Header */}
-                <View style={styles.header}>
+                <Animated.View entering={FadeInUp.duration(550)} style={styles.header}>
                     <Moon size={48} color={colors.primaryText} strokeWidth={1.5} />
-                    <Text style={[styles.headerTitle, { color: colors.accent }]}>Discover the Beauty and Purpose of Tahajjud</Text>
+                    <Text style={[styles.headerTitle, { color: colors.accent }]}>
+                        Discover the Beauty of Tahajjud
+                    </Text>
                     <Text style={[styles.headerSubtitle, { color: colors.secondaryText }]}>
                         The night prayer that transforms hearts and elevates souls
                     </Text>
+                </Animated.View>
+
+                {/* What Allah Says */}
+                <View style={styles.section}>
+                    <Text style={[styles.sectionTitle, { color: colors.accent }]}>What Allah Says</Text>
+                    <QuoteCard
+                        index={0}
+                        colors={colors}
+                        text="And from [part of] the night, pray with it as additional worship for you; it is expected that your Lord will resurrect you to a praised station."
+                        source="Quran 17:79"
+                    />
+                    <QuoteCard
+                        index={1}
+                        colors={colors}
+                        text="Indeed, the hours of the night are more effective for concurrence of heart and tongue and more suitable for words."
+                        source="Quran 73:6"
+                    />
+                    <QuoteCard
+                        index={2}
+                        colors={colors}
+                        text="They used to sleep but little of the night, and in the hours before dawn they would ask forgiveness."
+                        source="Quran 51:17–18"
+                    />
+                    <QuoteCard
+                        index={3}
+                        colors={colors}
+                        text="And those who spend [part of] the night to their Lord prostrating and standing [in prayer]."
+                        source="Quran 25:64"
+                    />
                 </View>
 
                 {/* Spiritual Benefits */}
                 <View style={styles.section}>
                     <Text style={[styles.sectionTitle, { color: colors.accent }]}>Spiritual Benefits</Text>
-
                     <BenefitCard
+                        index={0}
                         colors={colors}
-                        icon={<Heart size={24} color={colors.primaryText} />}
+                        icon={<Heart size={22} color={colors.primaryText} strokeWidth={2} />}
                         title="Closeness to Allah"
-                        description="Tahajjud is a time when Allah descends to the lowest heaven, asking 'Is there anyone calling upon Me that I may answer him?'"
+                        description="Allah descends to the lowest heaven in the last third of the night, asking: 'Is there anyone calling upon Me that I may answer him?' This is your direct line."
                     />
-
                     <BenefitCard
+                        index={1}
                         colors={colors}
-                        icon={<Sparkles size={24} color={colors.primaryText} />}
+                        icon={<Sparkles size={22} color={colors.primaryText} strokeWidth={2} />}
                         title="Forgiveness of Sins"
-                        description="The Prophet (ﷺ) said: 'Whoever prays at night, even if it is the length of milking a sheep, it will be recorded for him as a night prayer.'"
+                        description="The Prophet ﷺ said: 'At night there is an hour in which no Muslim asks Allah for good in this world or the next except that He gives it to him.' — Sahih Muslim"
                     />
-
                     <BenefitCard
+                        index={2}
                         colors={colors}
-                        icon={<Trophy size={24} color={colors.primaryText} />}
+                        icon={<Trophy size={22} color={colors.primaryText} strokeWidth={2} />}
                         title="Elevated Status"
-                        description="Allah says: 'They used to sleep but little of the night, and in the hours before dawn they would ask forgiveness.' (Quran 51:17-18)"
+                        description="The people of Tahajjud are among the most honoured in Allah's sight. They choose sleep deprivation for His sake — and He raises them in ranks."
+                    />
+                    <BenefitCard
+                        index={3}
+                        colors={colors}
+                        icon={<Shield size={22} color={colors.primaryText} strokeWidth={2} />}
+                        title="Protection from Evil"
+                        description="The night prayer is a shield. When you wake for Allah, Shaytan's grip weakens. The Prophet ﷺ said those who pray at night have their knots of Shaytan undone."
                     />
                 </View>
 
                 {/* Physical & Mental Benefits */}
                 <View style={styles.section}>
-                    <Text style={[styles.sectionTitle, { color: colors.accent }]}>Physical & Mental Benefits</Text>
-
+                    <Text style={[styles.sectionTitle, { color: colors.accent }]}>Mind & Body</Text>
                     <BenefitCard
+                        index={0}
                         colors={colors}
-                        icon={<Sunrise size={24} color={colors.primaryText} />}
-                        title="Peace of Mind"
-                        description="Night prayer brings tranquility to the heart and clarity to the mind, reducing stress and anxiety."
+                        icon={<Sunrise size={22} color={colors.primaryText} strokeWidth={2} />}
+                        title="Deep Inner Peace"
+                        description="The silence of the night removes all distractions. There is nothing between you and Allah — no notifications, no noise. Just you, the prayer mat, and the Most High."
                     />
-
                     <BenefitCard
+                        index={1}
                         colors={colors}
-                        icon={<BookOpen size={24} color={colors.primaryText} />}
-                        title="Improved Focus"
-                        description="The silence of the night allows for deeper concentration in prayer and reflection on the Quran."
+                        icon={<BookOpen size={22} color={colors.primaryText} strokeWidth={2} />}
+                        title="Clarity and Focus"
+                        description="People who pray Tahajjud regularly report sharper thinking, better emotional regulation, and a profound sense of purpose throughout the day."
                     />
-                </View>
-
-                {/* Quranic References */}
-                <View style={styles.quoteSection}>
-                    <Text style={[styles.quoteTitle, { color: colors.accent }]}>What Allah Says</Text>
-
-                    <View style={styles.quoteCard}>
-                        <Text style={[styles.quoteText, { color: colors.primaryText }]}>
-                            "And from [part of] the night, pray with it as additional [worship] for you; it is expected that your Lord will resurrect you to a praised station."
-                        </Text>
-                        <Text style={[styles.quoteSource, { color: colors.secondaryText }]}>— Quran 17:79</Text>
-                    </View>
-
-                    <View style={styles.quoteCard}>
-                        <Text style={[styles.quoteText, { color: colors.primaryText }]}>
-                            "Indeed, the hours of the night are more effective for concurrence [of heart and tongue] and more suitable for words."
-                        </Text>
-                        <Text style={[styles.quoteSource, { color: colors.secondaryText }]}>— Quran 73:6</Text>
-                    </View>
+                    <BenefitCard
+                        index={2}
+                        colors={colors}
+                        icon={<Zap size={22} color={colors.primaryText} strokeWidth={2} />}
+                        title="Spiritual Momentum"
+                        description="When you start your day having already worshipped Allah in secret, everything else feels aligned. It sets a tone of gratitude and tawakkul for the hours ahead."
+                    />
                 </View>
 
                 {/* Prophetic Traditions */}
-                <View style={styles.quoteSection}>
-                    <Text style={[styles.quoteTitle, { color: colors.accent }]}>Prophetic Guidance</Text>
-
-                    <View style={styles.quoteCard}>
-                        <Text style={[styles.quoteText, { color: colors.primaryText }]}>
-                            "The best prayer after the obligatory prayers is the night prayer."
-                        </Text>
-                        <Text style={[styles.quoteSource, { color: colors.secondaryText }]}>— Sahih Muslim</Text>
-                    </View>
-
-                    <View style={styles.quoteCard}>
-                        <Text style={[styles.quoteText, { color: colors.primaryText }]}>
-                            "You should pray at night, even if it is only one rak'ah."
-                        </Text>
-                        <Text style={[styles.quoteSource, { color: colors.secondaryText }]}>— Sunan Ibn Majah</Text>
-                    </View>
+                <View style={styles.section}>
+                    <Text style={[styles.sectionTitle, { color: colors.accent }]}>Prophetic Guidance</Text>
+                    <QuoteCard
+                        index={0}
+                        colors={colors}
+                        text="The best prayer after the obligatory prayers is the night prayer."
+                        source="Sahih Muslim"
+                    />
+                    <QuoteCard
+                        index={1}
+                        colors={colors}
+                        text="You should pray at night, even if it is only one rak'ah."
+                        source="Sunan Ibn Majah"
+                    />
+                    <QuoteCard
+                        index={2}
+                        colors={colors}
+                        text="Hold fast to night prayer, for it was the way of the righteous before you, and it brings you closer to your Lord."
+                        source="Sunan al-Tirmidhi"
+                    />
+                    <QuoteCard
+                        index={3}
+                        colors={colors}
+                        text="The most beloved prayer to Allah is that of Dawud (AS) — he would sleep half the night, stand a third of it, then sleep a sixth."
+                        source="Sahih Bukhari"
+                    />
                 </View>
 
                 {/* Personal Growth */}
                 <View style={styles.section}>
                     <Text style={[styles.sectionTitle, { color: colors.accent }]}>Personal Growth</Text>
-
-                    <View style={styles.listCard}>
-                        <Text style={[styles.listItem, { color: colors.primaryText }]}>• Builds discipline and consistency</Text>
-                        <Text style={[styles.listItem, { color: colors.primaryText }]}>• Strengthens willpower and determination</Text>
-                        <Text style={[styles.listItem, { color: colors.primaryText }]}>• Creates a habit of gratitude</Text>
-                        <Text style={[styles.listItem, { color: colors.primaryText }]}>• Develops patience and perseverance</Text>
-                        <Text style={[styles.listItem, { color: colors.primaryText }]}>• Enhances self-awareness and reflection</Text>
-                    </View>
+                    <Animated.View entering={FadeInDown.delay(100).duration(450)} style={styles.listCard}>
+                        {[
+                            'Builds unbreakable discipline and consistency',
+                            'Strengthens willpower by choosing worship over comfort',
+                            'Creates a foundation of daily gratitude',
+                            'Develops patience and trust in Allah\'s plan',
+                            'Sharpens self-awareness through nightly reflection',
+                            'Transforms your relationship with sleep and time',
+                        ].map((item, i) => (
+                            <View key={i} style={styles.listRow}>
+                                <View style={[styles.listDot, { backgroundColor: colors.accent }]} />
+                                <Text style={[styles.listItem, { color: colors.primaryText }]}>{item}</Text>
+                            </View>
+                        ))}
+                    </Animated.View>
                 </View>
 
                 {/* Final Message */}
-                <View style={styles.finalMessage}>
-                    <Text style={[styles.finalText, { color: colors.primaryText }]}>
-                        Start small, stay consistent, and watch your life transform through the blessing of Tahajjud.
+                <Animated.View entering={FadeInDown.delay(200).duration(450)} style={styles.finalMessage}>
+                    <Text style={[styles.finalText, { color: colors.secondaryText }]}>
+                        "The world is asleep, and you are awake for Allah.{'\n'}That act alone is a conversation with the Divine."
                     </Text>
-                </View>
+                    <Text style={[styles.finalCta, { color: colors.accent }]}>
+                        Start small. Stay consistent. Watch your life change.
+                    </Text>
+                </Animated.View>
+
             </ScrollView>
         </View>
     );
@@ -159,130 +228,126 @@ const styles = StyleSheet.create({
     },
     contentContainer: {
         paddingBottom: 180,
+        gap: 32,
     },
     header: {
         alignItems: 'center',
-        paddingVertical: 40,
+        paddingTop: 32,
+        paddingBottom: 8,
         paddingHorizontal: 24,
+        gap: 12,
     },
     headerTitle: {
-        fontSize: 28,
-        fontWeight: 'bold',
-        color: '#facc15', // Fallback
+        fontSize: 26,
+        fontWeight: '800',
         textAlign: 'center',
-        marginTop: 16,
-        marginBottom: 12,
+        letterSpacing: -0.5,
     },
     headerSubtitle: {
-        fontSize: 16,
-        color: '#cbd5e1', // Fallback
+        fontSize: 15,
         textAlign: 'center',
         lineHeight: 24,
-        fontWeight: '600',
+        fontWeight: '500',
     },
     section: {
         paddingHorizontal: 16,
-        marginBottom: 32,
+        gap: 10,
     },
     sectionTitle: {
-        fontSize: 22,
-        fontWeight: 'bold',
-        color: '#facc15', // Fallback
-        marginBottom: 16,
-        paddingLeft: 8,
+        fontSize: 20,
+        fontWeight: '800',
+        marginBottom: 4,
+        paddingLeft: 4,
+        letterSpacing: -0.3,
     },
     card: {
         flexDirection: 'row',
-        backgroundColor: 'rgba(255, 255, 255, 0.05)',
         borderWidth: 1,
-        borderColor: 'rgba(255, 255, 255, 0.1)',
-        borderRadius: 16,
+        borderColor: 'rgba(255, 255, 255, 0.08)',
+        borderRadius: 18,
         padding: 16,
-        marginBottom: 12,
+        overflow: 'hidden',
     },
     iconContainer: {
-        width: 48,
-        height: 48,
-        backgroundColor: 'rgba(248, 250, 252, 0.1)',
+        width: 44,
+        height: 44,
+        backgroundColor: 'rgba(248, 250, 252, 0.08)',
         borderRadius: 12,
         alignItems: 'center',
         justifyContent: 'center',
-        marginRight: 16,
+        marginRight: 14,
+        flexShrink: 0,
     },
     cardContent: {
         flex: 1,
     },
     cardTitle: {
-        fontSize: 18,
-        fontWeight: '600',
-        color: '#f8fafc', // Fallback
-        marginBottom: 6,
+        fontSize: 16,
+        fontWeight: '700',
+        marginBottom: 5,
     },
     cardDescription: {
-        fontSize: 14,
-        color: '#cbd5e1', // Fallback
-        lineHeight: 22,
-        fontWeight: '500',
-    },
-    quoteSection: {
-        paddingHorizontal: 16,
-        marginBottom: 32,
-    },
-    quoteTitle: {
-        fontSize: 22,
-        fontWeight: 'bold',
-        color: '#facc15', // Fallback
-        marginBottom: 16,
-        paddingLeft: 8,
+        fontSize: 13,
+        lineHeight: 21,
     },
     quoteCard: {
         backgroundColor: 'rgba(248, 250, 252, 0.04)',
-        borderLeftWidth: 4,
-        borderLeftColor: '#f8fafc',
+        borderLeftWidth: 3,
         borderRadius: 12,
-        padding: 20,
-        marginBottom: 16,
-        shadowColor: '#ffffff',
-        shadowOffset: { width: 0, height: 4 },
-        shadowOpacity: 0.1,
-        shadowRadius: 8,
+        padding: 18,
     },
     quoteText: {
-        fontSize: 16,
-        color: '#f8fafc', // Fallback
+        fontSize: 15,
         lineHeight: 26,
         fontStyle: 'italic',
-        marginBottom: 12,
+        marginBottom: 10,
     },
     quoteSource: {
-        fontSize: 13,
-        color: '#cbd5e1', // Fallback
+        fontSize: 12,
         textAlign: 'right',
         fontWeight: '700',
+        letterSpacing: 0.3,
     },
     listCard: {
-        backgroundColor: 'rgba(255, 255, 255, 0.05)',
+        backgroundColor: 'rgba(255, 255, 255, 0.04)',
         borderWidth: 1,
-        borderColor: 'rgba(255, 255, 255, 0.1)',
-        borderRadius: 16,
+        borderColor: 'rgba(255, 255, 255, 0.08)',
+        borderRadius: 18,
         padding: 20,
+        gap: 12,
+    },
+    listRow: {
+        flexDirection: 'row',
+        alignItems: 'flex-start',
+        gap: 10,
+    },
+    listDot: {
+        width: 6,
+        height: 6,
+        borderRadius: 3,
+        marginTop: 7,
+        flexShrink: 0,
     },
     listItem: {
-        fontSize: 15,
-        color: '#f8fafc', // Fallback
-        lineHeight: 28,
-        marginBottom: 4,
+        flex: 1,
+        fontSize: 14,
+        lineHeight: 22,
     },
     finalMessage: {
         paddingHorizontal: 24,
-        paddingVertical: 32,
+        paddingBottom: 8,
         alignItems: 'center',
+        gap: 12,
     },
     finalText: {
-        fontSize: 17,
-        color: '#f8fafc', // Fallback
+        fontSize: 15,
         textAlign: 'center',
-        lineHeight: 28,
-        fontWeight: '500',
+        lineHeight: 26,
+        fontStyle: 'italic',
+    },
+    finalCta: {
+        fontSize: 14,
+        fontWeight: '700',
+        textAlign: 'center',
     },
 });

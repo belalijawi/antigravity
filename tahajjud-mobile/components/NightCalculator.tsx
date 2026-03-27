@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from "react";
+import Animated, { useSharedValue, useAnimatedStyle, withRepeat, withSequence, withTiming, cancelAnimation, Easing } from 'react-native-reanimated';
 import { View, Text, ActivityIndicator, StyleSheet, TouchableOpacity, Alert, AppState, AppStateStatus, Linking } from "react-native";
 import * as Location from "expo-location";
 import { BlurView } from 'expo-blur';
@@ -30,6 +31,72 @@ export function NightCalculator({ onNightCalcReady, refreshKey }: { onNightCalcR
     const [lastScheduledKey, setLastScheduledKey] = useState<string | null>(null);
     const [internalRefresh, setInternalRefresh] = useState(0);
     const [cityName, setCityName] = useState<string | null>(null);
+
+    // Derived: are we currently in the last third?
+    const isLastThird = !!(nightCalc && currentTime >= nightCalc.lastThirdStart && currentTime < nightCalc.nightEnd);
+
+    // Pulsing dot animation when the gate is open
+    const dotScale   = useSharedValue(1);
+    const dotOpacity = useSharedValue(1);
+
+    useEffect(() => {
+        if (isLastThird) {
+            dotScale.value = withRepeat(
+                withSequence(withTiming(1.9, { duration: 900 }), withTiming(1.0, { duration: 900 })),
+                -1, false,
+            );
+            dotOpacity.value = withRepeat(
+                withSequence(withTiming(0.3, { duration: 900 }), withTiming(1.0, { duration: 900 })),
+                -1, false,
+            );
+        } else {
+            cancelAnimation(dotScale); cancelAnimation(dotOpacity);
+            dotScale.value   = withTiming(1, { duration: 400 });
+            dotOpacity.value = withTiming(1, { duration: 400 });
+        }
+    }, [isLastThird]);
+
+    const dotAnimStyle = useAnimatedStyle(() => ({
+        transform: [{ scale: dotScale.value }],
+        opacity: dotOpacity.value,
+    }));
+
+    // Shimmer sweep across Night Flow bar
+    const shimmerX    = useSharedValue(-60);
+    const barGlow     = useSharedValue(0);
+
+    useEffect(() => {
+        if (isLastThird) {
+            // Sweep left → right endlessly
+            shimmerX.value = -60;
+            shimmerX.value = withRepeat(
+                withTiming(400, { duration: 1800, easing: Easing.inOut(Easing.quad) }),
+                -1, false,
+            );
+            // Bar background glow pulse
+                barGlow.value = withRepeat(
+                withSequence(
+                    withTiming(1, { duration: 1200 }),
+                    withTiming(0.2, { duration: 1200 }),
+                ),
+                -1, false,
+            );
+        } else {
+            cancelAnimation(shimmerX);
+            cancelAnimation(barGlow);
+            shimmerX.value = -60;
+            barGlow.value  = withTiming(0, { duration: 500 });
+        }
+    }, [isLastThird]);
+
+    const shimmerStyle = useAnimatedStyle(() => ({
+        transform: [{ translateX: shimmerX.value }],
+    }));
+
+    const barGlowStyle = useAnimatedStyle(() => ({
+        shadowOpacity: barGlow.value * 0.7,
+        shadowRadius:  4 + barGlow.value * 8,
+    }));
 
     useEffect(() => {
         const timer = setInterval(() => setCurrentTime(new Date()), 60000);
@@ -350,9 +417,9 @@ export function NightCalculator({ onNightCalcReady, refreshKey }: { onNightCalcR
                     </View>
                     <Text style={[styles.timeText, { color: colors.accent }]}>{format(nightCalc.lastThirdStart, "h:mm a")}</Text>
                     <View style={styles.statusRow}>
-                        <View style={[styles.pulseDot, (currentTime >= nightCalc.lastThirdStart && currentTime < nightCalc.nightEnd) && styles.pulseDotActive]} />
-                        <Text style={[styles.statusText, (currentTime >= nightCalc.lastThirdStart && currentTime < nightCalc.nightEnd) && { color: colors.accent }]}>
-                            {(currentTime >= nightCalc.lastThirdStart && currentTime < nightCalc.nightEnd) ? "The Gate is Open" : "Upcoming"}
+                        <Animated.View style={[styles.pulseDot, isLastThird && styles.pulseDotActive, dotAnimStyle]} />
+                        <Text style={[styles.statusText, isLastThird && { color: colors.accent, fontWeight: '800', letterSpacing: 0.5 }]}>
+                            {isLastThird ? "The Gate is Open" : "Upcoming"}
                         </Text>
                     </View>
                 </View>
@@ -433,49 +500,71 @@ export function NightCalculator({ onNightCalcReady, refreshKey }: { onNightCalcR
                 <PrayerCard name="Isha" time={format(prayerTimes.isha, "h:mm")} />
             </View>
 
-            {/* Premium Touch: Night Progress Bar */}
-            <View style={styles.progressArea}>
-                <View style={styles.progressHeader}>
-                    <Text style={styles.progressLabel}>Night Flow</Text>
-                    <Text style={styles.progressValue}>
-                        {(() => {
-                            const total = nightCalc.nightEnd.getTime() - nightCalc.nightStart.getTime();
-                            const elapsed = Math.max(0, Math.min(total, currentTime.getTime() - nightCalc.nightStart.getTime()));
-                            return Math.floor((elapsed / total) * 100) + "%";
-                        })()}
-                    </Text>
-                </View>
-                <View style={styles.progressBarBg}>
-                    {(() => {
-                        const total = nightCalc.nightEnd.getTime() - nightCalc.nightStart.getTime();
-                        const elapsed = Math.max(0, Math.min(total, currentTime.getTime() - nightCalc.nightStart.getTime()));
-                        const progress = (elapsed / total) * 100;
-                        const isLastThird = currentTime >= nightCalc.lastThirdStart && currentTime < nightCalc.nightEnd;
-                        const markerPos = ((nightCalc.lastThirdStart.getTime() - nightCalc.nightStart.getTime()) / total) * 100;
+            {/* Night Flow Progress Bar */}
+            {(() => {
+                const total      = nightCalc.nightEnd.getTime() - nightCalc.nightStart.getTime();
+                const elapsed    = Math.max(0, Math.min(total, currentTime.getTime() - nightCalc.nightStart.getTime()));
+                const progress   = (elapsed / total) * 100;
+                const markerPos  = ((nightCalc.lastThirdStart.getTime() - nightCalc.nightStart.getTime()) / total) * 100;
 
-                        return (
-                            <>
-                                <LinearGradient
-                                    colors={isLastThird ? [colors.accent, '#f8fafc'] : [colors.accent, colors.accent + '80']}
-                                    start={{ x: 0, y: 0 }}
-                                    end={{ x: 1, y: 0 }}
-                                    style={[
-                                        styles.progressBarFill,
-                                        { width: `${progress}%` as any }
-                                    ]}
-                                />
-                                {/* Dynamic Last Third Marker */}
-                                <View style={[styles.lastThirdMarker, { left: `${markerPos}%` }]} />
-                            </>
-                        );
-                    })()}
-                </View>
-                <View style={styles.progressFooter}>
-                    <Text style={styles.footerTime}>Maghrib • {format(nightCalc.nightStart, "h:mm a")}</Text>
-                    <Text style={[styles.footerTime, { color: colors.accent }]}>Tahajjud Zone</Text>
-                    <Text style={styles.footerTime}>{format(nightCalc.nightEnd, "h:mm a")} • Fajr</Text>
-                </View>
-            </View>
+                return (
+                    <View style={styles.progressArea}>
+                        <View style={styles.progressHeader}>
+                            <Text style={[styles.progressLabel, isLastThird && { color: colors.accent }]}>
+                                Night Flow{isLastThird ? ' ✦' : ''}
+                            </Text>
+                            <Text style={[styles.progressValue, isLastThird && { color: colors.accent }]}>
+                                {Math.floor(progress)}%
+                            </Text>
+                        </View>
+
+                        {/* Bar */}
+                        <Animated.View style={[
+                            styles.progressBarBg,
+                            isLastThird && {
+                                shadowColor: colors.accent,
+                                shadowOffset: { width: 0, height: 0 },
+                            },
+                            barGlowStyle,
+                        ]}>
+                            {/* Fill */}
+                            <LinearGradient
+                                colors={isLastThird ? [colors.accent, colors.accent + '99'] : [colors.accent, colors.accent + '80']}
+                                start={{ x: 0, y: 0 }}
+                                end={{ x: 1, y: 0 }}
+                                style={[styles.progressBarFill, { width: `${progress}%` as any }]}
+                            />
+
+                            {/* Shimmer sweep — only in last third */}
+                            {isLastThird && (
+                                <Animated.View style={[styles.shimmerBar, shimmerStyle]}>
+                                    <LinearGradient
+                                        colors={['transparent', 'rgba(255,255,220,0.65)', 'transparent']}
+                                        start={{ x: 0, y: 0 }}
+                                        end={{ x: 1, y: 0 }}
+                                        style={{ width: 56, height: '100%' }}
+                                    />
+                                </Animated.View>
+                            )}
+
+                            {/* Last Third Marker */}
+                            <View style={[
+                                styles.lastThirdMarker,
+                                { left: `${markerPos}%` as any },
+                                isLastThird && { backgroundColor: colors.accent, width: 2 },
+                            ]} />
+                        </Animated.View>
+
+                        <View style={styles.progressFooter}>
+                            <Text style={styles.footerTime}>Maghrib • {format(nightCalc.nightStart, "h:mm a")}</Text>
+                            <Text style={[styles.footerTime, { color: colors.accent, fontWeight: isLastThird ? '900' : '700' }]}>
+                                {isLastThird ? '✦ Gate Open ✦' : 'Tahajjud Zone'}
+                            </Text>
+                            <Text style={styles.footerTime}>{format(nightCalc.nightEnd, "h:mm a")} • Fajr</Text>
+                        </View>
+                    </View>
+                );
+            })()}
         </View>
     );
 }
@@ -559,9 +648,10 @@ const styles = StyleSheet.create({
     progressHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: 8 },
     progressLabel: { fontSize: 9, color: '#64748b', fontWeight: '900', textTransform: 'uppercase', letterSpacing: 1 },
     progressValue: { fontSize: 10, color: '#cbd5e1', fontWeight: '800' },
-    progressBarBg: { height: 4, backgroundColor: 'rgba(255, 255, 255, 0.05)', borderRadius: 2, overflow: 'hidden', position: 'relative' },
-    progressBarFill: { height: '100%', borderRadius: 2 },
+    progressBarBg: { height: 6, backgroundColor: 'rgba(255, 255, 255, 0.06)', borderRadius: 3, overflow: 'hidden', position: 'relative' },
+    progressBarFill: { height: '100%', borderRadius: 3 },
     lastThirdMarker: { position: 'absolute', top: 0, bottom: 0, width: 2, backgroundColor: 'rgba(255, 255, 255, 0.2)', zIndex: 1 },
+    shimmerBar: { position: 'absolute', top: 0, bottom: 0, width: 56, zIndex: 2 },
     progressFooter: { flexDirection: 'row', justifyContent: 'space-between', marginTop: 8 },
     footerTime: { fontSize: 8, color: '#475569', fontWeight: '700' },
     locationWarning: {
