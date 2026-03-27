@@ -8,23 +8,35 @@ struct WidgetData: Codable {
     var nextPrayerTime: Date
     var streak: Int
     var updatedAt: Date
+    var tahajjudStart: Date?
 
     static let placeholder = WidgetData(
-        nextPrayer: "Dhuhr",
+        nextPrayer: "Isha",
         nextPrayerTime: Date().addingTimeInterval(3600),
         streak: 7,
-        updatedAt: Date()
+        updatedAt: Date(),
+        tahajjudStart: Date().addingTimeInterval(18000) // ~5 hours from now
     )
 
     static func load() -> WidgetData {
         let defaults = UserDefaults(suiteName: "group.com.tahajjudplus.app")
-        guard
-            let data = defaults?.data(forKey: "widget_data"),
-            let decoded = try? JSONDecoder().decode(WidgetData.self, from: data)
-        else {
-            return .placeholder
-        }
-        return decoded
+        guard let data = defaults?.data(forKey: "widget_data"),
+              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+        else { return .placeholder }
+
+        let nextPrayer     = json["nextPrayer"] as? String ?? "Prayer"
+        let nextPrayerTime = (json["nextPrayerTime"] as? Double).map { Date(timeIntervalSince1970: $0) } ?? Date()
+        let streak         = json["streak"] as? Int ?? 0
+        let updatedAt      = (json["updatedAt"] as? Double).map { Date(timeIntervalSince1970: $0) } ?? Date()
+        let tahajjudStart  = (json["tahajjudStart"] as? Double).map { Date(timeIntervalSince1970: $0) }
+
+        return WidgetData(
+            nextPrayer: nextPrayer,
+            nextPrayerTime: nextPrayerTime,
+            streak: streak,
+            updatedAt: updatedAt,
+            tahajjudStart: tahajjudStart
+        )
     }
 }
 
@@ -42,8 +54,12 @@ struct TahajjudProvider: TimelineProvider {
     func getTimeline(in context: Context, completion: @escaping (Timeline<TahajjudEntry>) -> Void) {
         let data = WidgetData.load()
         let entry = TahajjudEntry(date: Date(), widgetData: data)
-        // Refresh 5 minutes after the next prayer time so the "next prayer" updates
-        let refresh = max(Date().addingTimeInterval(300), data.nextPrayerTime.addingTimeInterval(300))
+        // Refresh 5 min after the next prayer OR at Tahajjud time — whichever is sooner
+        var refresh = data.nextPrayerTime.addingTimeInterval(300)
+        if let tahajjud = data.tahajjudStart, tahajjud > Date() {
+            refresh = min(refresh, tahajjud)
+        }
+        refresh = max(Date().addingTimeInterval(300), refresh)
         let timeline = Timeline(entries: [entry], policy: .after(refresh))
         completion(timeline)
     }
@@ -115,6 +131,22 @@ struct SmallWidgetView: View {
 
                 Spacer()
 
+                // Tahajjud time (if available)
+                if let tahajjud = entry.widgetData.tahajjudStart {
+                    HStack(spacing: 3) {
+                        Text("🌙")
+                            .font(.system(size: 9))
+                        Text(tahajjud, style: .time)
+                            .font(.system(size: 9, weight: .bold))
+                            .foregroundColor(Color(hex: "a78bfa"))
+                    }
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 3)
+                    .background(Color(hex: "4f46e5").opacity(0.25))
+                    .cornerRadius(6)
+                    .padding(.bottom, 2)
+                }
+
                 // Prayer name
                 Text(entry.widgetData.nextPrayer)
                     .font(.system(size: 18, weight: .bold))
@@ -185,6 +217,25 @@ struct MediumWidgetView: View {
                         Text("in \(countdownText)")
                             .font(.system(size: 12, weight: .semibold))
                             .foregroundColor(Color(hex: "22d3ee"))
+                    }
+
+                    // Tahajjud row
+                    if let tahajjud = entry.widgetData.tahajjudStart {
+                        HStack(spacing: 4) {
+                            Text("🌙")
+                                .font(.system(size: 11))
+                            Text(tahajjud, style: .time)
+                                .font(.system(size: 12, weight: .bold))
+                                .foregroundColor(Color(hex: "a78bfa"))
+                            Text("Tahajjud")
+                                .font(.system(size: 10, weight: .medium))
+                                .foregroundColor(Color(hex: "7c3aed").opacity(0.8))
+                        }
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 4)
+                        .background(Color(hex: "4f46e5").opacity(0.2))
+                        .cornerRadius(8)
+                        .padding(.top, 2)
                     }
                 }
                 .padding(.leading, 16)

@@ -61,12 +61,41 @@ export function NightCalculator({ onNightCalcReady, refreshKey }: { onNightCalcR
         opacity: dotOpacity.value,
     }));
 
+    // Animated progress width (0–100)
+    const progressAnim = useSharedValue(0);
+
+    const progressWidthStyle = useAnimatedStyle(() => ({
+        width: `${progressAnim.value}%` as any,
+    }));
+
     // Shimmer sweep across Night Flow bar
     const shimmerX    = useSharedValue(-60);
     const barGlow     = useSharedValue(0);
 
+    // Real-time bar fill: runs one continuous animation from current progress → lastThird marker
+    useEffect(() => {
+        if (!nightCalc || isLastThird) return;
+
+        const total            = nightCalc.nightEnd.getTime() - nightCalc.nightStart.getTime();
+        const elapsed          = Math.max(0, Date.now() - nightCalc.nightStart.getTime());
+        const currentPct       = Math.min((elapsed / total) * 100, 100);
+        const lastThirdPct     = ((nightCalc.lastThirdStart.getTime() - nightCalc.nightStart.getTime()) / total) * 100;
+        const msToLastThird    = Math.max(0, nightCalc.lastThirdStart.getTime() - Date.now());
+
+        // Snap to current real position immediately, then fill linearly until last third
+        progressAnim.value = currentPct;
+        if (msToLastThird > 0) {
+            progressAnim.value = withTiming(lastThirdPct, {
+                duration: msToLastThird,
+                easing: Easing.linear,
+            });
+        }
+    }, [nightCalc]);
+
     useEffect(() => {
         if (isLastThird) {
+            // Animate bar to 100% when gate opens
+            progressAnim.value = withTiming(100, { duration: 1200, easing: Easing.out(Easing.cubic) });
             // Sweep left → right endlessly
             shimmerX.value = -60;
             shimmerX.value = withRepeat(
@@ -74,7 +103,7 @@ export function NightCalculator({ onNightCalcReady, refreshKey }: { onNightCalcR
                 -1, false,
             );
             // Bar background glow pulse
-                barGlow.value = withRepeat(
+            barGlow.value = withRepeat(
                 withSequence(
                     withTiming(1, { duration: 1200 }),
                     withTiming(0.2, { duration: 1200 }),
@@ -289,8 +318,8 @@ export function NightCalculator({ onNightCalcReady, refreshKey }: { onNightCalcR
                 setNightCalc(calc);
                 onNightCalcReady?.(calc);
 
-                // Update home screen widget with latest prayer times + streak
-                updateWidget(activeTimes).catch(() => {});
+                // Update home screen widget with latest prayer times, streak & Tahajjud time
+                updateWidget(activeTimes, new Date(calc.lastThirdStart)).catch(() => {});
 
                 // Schedule all enabled prayer notifications (Daily + Tahajjud)
                 const allPrayers = await AsyncStorage.getItem('notification_all_prayers_enabled');
@@ -507,6 +536,7 @@ export function NightCalculator({ onNightCalcReady, refreshKey }: { onNightCalcR
                 const progress   = (elapsed / total) * 100;
                 const markerPos  = ((nightCalc.lastThirdStart.getTime() - nightCalc.nightStart.getTime()) / total) * 100;
 
+
                 return (
                     <View style={styles.progressArea}>
                         <View style={styles.progressHeader}>
@@ -514,7 +544,7 @@ export function NightCalculator({ onNightCalcReady, refreshKey }: { onNightCalcR
                                 Night Flow{isLastThird ? ' ✦' : ''}
                             </Text>
                             <Text style={[styles.progressValue, isLastThird && { color: colors.accent }]}>
-                                {Math.floor(progress)}%
+                                {isLastThird ? '100%' : `${Math.min(100, Math.floor(progress))}%`}
                             </Text>
                         </View>
 
@@ -527,13 +557,15 @@ export function NightCalculator({ onNightCalcReady, refreshKey }: { onNightCalcR
                             },
                             barGlowStyle,
                         ]}>
-                            {/* Fill */}
-                            <LinearGradient
-                                colors={isLastThird ? [colors.accent, colors.accent + '99'] : [colors.accent, colors.accent + '80']}
-                                start={{ x: 0, y: 0 }}
-                                end={{ x: 1, y: 0 }}
-                                style={[styles.progressBarFill, { width: `${progress}%` as any }]}
-                            />
+                            {/* Fill — width driven by progressAnim */}
+                            <Animated.View style={[styles.progressBarFill, progressWidthStyle]}>
+                                <LinearGradient
+                                    colors={isLastThird ? [colors.accent, colors.accent + '99'] : [colors.accent, colors.accent + '80']}
+                                    start={{ x: 0, y: 0 }}
+                                    end={{ x: 1, y: 0 }}
+                                    style={{ flex: 1 }}
+                                />
+                            </Animated.View>
 
                             {/* Shimmer sweep — only in last third */}
                             {isLastThird && (

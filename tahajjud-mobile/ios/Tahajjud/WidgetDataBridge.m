@@ -6,6 +6,7 @@ RCT_EXTERN_METHOD(
   writeWidgetData:(NSString *)nextPrayer
   nextPrayerTime:(double)nextPrayerTime
   streak:(nonnull NSNumber *)streak
+  tahajjudStart:(double)tahajjudStart
 )
 
 @end

@@ -47,8 +47,9 @@ function findNextPrayer(times: PrayerTimes): { name: string; date: Date } | null
 /**
  * Call this after prayer times load and after the streak updates.
  * Writes data to the shared App Group for the home screen widget.
+ * @param tahajjudStart  Optional Date of tonight's last-third start (from NightCalculation)
  */
-export async function updateWidget(prayerTimes: PrayerTimes): Promise<void> {
+export async function updateWidget(prayerTimes: PrayerTimes, tahajjudStart?: Date): Promise<void> {
     if (Platform.OS !== 'ios' || !WidgetDataBridge) return;
 
     const next = findNextPrayer(prayerTimes);
@@ -86,8 +87,9 @@ export async function updateWidget(prayerTimes: PrayerTimes): Promise<void> {
     try {
         WidgetDataBridge.writeWidgetData(
             next.name,
-            next.date.getTime() / 1000, // Unix seconds
+            next.date.getTime() / 1000,          // Unix seconds
             streak,
+            tahajjudStart ? tahajjudStart.getTime() / 1000 : 0,  // 0 = not available
         );
     } catch (e) {
         console.log('WidgetDataBridge error:', e);
