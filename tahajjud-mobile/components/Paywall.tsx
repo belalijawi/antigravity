@@ -10,7 +10,7 @@ import {
     Platform,
     Alert,
 } from 'react-native';
-import { X, Check, Star, Download, Moon, ShieldCheck, Zap } from 'lucide-react-native';
+import { X, Check, Star, BookOpen, Moon, CalendarDays, Zap, WifiOff } from 'lucide-react-native';
 import { BlurView } from 'expo-blur';
 import RevenueCatService, { ENTITLEMENT_ID } from '../services/revenueCat';
 import { usePurchases } from '../context/PurchasesContext';
@@ -69,9 +69,10 @@ const Paywall: React.FC<PaywallProps> = ({ onClose }) => {
     };
 
     const features = [
-        { icon: <Download size={20} color={colors.accent} />, title: 'Offline Quran', desc: 'Download surahs and listen anywhere without internet' },
+        { icon: <WifiOff size={20} color={colors.accent} />, title: 'Offline Quran', desc: 'Download full surah audio and listen without an internet connection' },
+        { icon: <BookOpen size={20} color={colors.accent} />, title: 'Unlimited Letters to Allah', desc: 'Write as many private letters to Allah as your heart desires' },
         { icon: <Moon size={20} color={colors.accent} />, title: 'Premium Themes', desc: 'Exclusive dark & cosmic aesthetics for your app' },
-        { icon: <ShieldCheck size={20} color={colors.accent} />, title: 'Ad-Free Experience', desc: 'Maintain your spiritual focus with zero interruptions' },
+        { icon: <CalendarDays size={20} color={colors.accent} />, title: 'Full Prayer History', desc: 'View your complete Tahajjud journey — every night, every streak' },
         { icon: <Zap size={20} color={colors.accent} />, title: 'Support the Mission', desc: 'Help us improve the app and keep it running for everyone' },
     ];
 

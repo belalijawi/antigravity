@@ -1,19 +1,22 @@
 import * as React from 'react';
-import { useEffect, useState } from 'react';
-import { View, Text, FlatList, StyleSheet, TouchableOpacity, ActivityIndicator, TextInput } from 'react-native';
+import { useEffect, useState, useRef } from 'react';
+import { View, Text, FlatList, StyleSheet, TouchableOpacity, ActivityIndicator, TextInput, Alert } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { QuranService, SurahMeta } from '../services/QuranService';
 import { SurahReader } from './SurahReader';
-import { Search, Bookmark, BookOpen } from 'lucide-react-native';
+import { Search, Bookmark, BookOpen, Download, CheckCircle, Wifi, Trash2 } from 'lucide-react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { BlurView } from 'expo-blur';
 import { LinearGradient } from 'expo-linear-gradient';
 import Animated, { FadeInDown } from 'react-native-reanimated';
 import { useTheme } from '../context/ThemeContext';
 import { tabletContentStyle } from '../utils/layout';
+import OfflineQuranService, { DownloadInfo } from '../services/OfflineQuranService';
+import { usePurchases } from '../context/PurchasesContext';
 
 export function QuranTab() {
     const { colors } = useTheme();
+    const { isPremium, openPaywall } = usePurchases();
     const [surahs, setSurahs] = useState<SurahMeta[]>([]);
     const [filteredSurahs, setFilteredSurahs] = useState<SurahMeta[]>([]);
     const [loading, setLoading] = useState(true);
@@ -21,10 +24,16 @@ export function QuranTab() {
     const [selectedSurah, setSelectedSurah] = useState<number | null>(null);
     const [bookmark, setBookmark] = useState<{ surahNumber: number, edition: string, surahName: string, ayahNumber?: number } | null>(null);
     const [currentEdition, setCurrentEdition] = useState('en.sahih');
+    const [dlMap, setDlMap] = useState<Record<number, DownloadInfo>>({});
+    const unsubscribeRefs = useRef<Array<() => void>>([]);
 
     useEffect(() => {
         loadList();
         loadBookmark();
+        OfflineQuranService.init();
+        return () => {
+            unsubscribeRefs.current.forEach(fn => fn());
+        };
     }, []);
 
     const loadBookmark = async () => {
@@ -47,6 +56,44 @@ export function QuranTab() {
         setSurahs(list);
         setFilteredSurahs(list);
         setLoading(false);
+
+        // Subscribe to download events for all surahs
+        unsubscribeRefs.current.forEach(fn => fn());
+        unsubscribeRefs.current = list.map(s =>
+            OfflineQuranService.subscribe(s.number, (info) => {
+                setDlMap(prev => ({ ...prev, [info.surahNumber]: info }));
+            })
+        );
+        // Seed initial states
+        const initial: Record<number, DownloadInfo> = {};
+        list.forEach(s => {
+            initial[s.number] = OfflineQuranService.getInfo(s.number);
+        });
+        setDlMap(initial);
+    };
+
+    const handleDownloadPress = (surahNumber: number, surahName: string) => {
+        if (!isPremium) {
+            openPaywall();
+            return;
+        }
+        const info = dlMap[surahNumber] ?? OfflineQuranService.getInfo(surahNumber);
+        if (info.status === 'downloaded') {
+            Alert.alert(
+                'Delete Offline Audio',
+                `Remove the downloaded audio for ${surahName}?`,
+                [
+                    { text: 'Cancel', style: 'cancel' },
+                    { text: 'Delete', style: 'destructive', onPress: () => OfflineQuranService.delete(surahNumber) },
+                ]
+            );
+            return;
+        }
+        if (info.status === 'downloading') {
+            OfflineQuranService.cancelDownload(surahNumber);
+            return;
+        }
+        OfflineQuranService.download(surahNumber);
     };
 
     const handleSearch = (text: string) => {
@@ -138,7 +185,11 @@ export function QuranTab() {
                         keyExtractor={(item) => item.number.toString()}
                         contentContainerStyle={styles.listContent}
                         showsVerticalScrollIndicator={false}
-                        renderItem={({ item }) => (
+                        renderItem={({ item }) => {
+                            const dlInfo = dlMap[item.number] ?? { surahNumber: item.number, status: 'none', progress: 0 };
+                            const isDownloaded = dlInfo.status === 'downloaded';
+                            const isDownloading = dlInfo.status === 'downloading';
+                            return (
                             <TouchableOpacity
                                 style={styles.card}
                                 onPress={() => setSelectedSurah(item.number)}
@@ -161,9 +212,30 @@ export function QuranTab() {
                                         <Text style={styles.ayahCount}>{item.numberOfAyahs} v.</Text>
                                         <Text style={styles.revelationType}>{item.revelationType}</Text>
                                     </View>
+
+                                    {/* Download button */}
+                                    <TouchableOpacity
+                                        style={styles.dlButton}
+                                        onPress={() => handleDownloadPress(item.number, item.englishName)}
+                                        hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                                    >
+                                        {isDownloading ? (
+                                            <View style={styles.dlProgressWrap}>
+                                                <ActivityIndicator size="small" color={colors.accent} />
+                                                <Text style={[styles.dlPct, { color: colors.accent }]}>
+                                                    {Math.round(dlInfo.progress * 100)}%
+                                                </Text>
+                                            </View>
+                                        ) : isDownloaded ? (
+                                            <CheckCircle size={20} color={colors.accent} fill={colors.accent + '33'} />
+                                        ) : (
+                                            <Download size={18} color="#475569" />
+                                        )}
+                                    </TouchableOpacity>
                                 </View>
                             </TouchableOpacity>
-                        )}
+                            );
+                        }}
                     />
                 )}
             </View>
@@ -315,5 +387,20 @@ const styles = StyleSheet.create({
         textTransform: 'uppercase',
         marginTop: 4,
         letterSpacing: 0.5,
-    }
+    },
+    dlButton: {
+        marginLeft: 12,
+        width: 36,
+        height: 36,
+        alignItems: 'center',
+        justifyContent: 'center',
+    },
+    dlProgressWrap: {
+        alignItems: 'center',
+        gap: 2,
+    },
+    dlPct: {
+        fontSize: 9,
+        fontWeight: '700',
+    },
 });

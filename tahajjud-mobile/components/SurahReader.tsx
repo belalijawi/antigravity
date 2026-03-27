@@ -1,11 +1,12 @@
 import React, { useEffect, useState, useRef, useCallback } from 'react';
 import { View, Text, StyleSheet, ActivityIndicator, TouchableOpacity, Modal, FlatList, SafeAreaView, ViewToken, Pressable, Platform, Animated } from 'react-native';
-import { ArrowLeft, Globe, X, Check, Bookmark, Play, Pause, SkipBack, SkipForward, Volume2, Timer } from 'lucide-react-native';
+import { ArrowLeft, Globe, X, Check, Bookmark, Play, Pause, SkipBack, SkipForward, Volume2, Timer, WifiOff } from 'lucide-react-native';
 import { BlurView } from 'expo-blur';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { QuranService, SurahDetail, Edition, Ayah } from '../services/QuranService';
 import { Audio, AVPlaybackStatus, InterruptionModeIOS, InterruptionModeAndroid } from 'expo-av';
 import { useTheme } from '../context/ThemeContext';
+import OfflineQuranService from '../services/OfflineQuranService';
 
 interface Props {
     surahNumber: number;
@@ -64,6 +65,11 @@ export function SurahReader({ surahNumber, edition = 'en.sahih', onEditionChange
     const [initialScrollDone, setInitialScrollDone] = useState(false);
     const [bookmarkedAyah, setBookmarkedAyah] = useState<number | null>(null);
     const lastReadAyahRef = useRef<number>(1);
+
+    // Offline state
+    const [offlineUri, setOfflineUri] = useState<string | null>(null);
+    const [offlinePlaying, setOfflinePlaying] = useState(false);
+    const offlineSoundRef = useRef<Audio.Sound | null>(null);
 
     // Audio State & Refs (Refs prevent stale closures in playback callbacks)
     const [isPlaying, setIsPlaying] = useState(false);
@@ -189,6 +195,10 @@ export function SurahReader({ surahNumber, edition = 'en.sahih', onEditionChange
             console.error('Error re-asserting audio mode:', e);
         }
 
+        // Check for offline audio
+        const localUri = OfflineQuranService.getLocalUri(surahNumber);
+        setOfflineUri(localUri);
+
         const data = await QuranService.getSurah(surahNumber, edition);
         if (data) {
             setSurah(data);
@@ -231,10 +241,47 @@ export function SurahReader({ surahNumber, edition = 'en.sahih', onEditionChange
                         preloadedSoundRef.current = null;
                     } catch (e) { console.log('Cleanup error (pre):', e); }
                 }
+                if (offlineSoundRef.current) {
+                    try {
+                        await offlineSoundRef.current.unloadAsync();
+                        offlineSoundRef.current = null;
+                    } catch (e) { console.log('Cleanup error (offline):', e); }
+                }
             };
             cleanup();
         };
     }, []);
+
+    const handleOfflinePlayPause = async () => {
+        if (!offlineUri) return;
+        try {
+            if (offlineSoundRef.current) {
+                if (offlinePlaying) {
+                    await offlineSoundRef.current.pauseAsync();
+                    setOfflinePlaying(false);
+                } else {
+                    await offlineSoundRef.current.playAsync();
+                    setOfflinePlaying(true);
+                }
+            } else {
+                const { sound } = await Audio.Sound.createAsync(
+                    { uri: offlineUri },
+                    { shouldPlay: true },
+                    (status) => {
+                        if (status.isLoaded && status.didJustFinish) {
+                            setOfflinePlaying(false);
+                            offlineSoundRef.current?.unloadAsync();
+                            offlineSoundRef.current = null;
+                        }
+                    }
+                );
+                offlineSoundRef.current = sound;
+                setOfflinePlaying(true);
+            }
+        } catch (e) {
+            console.error('Offline playback error:', e);
+        }
+    };
 
     const playAyah = async (index: number) => {
         if (!audioAyahs[index]) return;
@@ -548,6 +595,22 @@ export function SurahReader({ surahNumber, edition = 'en.sahih', onEditionChange
                         <Text style={styles.headerSubtitle}>{surah.englishNameTranslation}</Text>
                     </View>
 
+                    {offlineUri && (
+                        <TouchableOpacity
+                            onPress={handleOfflinePlayPause}
+                            style={[styles.offlineBadge, { borderColor: colors.accent + '66', backgroundColor: colors.accent + '15' }]}
+                        >
+                            {offlinePlaying ? (
+                                <Pause size={13} color={colors.accent} fill={colors.accent} />
+                            ) : (
+                                <WifiOff size={13} color={colors.accent} />
+                            )}
+                            <Text style={[styles.offlineBadgeText, { color: colors.accent }]}>
+                                {offlinePlaying ? 'Pause' : 'Offline'}
+                            </Text>
+                        </TouchableOpacity>
+                    )}
+
                     <TouchableOpacity onPress={openLanguageModal} style={styles.langButton}>
                         <Globe color="#cbd5e1" size={22} />
                         <Text style={styles.langLabel}>Language</Text>
@@ -763,6 +826,20 @@ const styles = StyleSheet.create({
         color: '#cbd5e1',
         fontSize: 10,
         fontWeight: '600',
+    },
+    offlineBadge: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 4,
+        paddingHorizontal: 8,
+        paddingVertical: 5,
+        borderRadius: 8,
+        borderWidth: 1,
+        marginRight: 4,
+    },
+    offlineBadgeText: {
+        fontSize: 10,
+        fontWeight: '700',
     },
     loadingText: {
         color: '#cbd5e1',
