@@ -425,7 +425,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ onClose }) => {
                                 style={StyleSheet.absoluteFill}
                             />
                             <Star size={20} color="#000" fill="#000" />
-                            <Text style={styles.upgradeBannerText}>Upgrade to Tahajjud+</Text>
+                            <Text style={styles.upgradeBannerText}>Upgrade to Tahajjud+ Premium</Text>
                             <ChevronRight size={18} color="#000" />
                         </TouchableOpacity>
                     </Animated.View>
@@ -710,6 +710,30 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ onClose }) => {
                     </Animated.View>
                 )}
 
+                {/* Buy Me a Coffee */}
+                <Animated.View entering={FadeInUp.delay(400).duration(600)} style={styles.coffeeSection}>
+                    <Text style={styles.coffeeSectionTitle}>☕ Support the Developer</Text>
+                    <Text style={styles.coffeeSectionDesc}>
+                        Tahajjud+ is built with love, dedication, and countless late nights. If this app has benefited your worship, a small coffee keeps the lights on. JazakAllah Khair 🤲
+                    </Text>
+                    <TouchableOpacity
+                        style={styles.coffeeButton}
+                        onPress={() => {
+                            haptic.light();
+                            Linking.openURL('https://buymeacoffee.com/tahajjudplus');
+                        }}
+                        activeOpacity={0.85}
+                    >
+                        <LinearGradient
+                            colors={['#FFDD00', '#FFC400']}
+                            start={{ x: 0, y: 0 }}
+                            end={{ x: 1, y: 0 }}
+                            style={StyleSheet.absoluteFill}
+                        />
+                        <Text style={styles.coffeeButtonText}>☕  Buy Me a Coffee</Text>
+                    </TouchableOpacity>
+                </Animated.View>
+
                 <View style={styles.footer}>
                     <LinearGradient
                         colors={['transparent', 'rgba(248, 250, 252, 0.1)', 'transparent']}
@@ -972,6 +996,44 @@ const styles = StyleSheet.create({
         width: '100%',
         height: 1,
         marginBottom: 24,
+    },
+    coffeeSection: {
+        marginHorizontal: 20,
+        marginBottom: 24,
+        padding: 24,
+        backgroundColor: 'rgba(255, 221, 0, 0.05)',
+        borderRadius: 20,
+        borderWidth: 1,
+        borderColor: 'rgba(255, 221, 0, 0.15)',
+        alignItems: 'center',
+    },
+    coffeeSectionTitle: {
+        color: '#FFDD00',
+        fontSize: 16,
+        fontWeight: '800',
+        marginBottom: 8,
+        letterSpacing: 0.3,
+    },
+    coffeeSectionDesc: {
+        color: '#94a3b8',
+        fontSize: 13,
+        textAlign: 'center',
+        lineHeight: 20,
+        marginBottom: 20,
+    },
+    coffeeButton: {
+        overflow: 'hidden',
+        borderRadius: 14,
+        width: '100%',
+        height: 50,
+        justifyContent: 'center',
+        alignItems: 'center',
+    },
+    coffeeButtonText: {
+        color: '#000',
+        fontSize: 16,
+        fontWeight: '800',
+        letterSpacing: 0.3,
     },
     versionText: {
         color: '#94a3b8',

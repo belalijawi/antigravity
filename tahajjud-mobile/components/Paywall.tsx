@@ -112,22 +112,53 @@ const Paywall: React.FC<PaywallProps> = ({ onClose }) => {
                 </View>
 
                 <View style={styles.pricingSection}>
-                    {packages.map((pkg) => (
-                        <TouchableOpacity
-                            key={pkg.identifier}
-                            style={[styles.packageCard, { borderColor: colors.accent }]}
-                            onPress={() => handlePurchase(pkg)}
-                            disabled={purchasing}
-                        >
-                            <View style={styles.packageInfo}>
-                                <Text style={styles.packageTitle}>{pkg.product.title.split(' (')[0]}</Text>
-                                <Text style={styles.packageDesc}>{pkg.product.description}</Text>
+                    {packages.map((pkg) => {
+                        const isAnnual = pkg.packageType === 'ANNUAL' || pkg.identifier === '$rc_annual';
+                        const monthlyEquivalent = isAnnual
+                            ? pkg.product.currencyCode
+                                ? new Intl.NumberFormat('en', {
+                                    style: 'currency',
+                                    currency: pkg.product.currencyCode,
+                                    minimumFractionDigits: 2,
+                                    maximumFractionDigits: 2,
+                                  }).format(pkg.product.price / 12)
+                                : null
+                            : null;
+
+                        return (
+                            <View key={pkg.identifier} style={styles.packageWrapper}>
+                                {isAnnual && (
+                                    <View style={[styles.bestValueBadge, { backgroundColor: colors.accent }]}>
+                                        <Text style={styles.bestValueText}>⭐ BEST VALUE</Text>
+                                    </View>
+                                )}
+                                <TouchableOpacity
+                                    style={[
+                                        styles.packageCard,
+                                        { borderColor: colors.accent },
+                                        isAnnual && styles.packageCardHighlighted,
+                                    ]}
+                                    onPress={() => handlePurchase(pkg)}
+                                    disabled={purchasing}
+                                >
+                                    <View style={styles.packageInfo}>
+                                        <Text style={styles.packageTitle}>{pkg.product.title.split(' (')[0]}</Text>
+                                        {isAnnual && monthlyEquivalent ? (
+                                            <Text style={[styles.packageDesc, { color: colors.accent }]}>
+                                                Only {monthlyEquivalent}/month — save vs monthly
+                                            </Text>
+                                        ) : (
+                                            <Text style={styles.packageDesc}>{pkg.product.description}</Text>
+                                        )}
+                                    </View>
+                                    <View style={[styles.priceBadge, { backgroundColor: colors.accent }]}>
+                                        <Text style={styles.priceText}>{pkg.product.priceString}</Text>
+                                        {isAnnual && <Text style={styles.priceSubText}>/ year</Text>}
+                                    </View>
+                                </TouchableOpacity>
                             </View>
-                            <View style={[styles.priceBadge, { backgroundColor: colors.accent }]}>
-                                <Text style={styles.priceText}>{pkg.product.priceString}</Text>
-                            </View>
-                        </TouchableOpacity>
-                    ))}
+                        );
+                    })}
 
                     {packages.length === 0 && (
                         <View style={styles.emptyPackages}>
@@ -237,6 +268,23 @@ const styles = StyleSheet.create({
     pricingSection: {
         marginBottom: 32,
     },
+    packageWrapper: {
+        marginBottom: 16,
+    },
+    bestValueBadge: {
+        alignSelf: 'flex-start',
+        paddingHorizontal: 12,
+        paddingVertical: 4,
+        borderTopLeftRadius: 10,
+        borderTopRightRadius: 10,
+        marginLeft: 16,
+    },
+    bestValueText: {
+        color: '#000',
+        fontSize: 11,
+        fontWeight: 'bold',
+        letterSpacing: 0.5,
+    },
     packageCard: {
         backgroundColor: 'rgba(255, 255, 255, 0.03)',
         borderRadius: 20,
@@ -244,7 +292,11 @@ const styles = StyleSheet.create({
         borderWidth: 1,
         flexDirection: 'row',
         alignItems: 'center',
-        marginBottom: 16,
+    },
+    packageCardHighlighted: {
+        backgroundColor: 'rgba(255, 255, 255, 0.07)',
+        borderTopLeftRadius: 0,
+        borderWidth: 2,
     },
     packageInfo: {
         flex: 1,
@@ -268,6 +320,13 @@ const styles = StyleSheet.create({
         color: '#000',
         fontWeight: 'bold',
         fontSize: 16,
+        textAlign: 'center',
+    },
+    priceSubText: {
+        color: '#000',
+        fontSize: 11,
+        textAlign: 'center',
+        opacity: 0.7,
     },
     restoreButton: {
         alignItems: 'center',
