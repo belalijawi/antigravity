@@ -1,12 +1,16 @@
 import React, { useEffect, useState, useRef, useCallback } from 'react';
 import { View, Text, StyleSheet, ActivityIndicator, TouchableOpacity, Modal, FlatList, SafeAreaView, ViewToken, Pressable, Platform, Animated } from 'react-native';
-import { ArrowLeft, Globe, X, Check, Bookmark, Play, Pause, SkipBack, SkipForward, Volume2, Timer, WifiOff } from 'lucide-react-native';
+import { ArrowLeft, Globe, X, Check, Bookmark, Play, Pause, SkipBack, SkipForward, Volume2, Timer, WifiOff, Brain } from 'lucide-react-native';
 import { BlurView } from 'expo-blur';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { QuranService, SurahDetail, Edition, Ayah } from '../services/QuranService';
 import { Audio, AVPlaybackStatus, InterruptionModeIOS, InterruptionModeAndroid } from 'expo-av';
 import { useTheme } from '../context/ThemeContext';
 import OfflineQuranService from '../services/OfflineQuranService';
+import { HifzSession } from './HifzSession';
+import { usePurchases } from '../context/PurchasesContext';
+import { QuranTimingService, AyahAudioData, getWordAtTime } from '../services/QuranTimingService';
+import { QuranWordService, AyahWords } from '../services/QuranWordService';
 
 interface Props {
     surahNumber: number;
@@ -57,10 +61,25 @@ const VERIFIED_EDITIONS = [
     { identifier: 'ja.japanese', displayName: 'Japanese', subName: 'Ryoichi Mita', isPremium: true },
 ];
 
+function getActiveWordByWeight(words: string[], posMs: number, durMs: number): number {
+    if (words.length === 0 || durMs <= 0) return 0;
+    const baseLengths = words.map(w => Math.max(w.replace(/[\u064B-\u065F\u0610-\u061A\u06D6-\u06DC]/g, '').length, 1));
+    const total = baseLengths.reduce((a, b) => a + b, 0);
+    const ratio = Math.min(posMs / durMs, 1);
+    let cumulative = 0;
+    for (let i = 0; i < baseLengths.length; i++) {
+        cumulative += baseLengths[i] / total;
+        if (ratio <= cumulative) return i;
+    }
+    return words.length - 1;
+}
+
 export function SurahReader({ surahNumber, edition = 'en.sahih', onEditionChange, onClose }: Props) {
+    const { isPremium, openPaywall } = usePurchases();
     const [surah, setSurah] = useState<SurahDetail | null>(null);
     const [loading, setLoading] = useState(true);
     const [modalVisible, setModalVisible] = useState(false);
+    const [hifzVisible, setHifzVisible] = useState(false);
     const flatListRef = useRef<FlatList>(null);
     const [initialScrollDone, setInitialScrollDone] = useState(false);
     const [bookmarkedAyah, setBookmarkedAyah] = useState<number | null>(null);
@@ -81,6 +100,12 @@ export function SurahReader({ surahNumber, edition = 'en.sahih', onEditionChange
     const [audioLoading, setAudioLoading] = useState(false);
     const [audioAyahs, setAudioAyahs] = useState<Ayah[]>([]);
     const audioAyahsRef = useRef<Ayah[]>([]);
+
+    // Word-level highlight tracking
+    const [playbackPosition, setPlaybackPosition] = useState(0);
+    const [playbackDuration, setPlaybackDuration] = useState(1);
+    const [ayahTimingData, setAyahTimingData] = useState<AyahAudioData[]>([]);
+    const [ayahWordData, setAyahWordData] = useState<AyahWords[]>([]);
 
     // Stable Function Refs for background callbacks
     const playAyahRef = useRef<(index: number) => Promise<void>>(null);
@@ -203,10 +228,16 @@ export function SurahReader({ surahNumber, edition = 'en.sahih', onEditionChange
         if (data) {
             setSurah(data);
 
-            // Fetch audio recitations (default Alafasy)
-            const audioData = await QuranService.getAudioRecitation(surahNumber);
+            // Fetch audio recitations (default Alafasy) + word-level timing in parallel
+            const [audioData, timingData, wordsData] = await Promise.all([
+                QuranService.getAudioRecitation(surahNumber),
+                QuranTimingService.getSurahAudioData(surahNumber),
+                QuranWordService.getSurahWords(surahNumber),
+            ]);
             setAudioAyahs(audioData);
             audioAyahsRef.current = audioData;
+            setAyahTimingData(timingData);
+            setAyahWordData(wordsData);
 
             // Load specific bookmark for this surah/ayah if exists
             try {
@@ -326,6 +357,7 @@ export function SurahReader({ surahNumber, edition = 'en.sahih', onEditionChange
                 preloadedIndexRef.current = null;
 
                 soundRef.current.setOnPlaybackStatusUpdate(onPlaybackStatusUpdate);
+                soundRef.current.setStatusAsync({ progressUpdateIntervalMillis: 50 }).catch(() => {});
             } else {
                 // Manual play or no pre-load available
                 const oldSound = soundRef.current;
@@ -333,7 +365,7 @@ export function SurahReader({ surahNumber, edition = 'en.sahih', onEditionChange
 
                 const { sound: newSound } = await Audio.Sound.createAsync(
                     { uri: audioAyahs[index].text },
-                    { shouldPlay: true },
+                    { shouldPlay: true, progressUpdateIntervalMillis: 50 },
                     onPlaybackStatusUpdate
                 );
 
@@ -361,6 +393,8 @@ export function SurahReader({ surahNumber, edition = 'en.sahih', onEditionChange
             currentAyahIndexRef.current = index;
             setIsPlaying(true);
             setAudioLoading(false);
+            setPlaybackPosition(0);
+            setPlaybackDuration(1);
             showBar();
 
             // 3. Start pre-loading the next ayah immediately for seamless background transition
@@ -437,8 +471,12 @@ export function SurahReader({ surahNumber, edition = 'en.sahih', onEditionChange
     };
 
     const onPlaybackStatusUpdate = (status: AVPlaybackStatus) => {
-        if (status.isLoaded && status.didJustFinish) {
-            handleNextAyahRef.current?.();
+        if (status.isLoaded) {
+            setPlaybackPosition(status.positionMillis ?? 0);
+            setPlaybackDuration(status.durationMillis ?? 1);
+            if (status.didJustFinish) {
+                handleNextAyahRef.current?.();
+            }
         }
     };
 
@@ -611,6 +649,14 @@ export function SurahReader({ surahNumber, edition = 'en.sahih', onEditionChange
                         </TouchableOpacity>
                     )}
 
+                    <TouchableOpacity
+                        onPress={() => setHifzVisible(true)}
+                        style={styles.hifzButton}
+                    >
+                        <Brain color={colors.accent} size={20} />
+                        <Text style={[styles.hifzLabel, { color: colors.accent }]}>Hifz</Text>
+                    </TouchableOpacity>
+
                     <TouchableOpacity onPress={openLanguageModal} style={styles.langButton}>
                         <Globe color="#cbd5e1" size={22} />
                         <Text style={styles.langLabel}>Language</Text>
@@ -676,7 +722,7 @@ export function SurahReader({ surahNumber, edition = 'en.sahih', onEditionChange
                                 </View>
                                 <View style={styles.ayahActions}>
                                     <TouchableOpacity
-                                        onPress={() => playAyah(index)}
+                                        onPress={() => currentAyahIndex === index ? handlePlayPause() : playAyah(index)}
                                         style={styles.ayahPlayButton}
                                     >
                                         {currentAyahIndex === index && isPlaying ? (
@@ -690,13 +736,51 @@ export function SurahReader({ surahNumber, edition = 'en.sahih', onEditionChange
                                     )}
                                 </View>
                             </View>
-                            <Text style={[
-                                styles.ayahText,
-                                (edition.startsWith('ar.') || edition.startsWith('quran-')) && { textAlign: 'right' },
-                                currentAyahIndex === index && { color: '#22d3ee' }
-                            ]}>
-                                {ayah.text}
-                            </Text>
+                            {currentAyahIndex === index && isPlaying ? (() => {
+                                const words = ayah.text.split(' ');
+                                const isArabic = edition.startsWith('ar.') || edition.startsWith('quran-');
+                                const segments = ayahTimingData.find(a => a.ayahNumber === ayah.numberInSurah)?.segments ?? [];
+                                const activeWord = isArabic && segments.length > 0
+                                    ? getWordAtTime(segments, playbackPosition)
+                                    : isArabic
+                                        ? getActiveWordByWeight(words, playbackPosition, playbackDuration)
+                                        : Math.floor(Math.min(playbackPosition / Math.max(playbackDuration, 1), 1) * words.length);
+                                const wordList = ayahWordData.find(a => a.ayahNumber === ayah.numberInSurah)?.words ?? [];
+                                const activeMeaning = isArabic && activeWord >= 0 && activeWord < wordList.length
+                                    ? wordList[activeWord]?.meaning ?? ''
+                                    : '';
+                                return (
+                                    <View>
+                                        <Text style={[styles.ayahText, isArabic && { textAlign: 'right' }]}>
+                                            {words.map((word: string, wi: number) => (
+                                                <Text
+                                                    key={wi}
+                                                    style={
+                                                        wi === activeWord
+                                                            ? styles.wordActive
+                                                            : styles.wordUpcoming
+                                                    }
+                                                >
+                                                    {word}{wi < words.length - 1 ? ' ' : ''}
+                                                </Text>
+                                            ))}
+                                        </Text>
+                                        {activeMeaning ? (
+                                            <View style={styles.wordMeaningPill}>
+                                                <Text style={[styles.wordMeaningText, { color: colors.accent }]}>{activeMeaning}</Text>
+                                            </View>
+                                        ) : null}
+                                    </View>
+                                );
+                            })() : (
+                                <Text style={[
+                                    styles.ayahText,
+                                    (edition.startsWith('ar.') || edition.startsWith('quran-')) && { textAlign: 'right' },
+                                    currentAyahIndex === index && { color: '#22d3ee' }
+                                ]}>
+                                    {ayah.text}
+                                </Text>
+                            )}
                         </Pressable>
                     );
                 }}
@@ -716,6 +800,24 @@ export function SurahReader({ surahNumber, edition = 'en.sahih', onEditionChange
                     )}
                 </Animated.View>
             )}
+
+            {/* Hifz Mode — full screen modal */}
+            <Modal
+                animationType="slide"
+                transparent={false}
+                visible={hifzVisible}
+                onRequestClose={() => setHifzVisible(false)}
+            >
+                {surah && (
+                    <HifzSession
+                        surahNumber={surahNumber}
+                        surahName={surah.englishName}
+                        surahNameTranslation={surah.englishNameTranslation}
+                        totalAyahs={surah.numberOfAyahs}
+                        onClose={() => setHifzVisible(false)}
+                    />
+                )}
+            </Modal>
 
             {/* Modern Language Picker Modal */}
             <Modal
@@ -827,6 +929,15 @@ const styles = StyleSheet.create({
         fontSize: 10,
         fontWeight: '600',
     },
+    hifzButton: {
+        alignItems: 'center',
+        paddingHorizontal: 8,
+    },
+    hifzLabel: {
+        fontSize: 10,
+        fontWeight: '700',
+        marginTop: 2,
+    },
     offlineBadge: {
         flexDirection: 'row',
         alignItems: 'center',
@@ -933,6 +1044,36 @@ const styles = StyleSheet.create({
         fontSize: 19,
         lineHeight: 34,
         textAlign: 'left',
+    },
+    wordActive: {
+        color: '#22d3ee',
+        fontWeight: '800',
+        fontSize: 20,
+    },
+    wordPast: {
+        color: '#334155',
+        fontWeight: '600',
+        fontSize: 19,
+    },
+    wordUpcoming: {
+        color: '#f8fafc',
+        fontWeight: '400',
+        fontSize: 19,
+    },
+    wordMeaningPill: {
+        alignSelf: 'center',
+        marginTop: 8,
+        paddingHorizontal: 14,
+        paddingVertical: 5,
+        borderRadius: 20,
+        backgroundColor: 'rgba(34, 211, 238, 0.12)',
+        borderWidth: 1,
+        borderColor: 'rgba(34, 211, 238, 0.3)',
+    },
+    wordMeaningText: {
+        fontSize: 13,
+        fontWeight: '700',
+        textAlign: 'center',
     },
     modalOverlay: {
         flex: 1,

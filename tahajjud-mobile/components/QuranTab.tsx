@@ -1,5 +1,7 @@
 import * as React from 'react';
 import { useEffect, useState, useRef } from 'react';
+import { HifzTab } from './HifzTab';
+import { Brain, BookOpen as BookOpenIcon } from 'lucide-react-native';
 import { View, Text, FlatList, StyleSheet, TouchableOpacity, ActivityIndicator, TextInput, Alert } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { QuranService, SurahMeta } from '../services/QuranService';
@@ -15,13 +17,14 @@ import OfflineQuranService, { DownloadInfo } from '../services/OfflineQuranServi
 import { usePurchases } from '../context/PurchasesContext';
 
 export function QuranTab() {
-    const { colors } = useTheme();
+    const { colors, cardBg, blurIntensity } = useTheme();
     const { isPremium, openPaywall } = usePurchases();
     const [surahs, setSurahs] = useState<SurahMeta[]>([]);
     const [filteredSurahs, setFilteredSurahs] = useState<SurahMeta[]>([]);
     const [loading, setLoading] = useState(true);
     const [searchQuery, setSearchQuery] = useState('');
     const [selectedSurah, setSelectedSurah] = useState<number | null>(null);
+    const [activeSubTab, setActiveSubTab] = useState<'quran' | 'hifz'>('quran');
     const [bookmark, setBookmark] = useState<{ surahNumber: number, edition: string, surahName: string, ayahNumber?: number } | null>(null);
     const [currentEdition, setCurrentEdition] = useState('en.sahih');
     const [dlMap, setDlMap] = useState<Record<number, DownloadInfo>>({});
@@ -131,7 +134,29 @@ export function QuranTab() {
                     <Text style={styles.subtitle}>Guidance for the heart</Text>
                 </View>
 
-                {bookmark && !searchQuery && (
+                {/* Sub-tab switcher */}
+                <View style={styles.subTabRow}>
+                    <TouchableOpacity
+                        style={[styles.subTab, activeSubTab === 'quran' && { backgroundColor: colors.accent + '22', borderColor: colors.accent + '66' }]}
+                        onPress={() => setActiveSubTab('quran')}
+                    >
+                        <BookOpenIcon size={14} color={activeSubTab === 'quran' ? colors.accent : '#475569'} />
+                        <Text style={[styles.subTabText, activeSubTab === 'quran' && { color: colors.accent }]}>Read</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                        style={[styles.subTab, activeSubTab === 'hifz' && { backgroundColor: colors.accent + '22', borderColor: colors.accent + '66' }]}
+                        onPress={() => setActiveSubTab('hifz')}
+                    >
+                        <Brain size={14} color={activeSubTab === 'hifz' ? colors.accent : '#475569'} />
+                        <Text style={[styles.subTabText, activeSubTab === 'hifz' && { color: colors.accent }]}>Hifz</Text>
+                    </TouchableOpacity>
+                </View>
+
+                {/* Hifz sub-tab */}
+                {activeSubTab === 'hifz' && <HifzTab embedded />}
+
+                {/* Quran sub-tab content */}
+                {activeSubTab === 'quran' && bookmark && !searchQuery && (
                     <Animated.View
                         entering={FadeInDown.duration(800)}
                         style={styles.bookmarkWrapper}
@@ -145,7 +170,7 @@ export function QuranTab() {
                                 }
                             }}
                         >
-                            <BlurView intensity={20} tint="dark" style={StyleSheet.absoluteFill} />
+                            <BlurView intensity={Math.round(20 * blurIntensity)} tint="dark" style={[StyleSheet.absoluteFill, { backgroundColor: cardBg }]} />
                             <LinearGradient
                                 colors={['rgba(248, 250, 252, 0.15)', 'transparent']}
                                 style={StyleSheet.absoluteFill}
@@ -164,19 +189,19 @@ export function QuranTab() {
                     </Animated.View>
                 )}
 
-                <View style={styles.searchContainer}>
-                    <BlurView intensity={10} tint="dark" style={StyleSheet.absoluteFill} />
+                {activeSubTab === 'quran' && <View style={styles.searchContainer}>
+                    <BlurView intensity={Math.round(10 * blurIntensity)} tint="dark" style={[StyleSheet.absoluteFill, { backgroundColor: cardBg }]} />
                     <Search color="#94a3b8" size={20} />
                     <TextInput
                         style={styles.input}
-                        placeholder="Search by Name or Theme..."
+                        placeholder="Search by name..."
                         placeholderTextColor="rgba(255, 255, 255, 0.2)"
                         value={searchQuery}
                         onChangeText={handleSearch}
                     />
-                </View>
+                </View>}
 
-                {loading ? (
+                {activeSubTab === 'quran' && (loading ? (
                     <ActivityIndicator size="large" color="#f8fafc" style={{ marginTop: 50 }} />
                 ) : (
                     <FlatList
@@ -194,7 +219,7 @@ export function QuranTab() {
                                 style={styles.card}
                                 onPress={() => setSelectedSurah(item.number)}
                             >
-                                <BlurView intensity={15} tint="dark" style={StyleSheet.absoluteFill} />
+                                <BlurView intensity={Math.round(15 * blurIntensity)} tint="dark" style={[StyleSheet.absoluteFill, { backgroundColor: cardBg }]} />
                                 <LinearGradient
                                     colors={['rgba(255, 255, 255, 0.05)', 'transparent']}
                                     style={StyleSheet.absoluteFill}
@@ -237,7 +262,7 @@ export function QuranTab() {
                             );
                         }}
                     />
-                )}
+                ))}
             </View>
         </SafeAreaView>
     );
@@ -251,7 +276,29 @@ const styles = StyleSheet.create({
     header: {
         paddingTop: 32,
         paddingHorizontal: 24,
-        paddingBottom: 24,
+        paddingBottom: 12,
+    },
+    subTabRow: {
+        flexDirection: 'row',
+        gap: 8,
+        paddingHorizontal: 20,
+        marginBottom: 16,
+    },
+    subTab: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 6,
+        paddingHorizontal: 16,
+        paddingVertical: 8,
+        borderRadius: 12,
+        backgroundColor: 'rgba(255,255,255,0.04)',
+        borderWidth: 1,
+        borderColor: 'rgba(255,255,255,0.08)',
+    },
+    subTabText: {
+        color: '#475569',
+        fontSize: 13,
+        fontWeight: '800',
     },
     title: {
         fontSize: 32,
