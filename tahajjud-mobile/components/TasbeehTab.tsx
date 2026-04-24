@@ -72,7 +72,7 @@ function ProgressRing({ count, target, accent }: { count: number; target: number
 // ─── Main component ───────────────────────────────────────────────────────────
 
 export function TasbeehTab() {
-    const { colors } = useTheme();
+    const { colors, cardBg, blurIntensity } = useTheme();
     const insets = useSafeAreaInsets();
     const [selectedIndex, setSelectedIndex] = useState(0);
     const [count, setCount] = useState(0);
@@ -181,7 +181,7 @@ export function TasbeehTab() {
                 {/* Dhikr selector */}
                 <Animated.View entering={FadeInDown.delay(100).duration(500)}>
                     <TouchableOpacity style={styles.dhikrSelector} onPress={() => setShowPicker(true)} activeOpacity={0.7}>
-                        <BlurView intensity={15} tint="dark" style={StyleSheet.absoluteFill} />
+                        <BlurView intensity={Math.round(15 * blurIntensity)} tint="dark" style={[StyleSheet.absoluteFill, { backgroundColor: cardBg }]} />
                         <LinearGradient
                             colors={['rgba(255,255,255,0.07)', 'transparent']}
                             style={StyleSheet.absoluteFill}
@@ -200,7 +200,7 @@ export function TasbeehTab() {
                 <Animated.View entering={FadeInDown.delay(200).duration(500)} style={styles.tapArea}>
                     <Pressable onPress={handleTap} onLongPress={handleReset} style={styles.tapPressable} delayLongPress={600}>
                         <Animated.View style={[styles.tapCircle, tapAnimStyle]}>
-                            <BlurView intensity={20} tint="dark" style={StyleSheet.absoluteFill} />
+                            <BlurView intensity={Math.round(20 * blurIntensity)} tint="dark" style={[StyleSheet.absoluteFill, { backgroundColor: cardBg }]} />
                             <LinearGradient
                                 colors={['rgba(255,255,255,0.06)', 'rgba(255,255,255,0.02)']}
                                 style={StyleSheet.absoluteFill}
@@ -233,7 +233,7 @@ export function TasbeehTab() {
                 {/* Today stats */}
                 {todayTotal > 0 && (
                     <Animated.View entering={FadeInDown.delay(300).duration(500)} style={styles.statsRow}>
-                        <BlurView intensity={12} tint="dark" style={StyleSheet.absoluteFill} />
+                        <BlurView intensity={Math.round(12 * blurIntensity)} tint="dark" style={[StyleSheet.absoluteFill, { backgroundColor: cardBg }]} />
                         <Text style={[styles.statsLabel, { color: colors.secondaryText }]}>Today</Text>
                         <Text style={[styles.statsValue, { color: colors.primaryText }]}>
                             {todayTotal.toLocaleString()} dhikr
@@ -265,7 +265,7 @@ export function TasbeehTab() {
                                     onPress={() => handleSelectDhikr(i)}
                                     activeOpacity={0.7}
                                 >
-                                    <BlurView intensity={12} tint="dark" style={StyleSheet.absoluteFill} />
+                                    <BlurView intensity={Math.round(12 * blurIntensity)} tint="dark" style={[StyleSheet.absoluteFill, { backgroundColor: cardBg }]} />
                                     <View style={styles.dhikrOptionContent}>
                                         <Text style={styles.dhikrOptionArabic}>{d.arabic}</Text>
                                         <Text style={[styles.dhikrOptionTranslit, { color: isSelected ? colors.accent : colors.primaryText }]}>

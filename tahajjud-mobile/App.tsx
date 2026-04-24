@@ -1,8 +1,8 @@
 import 'react-native-gesture-handler';
 import React, { useEffect, useState } from 'react';
-import { View, StatusBar, LogBox, Platform, StyleSheet, Dimensions, Modal } from 'react-native';
+import { View, StatusBar, LogBox, Platform, StyleSheet, Dimensions, Modal, DeviceEventEmitter } from 'react-native';
 import { NavigationContainer, DarkTheme } from '@react-navigation/native';
-import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
+import { createBottomTabNavigator, BottomTabBar } from '@react-navigation/bottom-tabs';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { WelcomeScreen } from './components/WelcomeScreen';
 import { HomeTab } from './components/HomeTab';
@@ -13,49 +13,69 @@ import { BlurView } from 'expo-blur';
 import { LinearGradient } from 'expo-linear-gradient';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { Moon, BookHeart, Scroll, BookOpen, Infinity } from 'lucide-react-native';
-import { TasbeehTab } from './components/TasbeehTab';
+import { Moon, BookHeart, Scroll, BookOpen, CheckSquare } from 'lucide-react-native';
+import { PrayersTab } from './components/PrayersTab';
 import { ThemeProvider, useTheme, ThemeColors } from './context/ThemeContext';
 import { PurchasesProvider, usePurchases } from './context/PurchasesContext';
 import Paywall from './components/Paywall';
 import { haptic } from './utils/haptic';
 import { Audio, InterruptionModeIOS, InterruptionModeAndroid } from 'expo-av';
+import { QuranPreloadService } from './services/QuranPreloadService';
 
 // Suppress known SVG warnings
 LogBox.ignoreLogs([
   'Tried to register two views with the same name',
+  'Error initializing RevenueCat',
+  'Error checking premium status',
+  'Invalid API key',
+  'No singleton instance',
+  'native store is not available',
 ]);
 
 const Tab = createBottomTabNavigator();
 
 const NebulaBackground = () => {
-  const { colors } = useTheme();
-  // Generate stars only once
+  const { colors, darkMode } = useTheme();
+  // Generate stars only once per theme/darkMode change
+  const starCount = colors.starCount ?? 120;
+  const starMaxOpacity = colors.starMaxOpacity ?? 0.4;
+  // In dark mode: noticeably fewer and dimmer stars
+  const effectiveStarCount = darkMode ? Math.floor(starCount * 0.55) : starCount;
+  const effectiveStarMaxOpacity = darkMode ? starMaxOpacity * 0.38 : starMaxOpacity;
+
   const stars = React.useMemo(() => {
-    return Array.from({ length: 120 }).map((_, i) => ({
+    return Array.from({ length: effectiveStarCount }).map((_, i) => ({
       id: i,
       top: Math.random() * 100,
       left: Math.random() * 100,
       size: Math.random() * 1.5 + 1,
-      opacity: Math.random() * 0.4 + 0.1,
+      opacity: Math.random() * effectiveStarMaxOpacity + 0.05,
     }));
-  }, []);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [effectiveStarCount, effectiveStarMaxOpacity]);
 
   return (
     <View style={StyleSheet.absoluteFill}>
       <LinearGradient
-        colors={['#000000', colors.background, '#000000']}
+        colors={darkMode ? ['#000000', '#000000', '#000000'] : ['#000000', colors.background, '#000000']}
         style={StyleSheet.absoluteFill}
       />
 
       {/* Theme-aware Cosmic Layers */}
-      <View style={[styles.nebulaLayer, { top: -50, right: -50, backgroundColor: colors.nebula[0], width: 500, height: 500 }]} />
-      <View style={[styles.nebulaLayer, { bottom: -100, left: -100, backgroundColor: colors.nebula[1], width: 600, height: 600 }]} />
-      <View style={[styles.nebulaLayer, { top: '25%', left: '10%', backgroundColor: colors.nebula[2], width: 300, height: 300 }]} />
-      <View style={[styles.nebulaLayer, { bottom: '20%', right: '5%', backgroundColor: colors.nebula[3], width: 450, height: 450 }]} />
+      <View style={[StyleSheet.absoluteFill, { opacity: darkMode ? 0.32 : 1 }]}>
+        <View style={[styles.nebulaLayer, { top: -50, right: -50, backgroundColor: colors.nebula[0], width: 500, height: 500 }]} />
+        <View style={[styles.nebulaLayer, { bottom: -100, left: -100, backgroundColor: colors.nebula[1], width: 600, height: 600 }]} />
+        <View style={[styles.nebulaLayer, { top: '25%', left: '10%', backgroundColor: colors.nebula[2], width: 300, height: 300 }]} />
+        <View style={[styles.nebulaLayer, { bottom: '20%', right: '5%', backgroundColor: colors.nebula[3], width: 450, height: 450 }]} />
+      </View>
 
       {Platform.OS === 'ios' && (
-        <BlurView intensity={30} tint="dark" style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(0,0,0,0.3)' }]} />
+        <BlurView intensity={darkMode ? 55 : 30} tint="dark" style={[StyleSheet.absoluteFill, { backgroundColor: colors.nebulaOverlay ?? 'rgba(0,0,0,0.3)' }]} />
+      )}
+
+      {/* Dark mode veil — pulls everything deep without killing the glow entirely */}
+      {darkMode && (
+        <View style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(0,0,0,0.42)' }]} />
       )}
 
       {Platform.OS === 'ios' && stars.map((star) => (
@@ -90,13 +110,17 @@ function MainApp() {
   const { width } = Dimensions.get('window');
   const insets = useSafeAreaInsets();
 
-  // Dynamic bottom placement that feels premium on all devices
-  const BAR_BOTTOM = Math.max(insets.bottom, 12) + 4;
-  const BAR_HEIGHT = 68;
-  // Side padding: 24pt from screen edge, but capped for iPad
-  const MAX_BAR_WIDTH = 500;
-  const BAR_WIDTH = Math.min(width - 48, MAX_BAR_WIDTH);
-  const BAR_SIDE = (width - BAR_WIDTH) / 2;
+  const BAR_BOTTOM = Math.max(insets.bottom, 14) + 4;
+  const BAR_HEIGHT = 64;
+  const BAR_MARGIN = 10;
+
+  useEffect(() => {
+    // Preload Quran data silently after the app has settled
+    const timer = setTimeout(() => {
+      QuranPreloadService.preloadInBackground();
+    }, 5000);
+    return () => clearTimeout(timer);
+  }, []);
 
   return (
     <View style={{ flex: 1, backgroundColor: '#020617' }}>
@@ -106,46 +130,63 @@ function MainApp() {
       <View style={{ flex: 1, backgroundColor: 'transparent' }}>
         <NavigationContainer theme={DynamicTheme}>
           <Tab.Navigator
-            screenOptions={{
-              headerShown: false,
-              tabBarStyle: {
+            tabBar={(props) => (
+              <View style={{
                 position: 'absolute',
                 bottom: BAR_BOTTOM,
-                left: BAR_SIDE,
-                right: BAR_SIDE,
-                backgroundColor: 'rgba(15, 23, 42, 0.45)', // Slightly more transparent
-                borderRadius: 34,
+                left: BAR_MARGIN,
+                right: BAR_MARGIN,
                 height: BAR_HEIGHT,
-                paddingBottom: insets.bottom > 0 ? 4 : 0,
-                paddingTop: 8,
+                borderRadius: 34,
+                overflow: 'hidden',
+                shadowColor: colors.shadow,
+                shadowOffset: { width: 0, height: 8 },
+                shadowOpacity: 0.6,
+                shadowRadius: 20,
                 borderWidth: 1,
-                borderColor: 'rgba(255, 255, 255, 0.15)',
-                elevation: 0,
-                shadowColor: '#000',
-                shadowOffset: { width: 0, height: 12 },
-                shadowOpacity: 0.5,
-                shadowRadius: 24,
-              },
-              tabBarBackground: () => (
-                Platform.OS === 'ios'
-                  ? <BlurView intensity={insets.bottom > 0 ? 85 : 95} tint="dark" style={{ ...StyleSheet.absoluteFillObject, borderRadius: 34, overflow: 'hidden' }} />
-                  : <View style={{ ...StyleSheet.absoluteFillObject, borderRadius: 34, overflow: 'hidden', backgroundColor: 'rgba(10, 16, 35, 0.97)' }} />
-              ),
+                borderColor: colors.accent + '35',
+              }}>
+                {/* Theme-tinted dark base */}
+                <View style={[StyleSheet.absoluteFillObject, { backgroundColor: colors.background + 'EE' }]} />
+                {/* Subtle accent glow layer */}
+                <View style={[StyleSheet.absoluteFillObject, { backgroundColor: colors.accent + '14' }]} />
+                {Platform.OS === 'ios' && (
+                  <BlurView intensity={70} tint="dark" style={StyleSheet.absoluteFillObject} />
+                )}
+                <BottomTabBar {...props} style={{
+                  backgroundColor: 'transparent',
+                  borderTopWidth: 0,
+                  height: BAR_HEIGHT,
+                  paddingBottom: insets.bottom > 0 ? 6 : 2,
+                  paddingTop: 6,
+                  elevation: 0,
+                }} />
+              </View>
+            )}
+            screenOptions={{
+              headerShown: false,
               tabBarActiveTintColor: colors.accent,
               tabBarInactiveTintColor: colors.secondaryText,
               tabBarShowLabel: true,
               tabBarLabelStyle: {
                 fontSize: 9,
                 fontWeight: '700',
-                marginTop: 2,
+                marginTop: 1,
                 letterSpacing: 0.3,
               },
-            }}
-            screenListeners={{
-              tabPress: () => {
-                haptic.light();
+              tabBarItemStyle: {
+                paddingVertical: 0,
               },
             }}
+            screenListeners={({ navigation, route }) => ({
+              tabPress: () => {
+                haptic.light();
+                const state = navigation.getState();
+                if (state.routes[state.index]?.name === route.name) {
+                  DeviceEventEmitter.emit('scrollToTop', route.name);
+                }
+              },
+            })}
           >
             <Tab.Screen
               name="Home"
@@ -153,7 +194,7 @@ function MainApp() {
               options={{
                 tabBarIcon: ({ color, focused }) => (
                   <View style={styles.iconWrapper}>
-                    <Moon size={18} color={color} strokeWidth={focused ? 2.5 : 2} />
+                    <Moon size={20} color={color} strokeWidth={focused ? 2.5 : 2} />
                   </View>
                 ),
               }}
@@ -164,7 +205,7 @@ function MainApp() {
               options={{
                 tabBarIcon: ({ color, focused }) => (
                   <View style={styles.iconWrapper}>
-                    <BookHeart size={18} color={color} strokeWidth={focused ? 2.5 : 2} />
+                    <BookHeart size={20} color={color} strokeWidth={focused ? 2.5 : 2} />
                   </View>
                 ),
               }}
@@ -175,7 +216,7 @@ function MainApp() {
               options={{
                 tabBarIcon: ({ color, focused }) => (
                   <View style={styles.iconWrapper}>
-                    <Scroll size={18} color={color} strokeWidth={focused ? 2.5 : 2} />
+                    <Scroll size={20} color={color} strokeWidth={focused ? 2.5 : 2} />
                   </View>
                 ),
               }}
@@ -186,18 +227,18 @@ function MainApp() {
               options={{
                 tabBarIcon: ({ color, focused }) => (
                   <View style={styles.iconWrapper}>
-                    <BookOpen size={18} color={color} strokeWidth={focused ? 2.5 : 2} />
+                    <BookOpen size={20} color={color} strokeWidth={focused ? 2.5 : 2} />
                   </View>
                 ),
               }}
             />
             <Tab.Screen
-              name="Tasbeeh"
-              component={TasbeehTab}
+              name="Prayers"
+              component={PrayersTab}
               options={{
                 tabBarIcon: ({ color, focused }) => (
                   <View style={styles.iconWrapper}>
-                    <Infinity size={18} color={color} strokeWidth={focused ? 2.5 : 2} />
+                    <CheckSquare size={20} color={color} strokeWidth={focused ? 2.5 : 2} />
                   </View>
                 ),
               }}
@@ -218,7 +259,7 @@ const styles = StyleSheet.create({
   iconWrapper: {
     alignItems: 'center',
     justifyContent: 'center',
-    width: 50, // Reduced from 60
+    width: 44,
   },
 });
 

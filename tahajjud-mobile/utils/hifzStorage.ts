@@ -47,7 +47,7 @@ function todayStr(): string {
 }
 
 // Days until next review based on rating and current level
-function nextIntervalDays(level: number, rating: HifzRating): number {
+export function nextIntervalDays(level: number, rating: HifzRating): number {
     if (rating === 'forgot') return 1;
     if (rating === 'hard') return 1;
     if (rating === 'good') {
@@ -59,7 +59,7 @@ function nextIntervalDays(level: number, rating: HifzRating): number {
     return intervals[level] ?? 60;
 }
 
-function newLevel(current: number, rating: HifzRating): HifzAyah['level'] {
+export function newLevel(current: number, rating: HifzRating): HifzAyah['level'] {
     if (rating === 'forgot') return Math.max(0, current - 1) as HifzAyah['level'];
     if (rating === 'hard') return current as HifzAyah['level'];
     if (rating === 'good') return Math.min(5, current + 1) as HifzAyah['level'];

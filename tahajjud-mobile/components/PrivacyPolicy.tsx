@@ -1,7 +1,7 @@
 import React from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Dimensions, Linking } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { X, Shield, Lock, Eye, Database } from 'lucide-react-native';
+import { X, Shield, Lock, Eye, Database, MapPin, CreditCard } from 'lucide-react-native';
 import { BlurView } from 'expo-blur';
 import { useTheme } from '../context/ThemeContext';
 
@@ -54,27 +54,39 @@ export function PrivacyPolicy({ onClose }: Props) {
 
                 <Section
                     icon={Lock}
-                    title="Edge Encryption"
-                    content="All your Tahajjud letters and personal reflections are stored locally on your device or encrypted within your private Supabase container. We cannot read your entries."
+                    title="Local Storage Only"
+                    content="All your Tahajjud letters, reflections, prayer records, and dhikr sessions are stored exclusively on your device using secure local storage. We do not have a server that receives your personal content — we cannot read your entries."
                 />
 
                 <Section
                     icon={Database}
-                    title="Data Sovereignty"
-                    content="You own your data. If you choose to use Cloud Sync, your data is protected by industry-standard encryption. You can delete your entire journey at any time."
+                    title="Your Data, Your Control"
+                    content="You own everything you write. Your spiritual journey lives on your device and can be deleted at any time by uninstalling the app or clearing its data. We never back up your private content to a remote server."
+                />
+
+                <Section
+                    icon={MapPin}
+                    title="Location for Prayer Times"
+                    content="Tahajjud requests your device location solely to calculate accurate prayer times and Qibla direction. Your location is never transmitted to our servers or shared with third parties. You may disable location access at any time in your device settings."
+                />
+
+                <Section
+                    icon={CreditCard}
+                    title="In-App Purchases"
+                    content="Premium subscriptions are processed securely through Apple App Store and RevenueCat. We never see your payment details. RevenueCat may process limited anonymous purchase receipts to verify subscription status — see RevenueCat's privacy policy for details."
                 />
 
                 <Section
                     icon={Eye}
-                    title="No Surveillance"
-                    content="Tahajjud does not use third-party tracking, advertising, or data brokerage. We do not sell or share your spiritual metrics with anyone."
+                    title="No Tracking or Advertising"
+                    content="Tahajjud contains no advertising, no third-party analytics SDKs, and no behavioural tracking. We do not sell, share, or monetise any information about how you use the app."
                 />
 
                 <View style={styles.footer}>
                     <Text style={[styles.footerText, { color: colors.secondaryText }]}>
-                        Last Updated: February 2026{'\n'}
+                        Last Updated: April 2026{'\n'}
                         Contact: tahajjud.letters@gmail.com{'\n\n'}
-                        Official Privacy Policy:{'\n'}
+                        Full Privacy Policy:{'\n'}
                         <Text
                             style={{ color: colors.accent, textDecorationLine: 'underline' }}
                             onPress={() => Linking.openURL('https://tahajjud-2d7bf.web.app')}

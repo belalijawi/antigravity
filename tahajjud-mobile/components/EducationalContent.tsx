@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity } from 'react-native';
+import React, { useState, useRef, useEffect } from 'react';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, DeviceEventEmitter } from 'react-native';
 import { Moon, Droplets, Heart, BookOpen, Hand, Star, ChevronDown, ChevronUp, Lightbulb, CheckCircle, Clock } from 'lucide-react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import Animated, { FadeInDown, FadeInUp } from 'react-native-reanimated';
@@ -25,7 +25,7 @@ const STEPS = [
         icon: Heart,
         title: 'Set Your Intention (Niyyah)',
         description: "Make a silent intention in your heart to pray Tahajjud for the sake of Allah alone. The Niyyah does not need to be spoken aloud — Allah knows what is in your heart.",
-        tip: '"Actions are by intentions." — Sahih Bukhari',
+        tip: '"Actions are by intentions." — Sahih Bukhari 1',
     },
     {
         number: 4,
@@ -46,18 +46,18 @@ const STEPS = [
         icon: Hand,
         title: "Make Du'a After Prayer",
         description: "The last third of the night is the most powerful time for du'a. After your prayer, raise your hands and speak to Allah directly. Ask for everything — your dunya and your akhira.",
-        tip: '"Our Lord descends to the lowest heaven and says: Who is calling on Me that I may answer?" — Sahih Bukhari',
+        tip: '"Our Lord descends to the lowest heaven and says: Who is calling on Me that I may answer?" — Bukhari 1145 · Muslim 758',
     },
 ];
 
 const FAQS = [
     {
         q: 'Do I have to pray every single night?',
-        a: "No — Tahajjud is a voluntary (nafl) prayer. Even praying it occasionally brings great reward. The Prophet ﷺ said: 'The most beloved deeds to Allah are those done consistently, even if small.'",
+        a: "No — Tahajjud is a voluntary (nafl) prayer. Even praying it occasionally brings great reward. The Prophet ﷺ said: 'The most beloved deeds to Allah are those done consistently, even if small.' (Bukhari 6465 · Muslim 2818)",
     },
     {
         q: 'What if I sleep through my alarm?',
-        a: "Do not be disheartened. Shaytan ties three knots at the back of your neck while you sleep. Waking up and breaking those knots is itself an act of worship. Try again tomorrow.",
+        a: "Do not be disheartened. The Prophet ﷺ said: 'When any of you is asleep, Shaytan ties three knots at the back of his neck.' Waking for Allah breaks those knots. Try again tomorrow. (Bukhari 1142 · Muslim 776)",
     },
     {
         q: 'Can I pray Tahajjud before sleeping?',
@@ -104,8 +104,8 @@ function StepCard({ step, index, colors }: StepProps) {
             </View>
             <Text style={[styles.stepDescription, { color: colors.secondaryText }]}>{step.description}</Text>
             <View style={[styles.tipRow, { borderTopColor: 'rgba(255,255,255,0.06)' }]}>
-                <Lightbulb size={11} color={colors.accent} strokeWidth={2.5} />
-                <Text style={[styles.tipText, { color: colors.accent }]}>{step.tip}</Text>
+                <Lightbulb size={13} color={colors.accent} strokeWidth={2.5} style={{ alignSelf: 'center', marginBottom: 6 }} />
+                <Text style={[styles.tipText, { color: colors.accent, textAlign: 'center' }]}>{step.tip}</Text>
             </View>
         </Animated.View>
     );
@@ -143,9 +143,18 @@ function FAQItem({ item, index, colors }: FAQProps) {
 
 export function EducationalContent() {
     const { colors } = useTheme();
+    const scrollRef = useRef<ScrollView>(null);
+
+    useEffect(() => {
+        const sub = DeviceEventEmitter.addListener('scrollToTop', (tab: string) => {
+            if (tab === 'Guide') scrollRef.current?.scrollTo({ y: 0, animated: true });
+        });
+        return () => sub.remove();
+    }, []);
 
     return (
         <ScrollView
+            ref={scrollRef}
             style={{ flex: 1 }}
             contentContainerStyle={styles.container}
             showsVerticalScrollIndicator={false}
@@ -276,9 +285,9 @@ const styles = StyleSheet.create({
         lineHeight: 22,
     },
     tipRow: {
-        flexDirection: 'row',
-        alignItems: 'flex-start',
-        gap: 6,
+        flexDirection: 'column',
+        alignItems: 'center',
+        gap: 0,
         marginTop: 2,
         paddingTop: 10,
         borderTopWidth: 1,

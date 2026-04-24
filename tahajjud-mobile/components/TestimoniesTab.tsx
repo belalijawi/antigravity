@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { View, Text, FlatList, TouchableOpacity, StyleSheet, Linking, Share, ScrollView, Platform, Alert, RefreshControl } from 'react-native';
+import { View, Text, FlatList, TouchableOpacity, StyleSheet, Linking, Share, ScrollView, Platform, Alert, RefreshControl, DeviceEventEmitter } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Heart, Send, Share2, BookHeart, Sparkles } from 'lucide-react-native';
 import { BlurView } from 'expo-blur';
@@ -85,13 +85,36 @@ const TestimonyCard = ({ item, onShare }: { item: Testimony, onShare: (item: Tes
 };
 
 
+function pickFeatured(all: Testimony[]): Testimony[] {
+    const shuffled = [...all].sort(() => Math.random() - 0.5);
+    return shuffled.slice(0, 5);
+}
+
 export function TestimoniesTab() {
     const { colors } = useTheme();
     const [selectedTopic, setSelectedTopic] = useState('All');
     const [sharingQuote, setSharingQuote] = useState<Testimony | null>(null);
     const [testimonies, setTestimonies] = useState<Testimony[]>(initialTestimonies);
     const [isRefreshing, setIsRefreshing] = useState(false);
+    const [featured, setFeatured] = useState<Testimony[]>(() => pickFeatured(initialTestimonies));
+    const [featuredIndex, setFeaturedIndex] = useState(0);
     const viewShotRef = useRef<View>(null);
+    const flatListRef = useRef<FlatList>(null);
+
+    useEffect(() => {
+        const sub = DeviceEventEmitter.addListener('scrollToTop', (tab: string) => {
+            if (tab === 'Guide') flatListRef.current?.scrollToOffset({ offset: 0, animated: true });
+        });
+        return () => sub.remove();
+    }, []);
+
+    // Cycle through featured stories every 5 seconds
+    useEffect(() => {
+        const t = setInterval(() => {
+            setFeaturedIndex(i => (i + 1) % featured.length);
+        }, 5000);
+        return () => clearInterval(t);
+    }, [featured.length]);
 
     useEffect(() => {
         loadTestimonies();
@@ -134,6 +157,8 @@ export function TestimoniesTab() {
                     freshData.sort((a, b) => b.createdAt - a.createdAt);
 
                     setTestimonies(freshData);
+                    setFeatured(pickFeatured(freshData));
+                    setFeaturedIndex(0);
                     await AsyncStorage.setItem('cached-testimonies', JSON.stringify(freshData));
                 }
             }
@@ -154,11 +179,17 @@ export function TestimoniesTab() {
         : testimonies.filter(t => t.tags.includes(selectedTopic));
 
     const handleShareStory = async () => {
-        Linking.openURL('mailto:tahajjud.letters@gmail.com?subject=My Tahajjud Story&body=Here is my story...');
-        const newlyUnlocked = await checkAchievements('story', 1);
-        if (newlyUnlocked) {
-            Alert.alert("Achievement Unlocked!", `You earned the "${newlyUnlocked.title}" badge.`);
-        }
+        haptic.medium();
+        try {
+            await Share.share({
+                message: "Alhamdulillah, I've been using Tahajjud Plus for my night prayers. It's truly changed my connection with Allah. Check it out!",
+                title: "My Tahajjud Journey",
+            });
+            const newlyUnlocked = await checkAchievements('story', 1);
+            if (newlyUnlocked) {
+                Alert.alert("Achievement Unlocked!", `You earned the "${newlyUnlocked.title}" badge.`);
+            }
+        } catch (_) {}
     };
 
     const handleShareQuote = async (item: Testimony) => {
@@ -179,6 +210,7 @@ export function TestimoniesTab() {
     return (
         <View style={styles.container}>
             <FlatList
+                ref={flatListRef}
                 style={{ flex: 1 }}
                 data={filteredStories}
                 renderItem={({ item }) => <TestimonyCard item={item} onShare={handleShareQuote} />}
@@ -198,6 +230,36 @@ export function TestimoniesTab() {
                             <Text style={[styles.headerTitle, { color: colors.accent }]}>Reflections</Text>
                             <Text style={[styles.headerSubtitle, { color: colors.secondaryText }]}>Echoes of faith from the silent hours</Text>
                         </View>
+
+                        {/* Featured cycling story */}
+                        {featured.length > 0 && (
+                            <TouchableOpacity
+                                activeOpacity={0.85}
+                                style={styles.featuredCard}
+                                onPress={() => setSharingQuote(featured[featuredIndex])}
+                            >
+                                <BlurView intensity={20} tint="dark" style={StyleSheet.absoluteFill} />
+                                <LinearGradient
+                                    colors={[colors.accent + '22', 'transparent']}
+                                    style={StyleSheet.absoluteFill}
+                                    start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}
+                                />
+                                <View style={styles.featuredBadge}>
+                                    <Sparkles size={11} color={colors.accent} />
+                                    <Text style={[styles.featuredBadgeText, { color: colors.accent }]}>Featured</Text>
+                                </View>
+                                <Text style={styles.featuredTitle} numberOfLines={1}>{featured[featuredIndex].title}</Text>
+                                <Text style={styles.featuredBody} numberOfLines={3}>{featured[featuredIndex].body}</Text>
+                                <View style={styles.featuredFooter}>
+                                    <Text style={styles.featuredAuthor}>{featured[featuredIndex].author} · {featured[featuredIndex].location}</Text>
+                                    <View style={styles.featuredDots}>
+                                        {featured.map((_, i) => (
+                                            <View key={i} style={[styles.featuredDot, i === featuredIndex && { backgroundColor: colors.accent, width: 14 }]} />
+                                        ))}
+                                    </View>
+                                </View>
+                            </TouchableOpacity>
+                        )}
 
                         <View style={styles.topicsContainer}>
                             <ScrollView
@@ -335,6 +397,60 @@ const styles = StyleSheet.create({
         color: '#cbd5e1',
         fontSize: 12,
         fontWeight: '700',
+    },
+    featuredCard: {
+        marginHorizontal: 20,
+        marginBottom: 20,
+        borderRadius: 20,
+        overflow: 'hidden',
+        borderWidth: 1,
+        borderColor: 'rgba(255,255,255,0.1)',
+        padding: 20,
+        gap: 8,
+    },
+    featuredBadge: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 5,
+        marginBottom: 4,
+    },
+    featuredBadgeText: {
+        fontSize: 11,
+        fontWeight: '800',
+        letterSpacing: 0.8,
+        textTransform: 'uppercase',
+    },
+    featuredTitle: {
+        fontSize: 18,
+        fontWeight: '800',
+        color: '#f8fafc',
+    },
+    featuredBody: {
+        fontSize: 14,
+        color: '#94a3b8',
+        lineHeight: 22,
+    },
+    featuredFooter: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        marginTop: 4,
+    },
+    featuredAuthor: {
+        fontSize: 12,
+        color: '#475569',
+        fontWeight: '700',
+    },
+    featuredDots: {
+        flexDirection: 'row',
+        gap: 4,
+        alignItems: 'center',
+    },
+    featuredDot: {
+        width: 6,
+        height: 6,
+        borderRadius: 3,
+        backgroundColor: 'rgba(255,255,255,0.2)',
     },
     topicsContainer: {
         height: 44,

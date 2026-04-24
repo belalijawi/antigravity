@@ -17,6 +17,7 @@ import {
     getAllHifzData, getStreakData, getDailyGoal, getTodayProgress,
     StreakData, HifzAyah,
 } from '../utils/hifzStorage';
+import { scheduleHifzNotifications, requestHifzNotificationPermission } from '../utils/hifzNotifications';
 
 function countDueNow(ayahs: HifzAyah[]): number {
     const now = new Date();
@@ -80,6 +81,10 @@ export function HifzTab({ embedded = false }: { embedded?: boolean }) {
         setStatsMap(map);
         setDueMap(due);
         setLoading(false);
+        // Keep notification schedule up to date
+        requestHifzNotificationPermission().then(granted => {
+            if (granted) scheduleHifzNotifications(allHifz as Record<string, HifzAyah>);
+        }).catch(() => {});
     }, []);
 
     // Reload every time the tab is focused

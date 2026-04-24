@@ -2,7 +2,7 @@ import * as React from 'react';
 import { useEffect, useState, useRef } from 'react';
 import { HifzTab } from './HifzTab';
 import { Brain, BookOpen as BookOpenIcon } from 'lucide-react-native';
-import { View, Text, FlatList, StyleSheet, TouchableOpacity, ActivityIndicator, TextInput, Alert } from 'react-native';
+import { View, Text, FlatList, StyleSheet, TouchableOpacity, ActivityIndicator, TextInput, Alert, DeviceEventEmitter } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { QuranService, SurahMeta } from '../services/QuranService';
 import { SurahReader } from './SurahReader';
@@ -29,13 +29,18 @@ export function QuranTab() {
     const [currentEdition, setCurrentEdition] = useState('en.sahih');
     const [dlMap, setDlMap] = useState<Record<number, DownloadInfo>>({});
     const unsubscribeRefs = useRef<Array<() => void>>([]);
+    const flatListRef = useRef<FlatList>(null);
 
     useEffect(() => {
         loadList();
         loadBookmark();
         OfflineQuranService.init();
+        const scrollSub = DeviceEventEmitter.addListener('scrollToTop', (tab: string) => {
+            if (tab === 'Quran') flatListRef.current?.scrollToOffset({ offset: 0, animated: true });
+        });
         return () => {
             unsubscribeRefs.current.forEach(fn => fn());
+            scrollSub.remove();
         };
     }, []);
 
@@ -101,11 +106,24 @@ export function QuranTab() {
 
     const handleSearch = (text: string) => {
         setSearchQuery(text);
-        if (text) {
+        if (text.trim()) {
+            const q = text.toLowerCase().trim();
             const filtered = surahs.filter(s =>
-                s.englishName.toLowerCase().includes(text.toLowerCase()) ||
-                s.englishNameTranslation.toLowerCase().includes(text.toLowerCase())
+                s.number.toString() === q ||
+                s.englishName.toLowerCase().includes(q) ||
+                s.name.toLowerCase().includes(q) ||
+                s.englishNameTranslation.toLowerCase().includes(q)
             );
+            // Sort: exact number match first, then starts-with, then contains
+            filtered.sort((a, b) => {
+                const score = (s: typeof a) => {
+                    if (s.number.toString() === q) return 0;
+                    if (s.englishName.toLowerCase().startsWith(q)) return 1;
+                    if (s.englishName.toLowerCase().includes(q)) return 2;
+                    return 3;
+                };
+                return score(a) - score(b);
+            });
             setFilteredSurahs(filtered);
         } else {
             setFilteredSurahs(surahs);
@@ -205,6 +223,7 @@ export function QuranTab() {
                     <ActivityIndicator size="large" color="#f8fafc" style={{ marginTop: 50 }} />
                 ) : (
                     <FlatList
+                        ref={flatListRef}
                         style={{ flex: 1 }}
                         data={filteredSurahs}
                         keyExtractor={(item) => item.number.toString()}

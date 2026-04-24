@@ -1,196 +1,499 @@
 import React, { useEffect, useState, useCallback } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, Alert } from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet, ScrollView } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { BlurView } from 'expo-blur';
 import { ChevronLeft, ChevronRight, Lock } from 'lucide-react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useTheme } from '../context/ThemeContext';
 import { usePurchases } from '../context/PurchasesContext';
+import type { PrayerKey } from './Tracker';
 
 const DAYS = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
-
 const MONTHS = [
     'January', 'February', 'March', 'April', 'May', 'June',
-    'July', 'August', 'September', 'October', 'November', 'December'
+    'July', 'August', 'September', 'October', 'November', 'December',
 ];
 
-function getDaysInMonth(year: number, month: number): number {
-    return new Date(year, month + 1, 0).getDate();
+const PRAYER_KEYS: PrayerKey[] = ['fajr', 'dhuhr', 'asr', 'maghrib', 'isha', 'tahajjud'];
+
+const PRAYER_COLORS: Record<PrayerKey, string> = {
+    fajr:     '#38bdf8',
+    dhuhr:    '#fbbf24',
+    asr:      '#fb923c',
+    maghrib:  '#f472b6',
+    isha:     '#a78bfa',
+    tahajjud: '#34d399',
+};
+
+// Map of dateStr -> set of logged prayer keys
+type DateMap = Record<string, Set<PrayerKey>>;
+
+const CELL = 11;
+const GAP  = 2;
+
+function prayerCountColor(count: number): string {
+    if (count === 0) return 'rgba(255,255,255,0.06)';
+    const opacity = 0.2 + (count / 6) * 0.8;
+    return `rgba(52, 211, 153, ${opacity.toFixed(2)})`;
 }
 
-function getFirstDayOfWeek(year: number, month: number): number {
-    return new Date(year, month, 1).getDay(); // 0=Sun
+function YearHeatmap({ dateMap, colors }: { dateMap: DateMap; colors: any }) {
+    // Build 52 weeks ending today
+    const today = new Date();
+    const weeks: Date[][] = [];
+    // Start from the Sunday 51 weeks ago
+    const start = new Date(today);
+    start.setDate(start.getDate() - (start.getDay()) - 51 * 7);
+
+    for (let w = 0; w < 53; w++) {
+        const week: Date[] = [];
+        for (let d = 0; d < 7; d++) {
+            const day = new Date(start);
+            day.setDate(start.getDate() + w * 7 + d);
+            if (day <= today) week.push(day);
+        }
+        if (week.length > 0) weeks.push(week);
+    }
+
+    // Month labels: find where each month starts
+    const monthLabels: { label: string; weekIdx: number }[] = [];
+    weeks.forEach((week, wi) => {
+        const firstDay = week[0];
+        if (firstDay.getDate() <= 7) {
+            monthLabels.push({
+                label: firstDay.toLocaleString('default', { month: 'short' }),
+                weekIdx: wi,
+            });
+        }
+    });
+
+    return (
+        <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+            <View>
+                {/* Month labels */}
+                <View style={{ flexDirection: 'row', marginBottom: 4 }}>
+                    {weeks.map((week, wi) => {
+                        const label = monthLabels.find(m => m.weekIdx === wi);
+                        return (
+                            <View key={wi} style={{ width: CELL + GAP }}>
+                                {label && (
+                                    <Text style={{ fontSize: 8, color: '#475569', fontWeight: '700' }}>
+                                        {label.label}
+                                    </Text>
+                                )}
+                            </View>
+                        );
+                    })}
+                </View>
+
+                {/* Grid: 7 rows x N weeks */}
+                {[0,1,2,3,4,5,6].map(dayOfWeek => (
+                    <View key={dayOfWeek} style={{ flexDirection: 'row', marginBottom: GAP }}>
+                        {weeks.map((week, wi) => {
+                            const day = week[dayOfWeek];
+                            if (!day) return <View key={wi} style={{ width: CELL + GAP }} />;
+                            const dateStr = day.toISOString().split('T')[0];
+                            const isToday = dateStr === today.toISOString().split('T')[0];
+                            const count = dateMap[dateStr]?.size ?? 0;
+                            return (
+                                <View
+                                    key={wi}
+                                    style={{
+                                        width: CELL,
+                                        height: CELL,
+                                        borderRadius: 2,
+                                        marginRight: GAP,
+                                        backgroundColor: prayerCountColor(count),
+                                        borderWidth: isToday ? 1 : 0,
+                                        borderColor: 'rgba(255,255,255,0.4)',
+                                    }}
+                                />
+                            );
+                        })}
+                    </View>
+                ))}
+
+                {/* Legend */}
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 8 }}>
+                    <Text style={{ fontSize: 9, color: '#475569' }}>Less</Text>
+                    {[0, 1, 2, 4, 6].map(count => (
+                        <View key={count} style={{ width: CELL, height: CELL, borderRadius: 2, backgroundColor: prayerCountColor(count) }} />
+                    ))}
+                    <Text style={{ fontSize: 9, color: '#475569' }}>More</Text>
+                </View>
+            </View>
+        </ScrollView>
+    );
+}
+
+function getDaysInMonth(year: number, month: number) {
+    return new Date(year, month + 1, 0).getDate();
+}
+function getFirstDayOfWeek(year: number, month: number) {
+    return new Date(year, month, 1).getDay();
 }
 
 export function HistoryCalendar() {
-    const { colors } = useTheme();
+    const { colors, cardBg, blurIntensity } = useTheme();
     const { isPremium, openPaywall } = usePurchases();
     const today = new Date();
-    const [viewYear, setViewYear] = useState(today.getFullYear());
+    const [viewYear, setViewYear]   = useState(today.getFullYear());
     const [viewMonth, setViewMonth] = useState(today.getMonth());
-    const [loggedDates, setLoggedDates] = useState<Set<string>>(new Set());
-
-    // Free users only see last 7 days
-    const cutoffDate = isPremium ? null : (() => {
-        const d = new Date(today);
-        d.setDate(d.getDate() - 6); // today + 6 days back = 7 days
-        d.setHours(0, 0, 0, 0);
-        return d;
-    })();
+    const [dateMap, setDateMap]       = useState<DateMap>({});
+    const [selectedDate, setSelectedDate] = useState<string | null>(null);
+    const [viewMode, setViewMode] = useState<'week' | 'month' | 'year'>('week');
 
     const loadHistory = useCallback(async () => {
         try {
-            const raw = await AsyncStorage.getItem('tahajjud-tracker');
-            if (raw) {
-                const dates: string[] = JSON.parse(raw);
-                const normalized = new Set(dates.map(d => d.split('T')[0]));
-                setLoggedDates(normalized);
+            const raw = await AsyncStorage.getItem('prayer-tracker-v2');
+            if (!raw) return;
+            const parsed = JSON.parse(raw) as Record<PrayerKey, string[]>;
+            const map: DateMap = {};
+            for (const key of PRAYER_KEYS) {
+                const dates: string[] = parsed[key] ?? [];
+                for (const iso of dates) {
+                    const d = iso.split('T')[0];
+                    if (!map[d]) map[d] = new Set();
+                    map[d].add(key);
+                }
             }
+            setDateMap(map);
         } catch {}
     }, []);
 
-    useEffect(() => {
-        loadHistory();
-    }, [loadHistory]);
+    useEffect(() => { loadHistory(); }, [loadHistory]);
 
     const prevMonth = () => {
-        if (!isPremium) {
-            openPaywall();
-            return;
-        }
+        if (!isPremium) { openPaywall(); return; }
         if (viewMonth === 0) { setViewYear(y => y - 1); setViewMonth(11); }
         else setViewMonth(m => m - 1);
     };
-
     const nextMonth = () => {
-        // Don't go beyond current month
         if (viewYear === today.getFullYear() && viewMonth === today.getMonth()) return;
         if (viewMonth === 11) { setViewYear(y => y + 1); setViewMonth(0); }
         else setViewMonth(m => m + 1);
     };
 
     const isNextDisabled = viewYear === today.getFullYear() && viewMonth === today.getMonth();
-
     const daysInMonth = getDaysInMonth(viewYear, viewMonth);
-    const firstDay = getFirstDayOfWeek(viewYear, viewMonth);
-    const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
-
-    // Count logged days this month
+    const firstDay    = getFirstDayOfWeek(viewYear, viewMonth);
+    const todayStr    = today.toISOString().split('T')[0];
     const monthPrefix = `${viewYear}-${String(viewMonth + 1).padStart(2, '0')}-`;
-    const loggedThisMonth = [...loggedDates].filter(d => d.startsWith(monthPrefix)).length;
 
-    // Build grid cells: nulls for empty leading cells, then 1..daysInMonth
+    // Average completion % this month (exclude future days)
+    const pastDays = [...Array.from({ length: daysInMonth }, (_, i) => i + 1)]
+        .filter(d => {
+            const ds = `${monthPrefix}${String(d).padStart(2, '0')}`;
+            return new Date(viewYear, viewMonth, d) <= today;
+        });
+    const totalPossible = pastDays.length * 6;
+    const totalLogged   = pastDays.reduce((sum, d) => {
+        const ds = `${monthPrefix}${String(d).padStart(2, '0')}`;
+        return sum + (dateMap[ds]?.size ?? 0);
+    }, 0);
+    const avgPct = totalPossible > 0 ? Math.round((totalLogged / totalPossible) * 100) : 0;
+
     const cells: (number | null)[] = [
         ...Array(firstDay).fill(null),
         ...Array.from({ length: daysInMonth }, (_, i) => i + 1),
     ];
-    // Pad to complete the last row
     while (cells.length % 7 !== 0) cells.push(null);
+
+    // Build last-7-days array for week view
+    const last7: Date[] = Array.from({ length: 7 }, (_, i) => {
+        const d = new Date(today);
+        d.setDate(today.getDate() - (6 - i));
+        return d;
+    });
+
+    // Week completion %
+    const weekLogged = last7.reduce((sum, d) => {
+        const ds = d.toISOString().split('T')[0];
+        return sum + (dateMap[ds]?.size ?? 0);
+    }, 0);
+    const weekPct = Math.round((weekLogged / (7 * 6)) * 100);
 
     return (
         <View style={styles.container}>
             <LinearGradient
                 colors={['rgba(79, 70, 229, 0.12)', 'rgba(6, 182, 212, 0.06)', 'transparent']}
                 style={[StyleSheet.absoluteFill, { borderRadius: 32 }]}
-                start={{ x: 0, y: 0 }}
-                end={{ x: 1, y: 1 }}
+                start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}
             />
-            <BlurView intensity={20} tint="dark" style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(0,0,0,0.3)', borderRadius: 32 }]} />
+            <BlurView
+                intensity={Math.round(20 * blurIntensity)}
+                tint="dark"
+                style={[StyleSheet.absoluteFill, { backgroundColor: cardBg, borderRadius: 32 }]}
+            />
 
             <View style={styles.content}>
                 {/* Header */}
                 <View style={styles.header}>
                     <Text style={[styles.title, { color: colors.accent }]}>Prayer History</Text>
-                    <View style={styles.navRow}>
-                        <TouchableOpacity onPress={prevMonth} style={styles.navButton} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-                            {isPremium ? <ChevronLeft size={16} color={colors.primaryText} /> : <Lock size={12} color="#475569" />}
-                        </TouchableOpacity>
-                        <Text style={[styles.monthLabel, { color: colors.primaryText }]}>
-                            {MONTHS[viewMonth]} {viewYear}
-                        </Text>
-                        <TouchableOpacity
-                            onPress={nextMonth}
-                            style={[styles.navButton, isNextDisabled && styles.navButtonDisabled]}
-                            disabled={isNextDisabled}
-                            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                        >
-                            <ChevronRight size={16} color={isNextDisabled ? '#334155' : colors.primaryText} />
-                        </TouchableOpacity>
-                    </View>
+                    {viewMode === 'month' && (
+                        <View style={styles.navRow}>
+                            <TouchableOpacity onPress={prevMonth} style={styles.navButton} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                                <ChevronLeft size={16} color={colors.primaryText} />
+                            </TouchableOpacity>
+                            <Text style={[styles.monthLabel, { color: colors.primaryText }]}>
+                                {MONTHS[viewMonth]} {viewYear}
+                            </Text>
+                            <TouchableOpacity
+                                onPress={nextMonth}
+                                style={[styles.navButton, isNextDisabled && styles.navButtonDisabled]}
+                                disabled={isNextDisabled}
+                                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                            >
+                                <ChevronRight size={16} color={isNextDisabled ? '#334155' : colors.primaryText} />
+                            </TouchableOpacity>
+                        </View>
+                    )}
                 </View>
 
-                {/* Day of week labels */}
-                <View style={styles.weekRow}>
-                    {DAYS.map((d, i) => (
-                        <Text key={i} style={styles.dayLabel}>{d}</Text>
-                    ))}
-                </View>
-
-                {/* Calendar grid */}
-                <View style={styles.grid}>
-                    {cells.map((day, idx) => {
-                        if (day === null) {
-                            return <View key={`empty-${idx}`} style={styles.cell} />;
-                        }
-                        const dateStr = `${viewYear}-${String(viewMonth + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
-                        const cellDate = new Date(viewYear, viewMonth, day);
-                        const isLogged = loggedDates.has(dateStr);
-                        const isToday = dateStr === todayStr;
-                        const isFuture = cellDate > today;
-                        const isLocked = !isPremium && cutoffDate !== null && cellDate < cutoffDate;
-
+                {/* View toggle */}
+                <View style={styles.viewToggle}>
+                    {(['week', 'month', 'year'] as const).map(mode => {
+                        const locked = (mode === 'month' || mode === 'year') && !isPremium;
+                        const active = viewMode === mode;
                         return (
                             <TouchableOpacity
-                                key={dateStr}
-                                activeOpacity={isLocked ? 0.6 : 1}
-                                onPress={isLocked ? () => openPaywall() : undefined}
+                                key={mode}
+                                onPress={() => locked ? openPaywall() : setViewMode(mode)}
                                 style={[
-                                    styles.cell,
-                                    isLogged && !isLocked && styles.cellLogged,
-                                    isToday && !isLogged && styles.cellToday,
-                                    isLocked && styles.cellLocked,
+                                    styles.toggleBtn,
+                                    active && { backgroundColor: colors.accent + '22', borderColor: colors.accent + '55' },
                                 ]}
                             >
-                                {isLocked ? (
-                                    <Lock size={9} color="#334155" />
-                                ) : (
-                                    <>
-                                        <Text style={[
-                                            styles.dayText,
-                                            isLogged && styles.dayTextLogged,
-                                            isToday && !isLogged && { color: colors.accent },
-                                            isFuture && styles.dayTextFuture,
-                                        ]}>
-                                            {day}
-                                        </Text>
-                                        {isLogged && <View style={styles.dot} />}
-                                    </>
-                                )}
+                                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
+                                    <Text style={[styles.toggleText, { color: active ? colors.accent : locked ? '#334155' : colors.secondaryText }]}>
+                                        {mode.charAt(0).toUpperCase() + mode.slice(1)}
+                                    </Text>
+                                    {locked && <Lock size={9} color="#f59e0b" />}
+                                </View>
                             </TouchableOpacity>
                         );
                     })}
                 </View>
 
-                {/* Footer summary */}
-                <View style={styles.footer}>
-                    <View style={styles.legendItem}>
-                        <View style={[styles.legendDot, { backgroundColor: '#10b981' }]} />
-                        <Text style={[styles.legendText, { color: colors.secondaryText }]}>Tahajjud prayed</Text>
-                    </View>
-                    <Text style={[styles.countText, { color: colors.accent }]}>
-                        {loggedThisMonth} / {daysInMonth} nights
-                    </Text>
-                </View>
+                {/* ── Week View ── */}
+                {viewMode === 'week' && (
+                    <>
+                        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.weekGrid}>
+                            {last7.map((date, i) => {
+                                const ds = date.toISOString().split('T')[0];
+                                const prayers = dateMap[ds] ?? new Set<PrayerKey>();
+                                const count = prayers.size;
+                                const isToday = ds === todayStr;
+                                const isSelected = selectedDate === ds;
+                                const bgOpacity = count / 6 * 0.3;
+                                const dayName = date.toLocaleDateString('en-US', { weekday: 'short' });
+                                return (
+                                    <TouchableOpacity
+                                        key={ds}
+                                        activeOpacity={0.75}
+                                        onPress={() => setSelectedDate(isSelected ? null : ds)}
+                                        style={[
+                                            styles.weekCell,
+                                            isToday && { borderColor: 'rgba(255,255,255,0.25)' },
+                                            isSelected && { borderColor: colors.accent + '88' },
+                                            { backgroundColor: `rgba(16,185,129,${bgOpacity})` },
+                                        ]}
+                                    >
+                                        <Text style={[styles.weekDayName, { color: isToday ? colors.accent : '#475569' }]}>
+                                            {dayName}
+                                        </Text>
+                                        <Text style={[styles.weekDayNum, { color: isToday ? colors.accent : colors.primaryText, fontWeight: isToday ? '900' : '700' }]}>
+                                            {date.getDate()}
+                                        </Text>
+                                        {/* 6 prayer dots in 2 rows */}
+                                        <View style={styles.dotsContainer}>
+                                            {[PRAYER_KEYS.slice(0, 3), PRAYER_KEYS.slice(3)].map((row, ri) => (
+                                                <View key={ri} style={styles.dotsRow}>
+                                                    {row.map(pk => (
+                                                        <View
+                                                            key={pk}
+                                                            style={[
+                                                                styles.prayerDot,
+                                                                { backgroundColor: prayers.has(pk) ? PRAYER_COLORS[pk] : 'rgba(255,255,255,0.10)' },
+                                                            ]}
+                                                        />
+                                                    ))}
+                                                </View>
+                                            ))}
+                                        </View>
+                                        <Text style={[styles.weekCount, { color: count === 6 ? colors.accent : '#334155' }]}>
+                                            {count}/6
+                                        </Text>
+                                    </TouchableOpacity>
+                                );
+                            })}
+                        </ScrollView>
 
-                {!isPremium && (
-                    <TouchableOpacity
-                        style={styles.upgradeBanner}
-                        onPress={() => openPaywall()}
-                        activeOpacity={0.7}
-                    >
-                        <Lock size={11} color="#f59e0b" />
-                        <Text style={styles.upgradeBannerText}>Upgrade for full history</Text>
-                    </TouchableOpacity>
+                        {/* Day detail */}
+                        {selectedDate && (() => {
+                            const prayers = dateMap[selectedDate] ?? new Set<PrayerKey>();
+                            const [y, m, d] = selectedDate.split('-');
+                            const label = `${parseInt(d)} ${MONTHS[parseInt(m) - 1]}`;
+                            return (
+                                <View style={styles.detailPanel}>
+                                    <Text style={[styles.detailDate, { color: colors.accent }]}>{label}</Text>
+                                    <View style={styles.detailRow}>
+                                        {PRAYER_KEYS.map(pk => {
+                                            const done = prayers.has(pk);
+                                            return (
+                                                <View key={pk} style={styles.detailItem}>
+                                                    <View style={[styles.detailDot, { backgroundColor: done ? PRAYER_COLORS[pk] : 'rgba(255,255,255,0.08)' }]} />
+                                                    <Text style={[styles.detailLabel, { color: done ? PRAYER_COLORS[pk] : '#334155' }]}>
+                                                        {pk.charAt(0).toUpperCase() + pk.slice(1)}
+                                                    </Text>
+                                                </View>
+                                            );
+                                        })}
+                                    </View>
+                                    <Text style={[styles.detailSummary, { color: colors.secondaryText }]}>
+                                        {prayers.size}/6 prayers logged
+                                    </Text>
+                                </View>
+                            );
+                        })()}
+
+                        {/* Legend */}
+                        <View style={styles.legend}>
+                            {PRAYER_KEYS.map(pk => (
+                                <View key={pk} style={styles.legendItem}>
+                                    <View style={[styles.legendDot, { backgroundColor: PRAYER_COLORS[pk] }]} />
+                                    <Text style={[styles.legendText, { color: colors.secondaryText }]}>
+                                        {pk.charAt(0).toUpperCase() + pk.slice(1)}
+                                    </Text>
+                                </View>
+                            ))}
+                        </View>
+
+                        {/* Week footer */}
+                        <View style={styles.footer}>
+                            <Text style={[styles.footerLabel, { color: colors.secondaryText }]}>This week's completion</Text>
+                            <Text style={[styles.footerValue, { color: weekPct >= 80 ? colors.success : colors.accent }]}>
+                                {weekPct}%
+                            </Text>
+                        </View>
+
+                        {/* Upgrade nudge */}
+                        <TouchableOpacity style={styles.upgradeBanner} onPress={openPaywall} activeOpacity={0.7}>
+                            <Lock size={11} color="#f59e0b" />
+                            <Text style={styles.upgradeBannerText}>Upgrade for full month & year history</Text>
+                        </TouchableOpacity>
+                    </>
+                )}
+
+                {/* ── Month View (premium) ── */}
+                {viewMode === 'month' && (
+                    <>
+                        <View style={styles.weekRow}>
+                            {DAYS.map((d, i) => (
+                                <Text key={i} style={styles.dayLabel}>{d}</Text>
+                            ))}
+                        </View>
+
+                        <View style={styles.grid}>
+                            {cells.map((day, idx) => {
+                                if (day === null) return <View key={`empty-${idx}`} style={styles.cell} />;
+                                const dateStr  = `${monthPrefix}${String(day).padStart(2, '0')}`;
+                                const cellDate = new Date(viewYear, viewMonth, day);
+                                const prayers  = dateMap[dateStr] ?? new Set<PrayerKey>();
+                                const count    = prayers.size;
+                                const isToday  = dateStr === todayStr;
+                                const isFuture = cellDate > today;
+                                const bgOpacity = isFuture ? 0 : count / 6 * 0.25;
+                                const isSelected = selectedDate === dateStr;
+                                return (
+                                    <TouchableOpacity
+                                        key={dateStr}
+                                        activeOpacity={0.75}
+                                        onPress={() => setSelectedDate(isSelected ? null : dateStr)}
+                                        style={[
+                                            styles.cell,
+                                            isToday && styles.cellToday,
+                                            isSelected && { borderWidth: 1, borderColor: colors.accent + '88', borderRadius: 8 },
+                                            { backgroundColor: `rgba(16,185,129,${bgOpacity})` },
+                                        ]}
+                                    >
+                                        <Text style={[
+                                            styles.dayText,
+                                            isToday && { color: colors.accent, fontWeight: '900' },
+                                            isFuture && styles.dayTextFuture,
+                                            !isFuture && count > 0 && { color: colors.primaryText },
+                                        ]}>
+                                            {day}
+                                        </Text>
+                                        {!isFuture && (
+                                            <View style={styles.dotsContainer}>
+                                                {[PRAYER_KEYS.slice(0, 3), PRAYER_KEYS.slice(3)].map((row, ri) => (
+                                                    <View key={ri} style={styles.dotsRow}>
+                                                        {row.map(pk => (
+                                                            <View
+                                                                key={pk}
+                                                                style={[styles.prayerDot, { backgroundColor: prayers.has(pk) ? PRAYER_COLORS[pk] : 'rgba(255,255,255,0.10)' }]}
+                                                            />
+                                                        ))}
+                                                    </View>
+                                                ))}
+                                            </View>
+                                        )}
+                                    </TouchableOpacity>
+                                );
+                            })}
+                        </View>
+
+                        {selectedDate && (() => {
+                            const prayers  = dateMap[selectedDate] ?? new Set<PrayerKey>();
+                            const [y, m, d] = selectedDate.split('-');
+                            const label = `${parseInt(d)} ${MONTHS[parseInt(m) - 1]}`;
+                            return (
+                                <View style={styles.detailPanel}>
+                                    <Text style={[styles.detailDate, { color: colors.accent }]}>{label}</Text>
+                                    <View style={styles.detailRow}>
+                                        {PRAYER_KEYS.map(pk => {
+                                            const done = prayers.has(pk);
+                                            return (
+                                                <View key={pk} style={styles.detailItem}>
+                                                    <View style={[styles.detailDot, { backgroundColor: done ? PRAYER_COLORS[pk] : 'rgba(255,255,255,0.08)' }]} />
+                                                    <Text style={[styles.detailLabel, { color: done ? PRAYER_COLORS[pk] : '#334155' }]}>
+                                                        {pk.charAt(0).toUpperCase() + pk.slice(1)}
+                                                    </Text>
+                                                </View>
+                                            );
+                                        })}
+                                    </View>
+                                    <Text style={[styles.detailSummary, { color: colors.secondaryText }]}>
+                                        {prayers.size}/6 prayers logged
+                                    </Text>
+                                </View>
+                            );
+                        })()}
+
+                        <View style={styles.legend}>
+                            {PRAYER_KEYS.map(pk => (
+                                <View key={pk} style={styles.legendItem}>
+                                    <View style={[styles.legendDot, { backgroundColor: PRAYER_COLORS[pk] }]} />
+                                    <Text style={[styles.legendText, { color: colors.secondaryText }]}>
+                                        {pk.charAt(0).toUpperCase() + pk.slice(1)}
+                                    </Text>
+                                </View>
+                            ))}
+                        </View>
+
+                        <View style={styles.footer}>
+                            <Text style={[styles.footerLabel, { color: colors.secondaryText }]}>This month's completion</Text>
+                            <Text style={[styles.footerValue, { color: avgPct >= 80 ? colors.success : colors.accent }]}>
+                                {avgPct}%
+                            </Text>
+                        </View>
+                    </>
+                )}
+
+                {/* ── Year View (premium) ── */}
+                {viewMode === 'year' && (
+                    <YearHeatmap dateMap={dateMap} colors={colors} />
                 )}
             </View>
         </View>
@@ -206,7 +509,7 @@ const styles = StyleSheet.create({
     },
     content: {
         padding: 20,
-        gap: 14,
+        gap: 12,
     },
     header: {
         flexDirection: 'row',
@@ -234,9 +537,7 @@ const styles = StyleSheet.create({
         justifyContent: 'center',
         alignItems: 'center',
     },
-    navButtonDisabled: {
-        opacity: 0.3,
-    },
+    navButtonDisabled: { opacity: 0.3 },
     monthLabel: {
         fontSize: 13,
         fontWeight: '800',
@@ -255,56 +556,112 @@ const styles = StyleSheet.create({
         color: '#475569',
         textTransform: 'uppercase',
     },
+    weekGrid: {
+        flexDirection: 'row',
+        gap: 4,
+    },
+    weekCell: {
+        width: 52,
+        alignItems: 'center',
+        paddingVertical: 10,
+        paddingHorizontal: 4,
+        borderRadius: 12,
+        borderWidth: 1,
+        borderColor: 'rgba(255,255,255,0.08)',
+        gap: 4,
+    },
+    weekDayName: {
+        fontSize: 8,
+        fontWeight: '700',
+        textTransform: 'uppercase',
+        letterSpacing: 0.3,
+    },
+    weekDayNum: {
+        fontSize: 13,
+    },
+    weekCount: {
+        fontSize: 8,
+        fontWeight: '700',
+    },
     grid: {
         flexDirection: 'row',
         flexWrap: 'wrap',
     },
     cell: {
         width: `${100 / 7}%`,
-        aspectRatio: 1,
+        minHeight: 54,
         alignItems: 'center',
         justifyContent: 'center',
-        padding: 2,
-    },
-    cellLogged: {
-        backgroundColor: 'rgba(16, 185, 129, 0.15)',
+        paddingVertical: 4,
         borderRadius: 8,
-        borderWidth: 1,
-        borderColor: 'rgba(16, 185, 129, 0.3)',
+        gap: 3,
     },
     cellToday: {
-        borderRadius: 8,
         borderWidth: 1,
-        borderColor: 'rgba(255,255,255,0.15)',
-        backgroundColor: 'rgba(255,255,255,0.04)',
-    },
-    cellLocked: {
-        backgroundColor: 'rgba(30,41,59,0.3)',
-        borderRadius: 8,
+        borderColor: 'rgba(255,255,255,0.20)',
     },
     dayText: {
-        fontSize: 12,
+        fontSize: 11,
         fontWeight: '700',
-        color: '#94a3b8',
-    },
-    dayTextLogged: {
-        color: '#10b981',
-        fontWeight: '900',
+        color: '#475569',
     },
     dayTextFuture: {
-        color: '#334155',
+        color: '#1e293b',
     },
-    dot: {
-        width: 3,
-        height: 3,
-        borderRadius: 1.5,
-        backgroundColor: '#10b981',
-        marginTop: 1,
-    },
-    footer: {
-        flexDirection: 'row',
-        justifyContent: 'space-between',
+    dotsContainer: {
+        gap: 2,
         alignItems: 'center',
+    },
+    dotsRow: {
+        flexDirection: 'row',
+        gap: 2,
+    },
+    prayerDot: {
+        width: 4,
+        height: 4,
+        borderRadius: 2,
+    },
+    detailPanel: {
+        padding: 12,
+        borderRadius: 12,
+        backgroundColor: 'rgba(255,255,255,0.04)',
+        borderWidth: 1,
+        borderColor: 'rgba(255,255,255,0.08)',
+        gap: 8,
+    },
+    detailDate: {
+        fontSize: 11,
+        fontWeight: '800',
+        textTransform: 'uppercase',
+        letterSpacing: 0.8,
+    },
+    detailRow: {
+        flexDirection: 'row',
+        flexWrap: 'wrap',
+        gap: 8,
+    },
+    detailItem: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 4,
+    },
+    detailDot: {
+        width: 8,
+        height: 8,
+        borderRadius: 4,
+    },
+    detailLabel: {
+        fontSize: 11,
+        fontWeight: '600',
+    },
+    detailSummary: {
+        fontSize: 10,
+        fontWeight: '600',
+    },
+    legend: {
+        flexDirection: 'row',
+        flexWrap: 'wrap',
+        gap: 8,
         paddingTop: 4,
         borderTopWidth: 1,
         borderTopColor: 'rgba(255,255,255,0.06)',
@@ -312,36 +669,60 @@ const styles = StyleSheet.create({
     legendItem: {
         flexDirection: 'row',
         alignItems: 'center',
-        gap: 6,
+        gap: 4,
     },
     legendDot: {
-        width: 8,
-        height: 8,
-        borderRadius: 4,
+        width: 7,
+        height: 7,
+        borderRadius: 3.5,
     },
     legendText: {
         fontSize: 10,
         fontWeight: '600',
     },
-    countText: {
-        fontSize: 12,
+    footer: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+    },
+    footerLabel: {
+        fontSize: 11,
+        fontWeight: '600',
+    },
+    footerValue: {
+        fontSize: 16,
         fontWeight: '900',
+    },
+    viewToggle: {
+        flexDirection: 'row',
+        gap: 8,
+    },
+    toggleBtn: {
+        paddingHorizontal: 16,
+        paddingVertical: 6,
+        borderRadius: 20,
+        borderWidth: 1,
+        borderColor: 'rgba(255,255,255,0.10)',
+        backgroundColor: 'rgba(255,255,255,0.04)',
+    },
+    toggleText: {
+        fontSize: 12,
+        fontWeight: '700',
     },
     upgradeBanner: {
         flexDirection: 'row',
         alignItems: 'center',
         justifyContent: 'center',
-        gap: 5,
-        paddingVertical: 7,
-        borderRadius: 10,
+        gap: 6,
+        paddingVertical: 8,
         backgroundColor: 'rgba(245,158,11,0.08)',
+        borderRadius: 10,
         borderWidth: 1,
         borderColor: 'rgba(245,158,11,0.2)',
-        marginTop: 2,
     },
     upgradeBannerText: {
-        color: '#f59e0b',
         fontSize: 11,
         fontWeight: '700',
+        color: '#f59e0b',
     },
 });

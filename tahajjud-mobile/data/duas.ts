@@ -10,6 +10,141 @@ export interface Dua {
 }
 
 export const duaDatabase: Dua[] = [
+    // ── Daily Routine (Hisnul Muslim) ──
+
+    // Waking Up
+    {
+        id: 'daily-wake-1',
+        category: 'Daily Routine',
+        title: 'Upon Waking Up',
+        arabic: 'الحَمْدُ لِلّهِ الّذي أَحْيانا بَعْدَ ما أَماتَنا وَإِليهِ النُّشور',
+        transliteration: 'Alhamdu lillahil-ladhi ahyana ba\'da ma amatana wa ilayhin-nushoor',
+        translation: 'All praise is for Allah who gave us life after having taken it from us and unto Him is the resurrection.',
+        source: 'Bukhari 6325'
+    },
+
+    // Before Sleeping
+    {
+        id: 'daily-sleep-1',
+        category: 'Daily Routine',
+        title: 'Before Sleeping',
+        arabic: 'بِاسْمِكَ اللَّهُمَّ أَمُوتُ وَأَحْيا',
+        transliteration: 'Bismika Allahumma amootu wa ahya',
+        translation: 'In Your name O Allah, I die and I live.',
+        source: 'Bukhari 6312'
+    },
+    {
+        id: 'daily-sleep-2',
+        category: 'Daily Routine',
+        title: 'Entrusting to Allah Before Sleep',
+        arabic: 'اللَّهُمَّ أَسْلَمْتُ نَفْسِي إِلَيْكَ، وَفَوَّضْتُ أَمْرِي إِلَيْكَ، وَوَجَّهْتُ وَجْهِي إِلَيْكَ، وَأَلْجَأْتُ ظَهْرِي إِلَيْكَ، رَغْبَةً وَرَهْبَةً إِلَيْكَ، لا مَلْجَأَ وَلا مَنْجَا مِنْكَ إِلاَّ إِلَيْكَ، آمَنْتُ بِكِتَابِكَ الَّذِي أَنْزَلْتَ وَبِنَبِيِّكَ الَّذِي أَرْسَلْتَ',
+        transliteration: 'Allahumma aslamtu nafsi ilayk, wa fawwadtu amri ilayk, wa wajjahtu wajhi ilayk, wa alja\'tu dhahri ilayk, raghbatan wa rahbatan ilayk, la malja\'a wa la manja minka illa ilayk, amantu bikitabikal-ladhi anzalta wa binabiyyikal-ladhi arsalt',
+        translation: 'O Allah, I submit myself to You, entrust my affairs to You, turn my face toward You, and place my back against You out of desire and fear of You. There is no refuge and no escape from You except to You. I believe in Your Book which You revealed and Your Prophet whom You sent.',
+        source: 'Bukhari 247 · Muslim 2710'
+    },
+
+    // Eating & Drinking
+    {
+        id: 'daily-eat-1',
+        category: 'Daily Routine',
+        title: 'Before Eating',
+        arabic: 'بِسْمِ اللَّهِ',
+        transliteration: 'Bismillah',
+        translation: 'In the name of Allah. (If you forget at the start, say: In the name of Allah in its beginning and its end.)',
+        source: 'Abu Dawud 3767 · Tirmidhi 1858'
+    },
+    {
+        id: 'daily-eat-2',
+        category: 'Daily Routine',
+        title: 'After Eating',
+        arabic: 'الحَمْدُ لِلَّهِ الَّذِي أَطْعَمَنِي هَذَا وَرَزَقَنِيهِ مِنْ غَيْرِ حَوْلٍ مِنِّي وَلا قُوَّة',
+        transliteration: 'Alhamdu lillahil-ladhi at\'amani hadha wa razaqanihi min ghayri hawlin minni wa la quwwah',
+        translation: 'All praise is for Allah who fed me this and provided it for me without any might nor power from myself.',
+        source: 'Abu Dawud 4023 · Tirmidhi 3458'
+    },
+
+    // Toilet
+    {
+        id: 'daily-toilet-1',
+        category: 'Daily Routine',
+        title: 'Before Entering the Toilet',
+        arabic: 'بِسْمِ اللَّهِ، اللَّهُمَّ إِنِّي أَعُوذُ بِكَ مِنَ الْخُبْثِ وَالْخَبَائِث',
+        transliteration: 'Bismillah, Allahumma inni a\'udhu bika minal-khubth wal-khaba\'ith',
+        translation: 'In the name of Allah. O Allah, I seek Your protection from evil and evil-doers.',
+        source: 'Bukhari 142 · Muslim 375'
+    },
+    {
+        id: 'daily-toilet-2',
+        category: 'Daily Routine',
+        title: 'After Leaving the Toilet',
+        arabic: 'غُفْرَانَكَ',
+        transliteration: 'Ghufraanak',
+        translation: 'I ask You for forgiveness.',
+        source: 'Abu Dawud 30 · Tirmidhi 7'
+    },
+
+    // Home
+    {
+        id: 'daily-home-1',
+        category: 'Daily Routine',
+        title: 'When Leaving the Home',
+        arabic: 'بِسْمِ اللَّهِ، تَوَكَّلْتُ عَلَى اللَّهِ، وَلا حَوْلَ وَلا قُوَّةَ إِلَّا بِاللَّهِ',
+        transliteration: 'Bismillah, tawakkaltu \'alallah, wa la hawla wa la quwwata illa billah',
+        translation: 'In the name of Allah, I place my trust in Allah, and there is no might nor power except with Allah.',
+        source: 'Abu Dawud 5095 · Tirmidhi 3426'
+    },
+    {
+        id: 'daily-home-2',
+        category: 'Daily Routine',
+        title: 'When Entering the Home',
+        arabic: 'بِسْمِ اللَّهِ وَلَجْنَا، وَبِسْمِ اللَّهِ خَرَجْنَا، وَعَلَى رَبِّنَا تَوَكَّلْنَا',
+        transliteration: 'Bismillahi walajnaa, wa bismillahi kharajnaa, wa \'ala rabbina tawakkalnaa',
+        translation: 'In the name of Allah we enter, in the name of Allah we leave, and upon our Lord we place our trust.',
+        source: 'Abu Dawud 5096'
+    },
+
+    // Wudu
+    {
+        id: 'daily-wudu-1',
+        category: 'Daily Routine',
+        title: 'After Completing Wudu',
+        arabic: 'أَشْهَدُ أَنْ لا إِلَهَ إِلَّا اللَّهُ وَحْدَهُ لا شَرِيكَ لَهُ، وَأَشْهَدُ أَنَّ مُحَمَّداً عَبْدُهُ وَرَسُولُهُ',
+        transliteration: 'Ash-hadu an la ilaha illallahu wahdahu la sharika lah, wa ash-hadu anna Muhammadan \'abduhu wa rasooluh',
+        translation: 'I bear witness that none has the right to be worshipped except Allah, alone without partner, and I bear witness that Muhammad is His slave and Messenger.',
+        source: 'Muslim 234'
+    },
+    {
+        id: 'daily-wudu-2',
+        category: 'Daily Routine',
+        title: 'Dua After Wudu',
+        arabic: 'اللَّهُمَّ اجْعَلْنِي مِنَ التَّوَّابِينَ وَاجْعَلْنِي مِنَ الْمُتَطَهِّرِين',
+        transliteration: 'Allahumma ij\'alni minat-tawwabeena waj\'alni minal-mutatahhireen',
+        translation: 'O Allah, make me of those who constantly repent to You and make me of those who keep themselves pure.',
+        source: 'Tirmidhi 55'
+    },
+
+    // Morning & Evening
+    {
+        id: 'daily-morning-1',
+        category: 'Daily Routine',
+        title: 'Morning Tawakkul',
+        arabic: 'حَسْبِيَ اللَّهُ لا إِلَهَ إِلَّا هُوَ عَلَيْهِ تَوَكَّلْتُ وَهُوَ رَبُّ الْعَرْشِ الْعَظِيم',
+        transliteration: 'Hasbiyallahu la ilaha illa huwa \'alayhi tawakkaltu wa huwa rabbul-\'arshil-\'adheem',
+        translation: 'Allah is sufficient for me, none has the right to be worshipped except Him, upon Him I rely, and He is the Lord of the exalted throne.',
+        source: 'Abu Dawud 5081 · Recited 7× morning & evening'
+    },
+
+    // Anxiety
+    {
+        id: 'daily-anxiety-1',
+        category: 'Daily Routine',
+        title: 'Dua for Anxiety & Sorrow',
+        arabic: 'اللَّهُمَّ إِنِّي أَعُوذُ بِكَ مِنَ الْهَمِّ وَالْحَزَنِ، وَالْعَجْزِ وَالْكَسَلِ، وَالْبُخْلِ وَالْجُبْنِ، وَضَلَعِ الدَّيْنِ وَغَلَبَةِ الرِّجَال',
+        transliteration: 'Allahumma inni a\'udhu bika minal-hammi wal-hazan, wal-\'ajzi wal-kasal, wal-bukhli wal-jubn, wa dhala\'id-dayni wa ghalabatir-rijal',
+        translation: 'O Allah, I take refuge in You from anxiety and sorrow, weakness and laziness, miserliness and cowardice, and the burden of debts and from being overpowered by men.',
+        source: 'Bukhari 6369'
+    },
+
     // Jannah & Afterlife
     {
         id: 'jannah-1',
@@ -440,24 +575,331 @@ export const duaDatabase: Dua[] = [
         translation: 'O Allah, have mercy on the oppressed children of the Muslims. O Allah, protect them and grant them safety and peace',
         source: 'Authentic Dua'
     },
+
+    // ── Travel ──────────────────────────────────────────────────────────────
+    {
+        id: 'travel-1',
+        category: 'Travel',
+        title: 'Before Travelling',
+        arabic: 'اللَّهُمَّ إِنَّا نَسْأَلُكَ فِي سَفَرِنَا هَذَا الْبِرَّ وَالتَّقْوَى، وَمِنَ الْعَمَلِ مَا تَرْضَى',
+        transliteration: 'Allahumma inna nas\'aluka fi safarina hadhal-birra wat-taqwa, wa minal-\'amali ma tardha',
+        translation: 'O Allah, we ask You on this journey for righteousness and piety, and for deeds that please You.',
+        source: 'Muslim 1342'
+    },
+    {
+        id: 'travel-2',
+        category: 'Travel',
+        title: 'Boarding a Vehicle',
+        arabic: 'سُبْحَانَ الَّذِي سَخَّرَ لَنَا هَذَا وَمَا كُنَّا لَهُ مُقْرِنِينَ وَإِنَّا إِلَى رَبِّنَا لَمُنْقَلِبُونَ',
+        transliteration: 'Subhanal-ladhi sakhkhara lana hadha wa ma kunna lahu muqrineen, wa inna ila Rabbina lamunqaliboon',
+        translation: 'Glory be to Him who has subjected this for us, as we were not able to do it ourselves. Surely to our Lord we shall return.',
+        source: 'Abu Dawud 2602'
+    },
+    {
+        id: 'travel-3',
+        category: 'Travel',
+        title: 'Returning from Travel',
+        arabic: 'آيِبُونَ تَائِبُونَ عَابِدُونَ لِرَبِّنَا حَامِدُونَ',
+        transliteration: 'Aa\'iboona, taa\'iboona, \'aabidoona, li Rabbina haamidoon',
+        translation: 'We return, repent, worship, and praise our Lord.',
+        source: 'Bukhari 1797'
+    },
+    {
+        id: 'travel-4',
+        category: 'Travel',
+        title: 'Upon Entering a Town',
+        arabic: 'اللَّهُمَّ بَارِكْ لَنَا فِيهَا',
+        transliteration: 'Allahumma barik lana fiha',
+        translation: 'O Allah, bless us in it.',
+        source: 'Authentic Dua'
+    },
+
+    // ── Ramadan ──────────────────────────────────────────────────────────────
+    {
+        id: 'ramadan-1',
+        category: 'Ramadan',
+        title: 'Sighting the Ramadan Moon',
+        arabic: 'اللَّهُمَّ أَهِلَّهُ عَلَيْنَا بِالْأَمْنِ وَالْإِيمَانِ، وَالسَّلَامَةِ وَالْإِسْلَامِ، وَالتَّوْفِيقِ لِمَا تُحِبُّ وَتَرْضَى',
+        transliteration: 'Allahumma ahillahu \'alayna bil-amni wal-iman, was-salamati wal-islam, wat-tawfiqi lima tuhibbu wa tardha',
+        translation: 'O Allah, let this moon appear on us with security and faith, with safety and Islam, and with the ability to do what You love and are pleased with.',
+        source: 'Tirmidhi 3451'
+    },
+    {
+        id: 'ramadan-2',
+        category: 'Ramadan',
+        title: 'Breaking the Fast (Iftar)',
+        arabic: 'اللَّهُمَّ لَكَ صُمْتُ وَعَلَى رِزْقِكَ أَفْطَرْتُ',
+        transliteration: 'Allahumma laka sumtu wa \'ala rizqika aftartu',
+        translation: 'O Allah, for You I fasted and with Your provision I break my fast.',
+        source: 'Abu Dawud 2358'
+    },
+    {
+        id: 'ramadan-3',
+        category: 'Ramadan',
+        title: 'Laylatul Qadr Dua',
+        arabic: 'اللَّهُمَّ إِنَّكَ عَفُوٌّ تُحِبُّ الْعَفْوَ فَاعْفُ عَنِّي',
+        transliteration: 'Allahumma innaka \'afuwwun tuhibbul-\'afwa fa\'fu \'anni',
+        translation: 'O Allah, You are the Pardoner and You love pardon, so pardon me.',
+        source: 'Tirmidhi 3513 · Ibn Majah 3850'
+    },
+    {
+        id: 'ramadan-4',
+        category: 'Ramadan',
+        title: 'Intention to Fast',
+        arabic: 'نَوَيْتُ صَوْمَ غَدٍ مِنْ شَهْرِ رَمَضَانَ الْمُبَارَكِ فَرْضًا لَكَ يَا اللَّه',
+        transliteration: 'Nawaytu sawma ghadin min shahri Ramadhanal-mubaraki fardhan laka ya Allah',
+        translation: 'I intend to fast tomorrow in the blessed month of Ramadan as an obligation for You, O Allah.',
+        source: 'Traditional Niyyah'
+    },
+
+    // ── Salah (Prayer) ───────────────────────────────────────────────────────
+    {
+        id: 'salah-1',
+        category: 'Salah',
+        title: 'After Adhan',
+        arabic: 'اللَّهُمَّ رَبَّ هَذِهِ الدَّعْوَةِ التَّامَّةِ وَالصَّلَاةِ الْقَائِمَةِ آتِ مُحَمَّدًا الْوَسِيلَةَ وَالْفَضِيلَةَ وَابْعَثْهُ مَقَامًا مَحْمُودًا الَّذِي وَعَدْتَهُ',
+        transliteration: 'Allahumma Rabba hadhihid-da\'watit-tammah, was-salatil-qa\'imah, ati Muhammadanil-waseelata wal-fadheelah, wab\'ath-hu maqaman mahmoodanil-ladhi wa\'adtah',
+        translation: 'O Allah, Lord of this perfect call and the prayer to be offered, grant Muhammad the intercession and superiority, and raise him to the praised position that You have promised him.',
+        source: 'Bukhari 614'
+    },
+    {
+        id: 'salah-2',
+        category: 'Salah',
+        title: 'Opening of Salah (Istiftah)',
+        arabic: 'سُبْحَانَكَ اللَّهُمَّ وَبِحَمْدِكَ وَتَبَارَكَ اسْمُكَ وَتَعَالَى جَدُّكَ وَلَا إِلَهَ غَيْرُكَ',
+        transliteration: 'Subhanakal-Allahumma wa bihamdika wa tabarakas-muka wa ta\'ala jadduka wa la ilaha ghayruk',
+        translation: 'Glory be to You, O Allah, and praise. Blessed is Your name and exalted is Your majesty. There is no god but You.',
+        source: 'Abu Dawud 775'
+    },
+    {
+        id: 'salah-3',
+        category: 'Salah',
+        title: 'Du\'a al-Qunoot (Witr)',
+        arabic: 'اللَّهُمَّ اهْدِنِي فِيمَنْ هَدَيْتَ، وَعَافِنِي فِيمَنْ عَافَيْتَ، وَتَوَلَّنِي فِيمَنْ تَوَلَّيْتَ، وَبَارِكْ لِي فِيمَا أَعْطَيْتَ',
+        transliteration: 'Allahumma ihdini fiman hadayt, wa \'afini fiman \'afayt, wa tawallani fiman tawallayt, wa barik li fima a\'tayt',
+        translation: 'O Allah, guide me among those You have guided, pardon me among those You have pardoned, befriend me among those You have befriended, and bless what You have given me.',
+        source: 'Abu Dawud 1425'
+    },
+    {
+        id: 'salah-4',
+        category: 'Salah',
+        title: 'Between Two Sajdahs',
+        arabic: 'رَبِّ اغْفِرْ لِي، رَبِّ اغْفِرْ لِي',
+        transliteration: 'Rabbighfir li, Rabbighfir li',
+        translation: 'My Lord, forgive me. My Lord, forgive me.',
+        source: 'Abu Dawud 874'
+    },
+    {
+        id: 'salah-5',
+        category: 'Salah',
+        title: 'After Tasleem',
+        arabic: 'اللَّهُمَّ أَنْتَ السَّلَامُ وَمِنْكَ السَّلَامُ تَبَارَكْتَ يَا ذَا الْجَلَالِ وَالْإِكْرَامِ',
+        transliteration: 'Allahumma antas-salam wa minkas-salam, tabarakta ya dhal-jalali wal-ikram',
+        translation: 'O Allah, You are Peace and from You comes peace. Blessed are You, O Owner of majesty and honour.',
+        source: 'Muslim 591'
+    },
+
+    // ── Grief & Loss ─────────────────────────────────────────────────────────
+    {
+        id: 'grief-1',
+        category: 'Grief & Loss',
+        title: 'Upon Calamity (Inna lillahi)',
+        arabic: 'إِنَّا لِلَّهِ وَإِنَّا إِلَيْهِ رَاجِعُونَ، اللَّهُمَّ أْجُرْنِي فِي مُصِيبَتِي وَأَخْلِفْ لِي خَيْرًا مِنْهَا',
+        transliteration: 'Inna lillahi wa inna ilayhi raji\'oon. Allahumma ujurni fi musibati wa akhlif li khayran minha',
+        translation: 'Indeed we belong to Allah and to Him we shall return. O Allah, reward me for my calamity and replace it with something better.',
+        source: 'Muslim 918'
+    },
+    {
+        id: 'grief-2',
+        category: 'Grief & Loss',
+        title: 'For the Deceased',
+        arabic: 'اللَّهُمَّ اغْفِرْ لَهُ وَارْحَمْهُ وَعَافِهِ وَاعْفُ عَنْهُ',
+        transliteration: 'Allahumma ighfir lahu warhamhu wa \'afihi wa\'fu \'anh',
+        translation: 'O Allah, forgive him, have mercy on him, grant him well-being, and pardon him.',
+        source: 'Muslim 963'
+    },
+    {
+        id: 'grief-3',
+        category: 'Grief & Loss',
+        title: 'When Overwhelmed by Grief',
+        arabic: 'حَسْبِيَ اللَّهُ لَا إِلَهَ إِلَّا هُوَ عَلَيْهِ تَوَكَّلْتُ وَهُوَ رَبُّ الْعَرْشِ الْعَظِيمِ',
+        transliteration: 'HasbiyAllahu la ilaha illa huwa, \'alayhi tawakkaltu wa huwa Rabbul-\'Arshil-\'Adheem',
+        translation: 'Allah is sufficient for me. There is no god but Him. I have placed my trust in Him, and He is the Lord of the Magnificent Throne.',
+        source: 'At-Tawbah 9:129'
+    },
+    {
+        id: 'grief-4',
+        category: 'Grief & Loss',
+        title: 'For a Grieving Heart',
+        arabic: 'اللَّهُمَّ إِنِّي أَعُوذُ بِكَ مِنَ الْهَمِّ وَالْحَزَنِ',
+        transliteration: 'Allahumma inni a\'udhu bika minal-hammi wal-hazan',
+        translation: 'O Allah, I seek Your refuge from worry and grief.',
+        source: 'Bukhari 6369'
+    },
+    {
+        id: 'grief-5',
+        category: 'Grief & Loss',
+        title: 'Visiting the Graveyard',
+        arabic: 'السَّلَامُ عَلَيْكُمْ أَهْلَ الدِّيَارِ مِنَ الْمُؤْمِنِينَ وَالْمُسْلِمِينَ، وَإِنَّا إِنْ شَاءَ اللَّهُ بِكُمْ لَاحِقُونَ',
+        transliteration: 'As-salamu \'alaykum ahlad-diyari minal-mu\'mineena wal-muslimeen, wa inna in sha\'Allahu bikum lahiqoon',
+        translation: 'Peace be upon you, O people of this abode, among the believers and the Muslims. We will, if Allah wills, join you.',
+        source: 'Muslim 975'
+    },
+
+    // ── Tawbah (Repentance) ───────────────────────────────────────────────────
+    {
+        id: 'tawbah-1',
+        category: 'Forgiveness',
+        title: 'Sayyid al-Istighfar (Master Dua of Forgiveness)',
+        arabic: 'اللَّهُمَّ أَنْتَ رَبِّي لَا إِلَهَ إِلَّا أَنْتَ خَلَقْتَنِي وَأَنَا عَبْدُكَ وَأَنَا عَلَى عَهْدِكَ وَوَعْدِكَ مَا اسْتَطَعْتُ أَعُوذُ بِكَ مِنْ شَرِّ مَا صَنَعْتُ أَبُوءُ لَكَ بِنِعْمَتِكَ عَلَيَّ وَأَبُوءُ بِذَنْبِي فَاغْفِرْ لِي فَإِنَّهُ لَا يَغْفِرُ الذُّنُوبَ إِلَّا أَنْتَ',
+        transliteration: 'Allahumma anta Rabbi la ilaha illa anta, khalaqtani wa ana \'abduk, wa ana \'ala \'ahdika wa wa\'dika mastata\'t, a\'udhu bika min sharri ma sana\'t, abu\'u laka bini\'matika \'alayya, wa abu\'u bidhanbee faghfir lee fa\'innahu la yaghfirudh-dhunuba illa ant',
+        translation: 'O Allah, You are my Lord, there is no god but You. You created me and I am Your servant. I am upon Your covenant and promise as best I can. I seek refuge in You from the evil of what I have done. I acknowledge Your favour upon me and I acknowledge my sins, so forgive me, for none forgives sins but You.',
+        source: 'Bukhari 6306'
+    },
+    {
+        id: 'tawbah-2',
+        category: 'Forgiveness',
+        title: 'Dua of Prophet Yunus',
+        arabic: 'لَا إِلَهَ إِلَّا أَنتَ سُبْحَانَكَ إِنِّي كُنتُ مِنَ الظَّالِمِينَ',
+        transliteration: 'La ilaha illa anta subhanaka inni kuntu minadh-dhalimeen',
+        translation: 'There is no god but You. Glory be to You. Indeed I have been of the wrongdoers.',
+        source: 'Al-Anbiya 21:87'
+    },
+    {
+        id: 'tawbah-3',
+        category: 'Forgiveness',
+        title: 'For Forgiveness of All Sins',
+        arabic: 'اللَّهُمَّ اغْفِرْ لِي ذَنْبِي كُلَّهُ دِقَّهُ وَجِلَّهُ وَأَوَّلَهُ وَآخِرَهُ وَعَلَانِيَتَهُ وَسِرَّهُ',
+        transliteration: 'Allahumma ighfir li dhambi kullahu diqqahu wa jillahu wa awwalahu wa akhirahu wa \'alaniyatahu wa sirrahu',
+        translation: 'O Allah, forgive me all my sins — the small and the great, the first and the last, the open and the secret.',
+        source: 'Muslim 483'
+    },
+    {
+        id: 'tawbah-4',
+        category: 'Forgiveness',
+        title: 'Seeking Allah\'s Pardon 100 Times',
+        arabic: 'رَبِّ اغْفِرْ لِي وَتُبْ عَلَيَّ إِنَّكَ أَنتَ التَّوَّابُ الرَّحِيم',
+        transliteration: 'Rabbighfir li wa tub \'alayya innaka antat-Tawwabur-Raheem',
+        translation: 'My Lord, forgive me and accept my repentance. Indeed You are the Ever-Accepting of repentance, the Most Merciful.',
+        source: 'Abu Dawud 1516'
+    },
+
+    // ── Rizq (Provision) ─────────────────────────────────────────────────────
+    {
+        id: 'rizq-1',
+        category: 'Wealth',
+        title: 'For Halal Rizq',
+        arabic: 'اللَّهُمَّ اكْفِنِي بِحَلَالِكَ عَنْ حَرَامِكَ وَأَغْنِنِي بِفَضْلِكَ عَمَّنْ سِوَاكَ',
+        transliteration: 'Allahumma akfini bihalaalika \'an haramika wa aghnini bifadhlika \'amman siwak',
+        translation: 'O Allah, suffice me with Your lawful against Your forbidden, and make me independent of all others besides You through Your bounty.',
+        source: 'Tirmidhi 3563'
+    },
+    {
+        id: 'rizq-2',
+        category: 'Wealth',
+        title: 'Dua of Prophet Ibrahim for Provision',
+        arabic: 'رَبِّ إِنَّهُنَّ أَضْلَلْنَ كَثِيرًا مِّنَ النَّاسِ فَمَن تَبِعَنِي فَإِنَّهُ مِنِّي وَمَنْ عَصَانِي فَإِنَّكَ غَفُورٌ رَّحِيمٌ',
+        transliteration: 'Rabbij\'alni muqiimas-salati wa min dhurriyyati, Rabbana wa taqabbal du\'aa\'',
+        translation: 'My Lord, make me an establisher of prayer, and from my descendants. Our Lord, accept my supplication.',
+        source: 'Ibrahim 14:40'
+    },
+    {
+        id: 'rizq-3',
+        category: 'Wealth',
+        title: 'Against Poverty',
+        arabic: 'اللَّهُمَّ إِنِّي أَعُوذُ بِكَ مِنَ الْكُفْرِ وَالْفَقْرِ',
+        transliteration: 'Allahumma inni a\'udhu bika minal-kufri wal-faqr',
+        translation: 'O Allah, I seek Your protection from disbelief and poverty.',
+        source: 'Abu Dawud 5090'
+    },
+    {
+        id: 'rizq-4',
+        category: 'Wealth',
+        title: 'For Barakah in Earnings',
+        arabic: 'اللَّهُمَّ بَارِكْ لَنَا فِيمَا رَزَقْتَنَا وَقِنَا عَذَابَ النَّار',
+        transliteration: 'Allahumma barik lana fima razaqtana wa qina \'adhaaban-nar',
+        translation: 'O Allah, bless us in what You have provided for us and protect us from the punishment of the Fire.',
+        source: 'Authentic Dua'
+    },
+    {
+        id: 'rizq-5',
+        category: 'Wealth',
+        title: 'Istikharah (Seeking Allah\'s Guidance in Decisions)',
+        arabic: 'اللَّهُمَّ إِنِّي أَسْتَخِيرُكَ بِعِلْمِكَ وَأَسْتَقْدِرُكَ بِقُدْرَتِكَ وَأَسْأَلُكَ مِنْ فَضْلِكَ الْعَظِيمِ فَإِنَّكَ تَقْدِرُ وَلَا أَقْدِرُ وَتَعْلَمُ وَلَا أَعْلَمُ وَأَنْتَ عَلَّامُ الْغُيُوبِ',
+        transliteration: 'Allahumma inni astakhiruka bi\'ilmika, wa astaqdiruka biqudratika, wa as\'aluka min fadlikal-\'adhim, fa\'innaka taqdiru wa la aqdir, wa ta\'lamu wa la a\'lam, wa anta \'Allamul-ghuyub',
+        translation: 'O Allah, I seek Your guidance by Your knowledge, Your ability by Your power, and I ask of You from Your great bounty. For You have power and I do not, You know and I do not know, and You are the Knower of all hidden things.',
+        source: 'Bukhari 1166'
+    },
+
+    // ── Marriage & Children ────────────────────────────────────────────────────
+    {
+        id: 'family-extra-1',
+        category: 'Family',
+        title: 'For a Righteous Spouse',
+        arabic: 'رَبَّنَا هَبْ لَنَا مِنْ أَزْوَاجِنَا وَذُرِّيَّاتِنَا قُرَّةَ أَعْيُنٍ وَاجْعَلْنَا لِلْمُتَّقِينَ إِمَامًا',
+        transliteration: 'Rabbana hab lana min azwajina wa dhurriyyatina qurrata a\'yunin waj\'alna lil-muttaqina imama',
+        translation: 'Our Lord, grant us from among our spouses and offspring comfort to our eyes and make us an example for the righteous.',
+        source: 'Al-Furqan 25:74'
+    },
+    {
+        id: 'family-extra-2',
+        category: 'Family',
+        title: 'On the Wedding Night',
+        arabic: 'اللَّهُمَّ إِنِّي أَسْأَلُكَ خَيْرَهَا وَخَيْرَ مَا جَبَلْتَهَا عَلَيْهِ وَأَعُوذُ بِكَ مِنْ شَرِّهَا وَشَرِّ مَا جَبَلْتَهَا عَلَيْهِ',
+        transliteration: 'Allahumma inni as\'aluka khayrahaa wa khayra ma jabaltaha \'alayh, wa a\'udhu bika min sharriha wa sharri ma jabaltaha \'alayh',
+        translation: 'O Allah, I ask You for her goodness and the goodness You have created in her, and I seek refuge in You from her evil and the evil You have created in her.',
+        source: 'Abu Dawud 2160'
+    },
+    {
+        id: 'family-extra-3',
+        category: 'Family',
+        title: 'Before Intimacy',
+        arabic: 'بِسْمِ اللَّهِ، اللَّهُمَّ جَنِّبْنَا الشَّيْطَانَ وَجَنِّبِ الشَّيْطَانَ مَا رَزَقْتَنَا',
+        transliteration: 'Bismillah, Allahumma jannibna ash-shaytana wa jannibish-shaytana ma razaqtana',
+        translation: 'In the name of Allah. O Allah, keep us away from Satan and keep Satan away from what You bestow on us.',
+        source: 'Bukhari 6388 · Muslim 1434'
+    },
+    {
+        id: 'family-extra-4',
+        category: 'Family',
+        title: 'For Righteous Children',
+        arabic: 'رَبِّ اجْعَلْنِي مُقِيمَ الصَّلَاةِ وَمِن ذُرِّيَّتِي رَبَّنَا وَتَقَبَّلْ دُعَاء',
+        transliteration: 'Rabbij\'alni muqimas-salati wa min dhurriyyati, Rabbana wa taqabbal du\'aa\'',
+        translation: 'My Lord, make me an establisher of prayer, and from my descendants. Our Lord, accept my supplication.',
+        source: 'Ibrahim 14:40'
+    },
+    {
+        id: 'family-extra-5',
+        category: 'Family',
+        title: 'For Parents',
+        arabic: 'رَّبِّ ارْحَمْهُمَا كَمَا رَبَّيَانِي صَغِيرًا',
+        transliteration: 'Rabbi irhamhuma kama rabbayani saghira',
+        translation: 'My Lord, have mercy on them as they raised me when I was small.',
+        source: 'Al-Isra 17:24'
+    },
 ];
 
 export const categories = [
     'All',
-    'Jannah',
+    'Daily Routine',
+    'Morning & Evening',
+    'Salah',
+    'Forgiveness',
+    'Guidance',
+    'Protection',
+    'Anxiety',
+    'Health',
+    'Family',
+    'Wealth',
+    'Knowledge',
+    'Success',
+    'Gratitude',
+    'Grief & Loss',
+    'Travel',
+    'Ramadan',
     'Ummah',
     'Sin & Temptation',
     'Evil Eye',
-    'Morning & Evening',
-    'Wealth',
-    'Family',
+    'Jannah',
     'Friends',
-    'Health',
-    'Protection',
-    'Guidance',
-    'Forgiveness',
-    'Success',
-    'Knowledge',
-    'Anxiety',
-    'Gratitude',
 ];

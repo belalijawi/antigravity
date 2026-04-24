@@ -1,14 +1,13 @@
-import React, { useEffect, useState } from 'react';
-import { View, ScrollView, StyleSheet, Text, TouchableOpacity, Modal } from 'react-native';
+import React, { useEffect, useState, useRef } from 'react';
+import { View, ScrollView, StyleSheet, Text, TouchableOpacity, Modal, DeviceEventEmitter } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { SlidersHorizontal } from 'lucide-react-native';
 import { NightCalculator } from './NightCalculator';
-import { QiblaCompass } from './QiblaCompass';
-import { Tracker } from './Tracker';
+import { TasbeehCard } from './TasbeehCard';
 import { HadithCard } from './HadithCard';
 import { DuaNetwork } from './DuaNetwork';
-import { HistoryCalendar } from './HistoryCalendar';
+import { AccountabilityPartnerCard } from './AccountabilityPartnerCard';
 import { SettingsScreen } from './SettingsScreen';
 import { LinearGradient } from 'expo-linear-gradient';
 import { BlurView } from 'expo-blur';
@@ -20,14 +19,24 @@ import Animated, {
 } from 'react-native-reanimated';
 import { useTheme } from '../context/ThemeContext';
 import { tabletContentStyle } from '../utils/layout';
-import { NightCalculation } from '../lib/prayer-times';
+import { NightCalculation, PrayerTimes } from '../lib/prayer-times';
 import { format } from 'date-fns';
+import { PrayerCountdown } from './PrayerCountdown';
 
 
 export function HomeTab() {
-    const { colors, userName } = useTheme();
+    const { colors, userName, cardBg, cardBorder, blurIntensity } = useTheme();
+    const scrollRef = useRef<ScrollView>(null);
     const [isSettingsVisible, setIsSettingsVisible] = useState(false);
+
+    useEffect(() => {
+        const sub = DeviceEventEmitter.addListener('scrollToTop', (tab: string) => {
+            if (tab === 'Home') scrollRef.current?.scrollTo({ y: 0, animated: true });
+        });
+        return () => sub.remove();
+    }, []);
     const [nightCalc, setNightCalc] = useState<NightCalculation | null>(null);
+    const [prayerTimes, setPrayerTimes] = useState<PrayerTimes | null>(null);
     const [currentTime, setCurrentTime] = useState(new Date());
     const [refreshKey, setRefreshKey] = useState(0);
 
@@ -103,6 +112,7 @@ export function HomeTab() {
     return (
         <SafeAreaView style={styles.safeArea}>
             <ScrollView
+                ref={scrollRef}
                 style={styles.container}
                 contentContainerStyle={[styles.contentContainer, tabletContentStyle()]}
                 showsVerticalScrollIndicator={false}
@@ -123,7 +133,7 @@ export function HomeTab() {
                         onPress={() => setIsSettingsVisible(true)}
                         style={styles.settingsButton}
                     >
-                        <BlurView intensity={25} tint="dark" style={[StyleSheet.absoluteFill, { borderRadius: 22 }]} />
+                        <BlurView intensity={Math.round(25 * blurIntensity)} tint="dark" style={[StyleSheet.absoluteFill, { borderRadius: 22, backgroundColor: cardBg }]} />
                         <SlidersHorizontal color={colors.primaryText} size={18} strokeWidth={2} />
                     </TouchableOpacity>
                 </View>
@@ -139,7 +149,7 @@ export function HomeTab() {
                         start={{ x: 0, y: 0 }}
                         end={{ x: 1, y: 1 }}
                     />
-                    <BlurView intensity={40} tint="dark" style={[StyleSheet.absoluteFill, { borderRadius: 40, backgroundColor: 'rgba(0,0,0,0.2)' }]} />
+                    <BlurView intensity={Math.round(40 * blurIntensity)} tint="dark" style={[StyleSheet.absoluteFill, { borderRadius: 40, backgroundColor: cardBg }]} />
 
                     <View style={styles.moonContainer}>
                         <View style={styles.moon}>
@@ -241,28 +251,41 @@ export function HomeTab() {
                         entering={FadeInDown.delay(200).duration(800)}
                         style={[styles.bentoCard, styles.bentoCardLarge]}
                     >
-                        <BlurView intensity={15} tint="dark" style={StyleSheet.absoluteFill} />
-                        <NightCalculator onNightCalcReady={setNightCalc} refreshKey={refreshKey} />
+                        <BlurView intensity={Math.round(15 * blurIntensity)} tint="dark" style={[StyleSheet.absoluteFill, { backgroundColor: cardBg }]} />
+                        <NightCalculator onNightCalcReady={setNightCalc} onPrayerTimesReady={setPrayerTimes} refreshKey={refreshKey} />
                     </Animated.View>
 
-                    {/* Row: Dua Network & Stats */}
-                    <View style={styles.bentoRow}>
+                    {/* Prayer countdown */}
+                    {prayerTimes && (
                         <Animated.View
-                            entering={FadeInDown.delay(400).duration(800)}
-                            style={[styles.bentoCard, styles.bentoCardSquare]}
+                            entering={FadeInDown.delay(350).duration(800)}
+                            style={styles.fullWidthCard}
                         >
-                            <BlurView intensity={20} tint="dark" style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(0,0,0,0.3)' }]} />
-                            <DuaNetwork />
+                            <PrayerCountdown prayerTimes={prayerTimes} />
                         </Animated.View>
+                    )}
 
-                        <Animated.View
-                            entering={FadeInDown.delay(600).duration(800)}
-                            style={[styles.bentoCard, styles.bentoCardSquare]}
-                        >
-                            <BlurView intensity={20} tint="dark" style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(0,0,0,0.3)' }]} />
-                            <Tracker />
-                        </Animated.View>
-                    </View>
+                    {/* Accountability Partner */}
+                    <Animated.View entering={FadeInDown.delay(350).duration(800)}>
+                        <AccountabilityPartnerCard />
+                    </Animated.View>
+
+                    {/* Tasbeeh — full width */}
+                    <Animated.View
+                        entering={FadeInDown.delay(400).duration(800)}
+                        style={styles.fullWidthCard}
+                    >
+                        <TasbeehCard />
+                    </Animated.View>
+
+                    {/* Dua Network */}
+                    <Animated.View
+                        entering={FadeInDown.delay(600).duration(800)}
+                        style={[styles.bentoCard, styles.bentoCardLarge]}
+                    >
+                        <BlurView intensity={Math.round(20 * blurIntensity)} tint="dark" style={[StyleSheet.absoluteFill, { backgroundColor: cardBg }]} />
+                        <DuaNetwork />
+                    </Animated.View>
 
                     {/* Horizontal: Hadith Carousel / Cards */}
                     <Animated.View entering={FadeInDown.delay(800).duration(800)} style={styles.hadithCarousel}>
@@ -272,21 +295,6 @@ export function HomeTab() {
                         />
                     </Animated.View>
 
-                    {/* Full Width: Prayer History Calendar */}
-                    <Animated.View
-                        entering={FadeInDown.delay(1000).duration(800)}
-                        style={styles.fullWidthCard}
-                    >
-                        <HistoryCalendar />
-                    </Animated.View>
-
-                    {/* Full Width: Qibla Compass */}
-                    <Animated.View
-                        entering={FadeInDown.delay(1200).duration(800)}
-                        style={styles.fullWidthCard}
-                    >
-                        <QiblaCompass />
-                    </Animated.View>
                 </View>
             </ScrollView>
 
@@ -304,6 +312,7 @@ export function HomeTab() {
                     setRefreshKey(prev => prev + 1);
                 }} />
             </Modal>
+
         </SafeAreaView >
     );
 }

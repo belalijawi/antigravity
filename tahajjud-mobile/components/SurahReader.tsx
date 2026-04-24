@@ -92,6 +92,8 @@ export function SurahReader({ surahNumber, edition = 'en.sahih', onEditionChange
 
     // Audio State & Refs (Refs prevent stale closures in playback callbacks)
     const [isPlaying, setIsPlaying] = useState(false);
+    const [playbackSpeed, setPlaybackSpeed] = useState<0.75 | 1 | 1.25 | 1.5>(1);
+    const playbackSpeedRef = useRef<0.75 | 1 | 1.25 | 1.5>(1);
     const soundRef = useRef<Audio.Sound | null>(null);
     const preloadedSoundRef = useRef<Audio.Sound | null>(null);
     const preloadedIndexRef = useRef<number | null>(null);
@@ -341,6 +343,7 @@ export function SurahReader({ surahNumber, edition = 'en.sahih', onEditionChange
                 const nextSound = preloadedSoundRef.current;
 
                 // CRITICAL: Play the NEXT sound before unloading the old one to bridge the gap
+                await nextSound.setRateAsync(playbackSpeedRef.current, true).catch(() => {});
                 await nextSound.playAsync();
 
                 // Now clean up the old one
@@ -365,7 +368,7 @@ export function SurahReader({ surahNumber, edition = 'en.sahih', onEditionChange
 
                 const { sound: newSound } = await Audio.Sound.createAsync(
                     { uri: audioAyahs[index].text },
-                    { shouldPlay: true, progressUpdateIntervalMillis: 50 },
+                    { shouldPlay: true, progressUpdateIntervalMillis: 50, rate: playbackSpeedRef.current, shouldCorrectPitch: true },
                     onPlaybackStatusUpdate
                 );
 
@@ -495,6 +498,16 @@ export function SurahReader({ surahNumber, edition = 'en.sahih', onEditionChange
         }
     };
 
+    const handleSpeedChange = async () => {
+        const speeds: (0.75 | 1 | 1.25 | 1.5)[] = [0.75, 1, 1.25, 1.5];
+        const next = speeds[(speeds.indexOf(playbackSpeed) + 1) % speeds.length];
+        setPlaybackSpeed(next);
+        playbackSpeedRef.current = next;
+        if (soundRef.current) {
+            try { await soundRef.current.setRateAsync(next, true); } catch {}
+        }
+    };
+
     const renderAudioControlsContent = () => (
         <>
             <View style={styles.audioControls}>
@@ -529,6 +542,16 @@ export function SurahReader({ surahNumber, edition = 'en.sahih', onEditionChange
                         </Text>
                     </View>
                 )}
+                {/* Playback speed button */}
+                <TouchableOpacity
+                    onPress={handleSpeedChange}
+                    style={[styles.sleepTimerBtn, playbackSpeed !== 1 && { backgroundColor: colors.accent + '33', borderColor: colors.accent + '66' }]}
+                >
+                    <Text style={[styles.sleepTimerText, playbackSpeed !== 1 && { color: colors.accent }]}>
+                        {playbackSpeed}x
+                    </Text>
+                </TouchableOpacity>
+
                 {/* Sleep timer button */}
                 <TouchableOpacity
                     onPress={cycleSleepTimer}

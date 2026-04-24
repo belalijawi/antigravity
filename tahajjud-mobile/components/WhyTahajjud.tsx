@@ -1,5 +1,5 @@
-import React from 'react';
-import { View, Text, ScrollView, StyleSheet } from 'react-native';
+import React, { useRef, useEffect } from 'react';
+import { View, Text, ScrollView, StyleSheet, DeviceEventEmitter } from 'react-native';
 import { Heart, Sparkles, Moon, BookOpen, Trophy, Sunrise, Shield, Zap } from 'lucide-react-native';
 import Animated, { FadeInDown, FadeInUp } from 'react-native-reanimated';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -49,10 +49,18 @@ function QuoteCard({ text, source, colors, index }: QuoteCardProps) {
 
 export function WhyTahajjud() {
     const { colors } = useTheme();
+    const scrollRef = useRef<ScrollView>(null);
+
+    useEffect(() => {
+        const sub = DeviceEventEmitter.addListener('scrollToTop', (tab: string) => {
+            if (tab === 'Guide') scrollRef.current?.scrollTo({ y: 0, animated: true });
+        });
+        return () => sub.remove();
+    }, []);
 
     return (
         <View style={styles.safeArea}>
-            <ScrollView style={styles.container} contentContainerStyle={styles.contentContainer} showsVerticalScrollIndicator={false}>
+            <ScrollView ref={scrollRef} style={styles.container} contentContainerStyle={styles.contentContainer} showsVerticalScrollIndicator={false}>
 
                 {/* Header */}
                 <Animated.View entering={FadeInUp.duration(550)} style={styles.header}>
@@ -160,25 +168,25 @@ export function WhyTahajjud() {
                         index={0}
                         colors={colors}
                         text="The best prayer after the obligatory prayers is the night prayer."
-                        source="Sahih Muslim"
+                        source="Sahih Muslim 1163"
                     />
                     <QuoteCard
                         index={1}
                         colors={colors}
-                        text="You should pray at night, even if it is only one rak'ah."
-                        source="Sunan Ibn Majah"
+                        text="The closest a servant is to his Lord is in the last part of the night. If you are able to be of those who remember Allah in that hour, then do so."
+                        source="Tirmidhi 3579 · Hasan Sahih"
                     />
                     <QuoteCard
                         index={2}
                         colors={colors}
-                        text="Hold fast to night prayer, for it was the way of the righteous before you, and it brings you closer to your Lord."
-                        source="Sunan al-Tirmidhi"
+                        text="Hold fast to night prayer, for it was the way of the righteous before you, it brings you closer to your Lord, expiates sins, and prevents wrongdoing."
+                        source="Tirmidhi · Authenticated"
                     />
                     <QuoteCard
                         index={3}
                         colors={colors}
                         text="The most beloved prayer to Allah is that of Dawud (AS) — he would sleep half the night, stand a third of it, then sleep a sixth."
-                        source="Sahih Bukhari"
+                        source="Sahih Bukhari 1131"
                     />
                 </View>
 

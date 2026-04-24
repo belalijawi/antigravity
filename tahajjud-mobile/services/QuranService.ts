@@ -1,3 +1,5 @@
+import AsyncStorage from '@react-native-async-storage/async-storage';
+
 export interface SurahMeta {
     number: number;
     name: string;
@@ -97,12 +99,20 @@ export const QuranService = {
             return buildSurahDetailFromLocal(surahData, edition, true);
         }
 
+        const translationCacheKey = `quran_translation_v1_${number}_${edition}`;
+
+        // Check translation cache first
+        try {
+            const cached = await AsyncStorage.getItem(translationCacheKey);
+            if (cached) return JSON.parse(cached);
+        } catch { /* ignore */ }
+
         // The Clear Quran (Khattab) via secondary API
         if (edition === 'en.khattab') {
             try {
                 const response = await fetch(`https://quranapi.pages.dev/api/${number}.json`);
                 const data = await response.json();
-                return {
+                const result = {
                     number: data.surahNo,
                     name: data.surahNameArabic,
                     englishName: data.surahName,
@@ -121,6 +131,8 @@ export const QuranService = {
                         englishName: 'The Clear Quran (Dr. Mustafa Khattab)'
                     }
                 };
+                await AsyncStorage.setItem(translationCacheKey, JSON.stringify(result));
+                return result;
             } catch (error) {
                 console.error('Error fetching Khattab translation:', error);
                 return null;
@@ -132,6 +144,7 @@ export const QuranService = {
             const response = await fetch(`${BASE_URL}/surah/${number}/${edition}`);
             const data = await response.json();
             if (data.code === 200) {
+                await AsyncStorage.setItem(translationCacheKey, JSON.stringify(data.data));
                 return data.data;
             }
             return null;
@@ -159,17 +172,25 @@ export const QuranService = {
         }
     },
 
-    // Get audio recitation for a surah
+    // Get audio recitation for a surah — cached in AsyncStorage
     async getAudioRecitation(number: number, reciter: string = 'ar.alafasy'): Promise<Ayah[]> {
+        const cacheKey = `quran_audio_v1_${number}_${reciter}`;
+        try {
+            const cached = await AsyncStorage.getItem(cacheKey);
+            if (cached) return JSON.parse(cached);
+        } catch { /* ignore */ }
+
         try {
             const response = await fetch(`${BASE_URL}/surah/${number}/${reciter}`);
             const data = await response.json();
             if (data.code === 200) {
-                return data.data.ayahs.map((ayah: any) => ({
+                const result = data.data.ayahs.map((ayah: any) => ({
                     number: ayah.number,
-                    text: ayah.audio, // Use text field to store audio URL for audio-only fetches
+                    text: ayah.audio,
                     numberInSurah: ayah.numberInSurah
                 }));
+                await AsyncStorage.setItem(cacheKey, JSON.stringify(result));
+                return result;
             }
             return [];
         } catch (error) {

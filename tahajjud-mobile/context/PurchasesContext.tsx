@@ -54,8 +54,9 @@ export const PurchasesProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         };
     }, []);
 
+    // TESTING MODE — all features unlocked. To revert, change `true` back to `isPremium` below.
     return (
-        <PurchasesContext.Provider value={{ isPremium, isLoading, paywallVisible, openPaywall, closePaywall, checkPremiumStatus }}>
+        <PurchasesContext.Provider value={{ isPremium: true, isLoading, paywallVisible, openPaywall, closePaywall, checkPremiumStatus }}>
             {children}
         </PurchasesContext.Provider>
     );

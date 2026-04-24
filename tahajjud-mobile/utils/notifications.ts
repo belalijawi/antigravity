@@ -76,19 +76,30 @@ export async function cancelNotification(key: string): Promise<void> {
         const idKey = `${NOTIFICATION_ID_KEY_PREFIX}${key.toLowerCase()}`;
         const oldIdKey = key.toLowerCase() === 'tahajjud' ? 'tahajjud_notification_id' : null;
 
+        // Cancel all IDs in the multi-reminder array (Tahajjud only)
+        if (key.toLowerCase() === 'tahajjud') {
+            const idsJson = await AsyncStorage.getItem('tahajjud_notification_ids_array');
+            if (idsJson) {
+                const ids: string[] = JSON.parse(idsJson);
+                for (const id of ids) {
+                    await Notifications.cancelScheduledNotificationAsync(id).catch(() => {});
+                }
+                await AsyncStorage.removeItem('tahajjud_notification_ids_array');
+                console.log(`Canceled ${ids.length} Tahajjud notification(s)`);
+            }
+        }
+
         const notificationId = await AsyncStorage.getItem(idKey);
         if (notificationId) {
-            await Notifications.cancelScheduledNotificationAsync(notificationId);
+            await Notifications.cancelScheduledNotificationAsync(notificationId).catch(() => {});
             await AsyncStorage.removeItem(idKey);
-            console.log(`Canceled notification: ${notificationId} (${key})`);
         }
 
         if (oldIdKey) {
             const oldId = await AsyncStorage.getItem(oldIdKey);
             if (oldId) {
-                await Notifications.cancelScheduledNotificationAsync(oldId);
+                await Notifications.cancelScheduledNotificationAsync(oldId).catch(() => {});
                 await AsyncStorage.removeItem(oldIdKey);
-                console.log(`Canceled legacy notification: ${oldId}`);
             }
         }
 
@@ -140,7 +151,7 @@ export async function getScheduledNotificationTime(key: string = 'tahajjud'): Pr
 export async function scheduleAllPrayerNotifications(
     prayerTimes: any,
     enabledPrayers: boolean | Record<string, boolean>,
-    tahajjudConfig?: { enabled: boolean, buffer: number, targetTime: Date }
+    tahajjudConfig?: { enabled: boolean, buffers: number[], targetTime: Date }
 ) {
     if (isSchedulingGlobal) {
         console.log('[DEBUG] Skipping scheduleAllPrayerNotifications: already in progress');
@@ -173,6 +184,10 @@ export async function scheduleAllPrayerNotifications(
             return;
         }
 
+        // Read prayer reminder offset first so it's available for scheduling
+        const offsetRaw = await AsyncStorage.getItem('prayer_reminder_offset');
+        const prayerOffset = offsetRaw ? parseInt(offsetRaw, 10) : 0;
+
         if (isOverallEnabled) {
             console.log('[DEBUG] Starting clean re-scheduling for daily prayers...');
             const prayers = ['fajr', 'dhuhr', 'asr', 'maghrib', 'isha'];
@@ -183,16 +198,24 @@ export async function scheduleAllPrayerNotifications(
                     : enabledPrayers[prayer.toLowerCase()];
 
                 if (isEnabled) {
-                    // Call schedulePrayerNotification without redundant internal cancel (since we just wiped all)
-                    await internalSchedulePrayerNotification(prayer.charAt(0).toUpperCase() + prayer.slice(1), prayerTimes[prayer]);
+                    await internalSchedulePrayerNotification(prayer.charAt(0).toUpperCase() + prayer.slice(1), prayerTimes[prayer], prayerOffset);
                 }
             }
         }
 
-        // 2. Handle Tahajjud if config is provided
+        // Handle Tahajjud if config is provided
         if (tahajjudConfig?.enabled) {
             console.log('[DEBUG] Scheduling Tahajjud within global sweep...');
-            await internalScheduleTahajjudNotification(tahajjudConfig.targetTime, tahajjudConfig.buffer);
+            const ids: string[] = [];
+            for (const buffer of tahajjudConfig.buffers) {
+                const id = await internalScheduleTahajjudNotificationRaw(tahajjudConfig.targetTime, buffer);
+                if (id) ids.push(id);
+            }
+            if (ids.length > 0) {
+                await AsyncStorage.setItem('tahajjud_notification_ids_array', JSON.stringify(ids));
+                await AsyncStorage.setItem(`${NOTIFICATION_ID_KEY_PREFIX}tahajjud`, ids[0]);
+                await AsyncStorage.setItem(NOTIFICATION_ENABLED_KEY, 'true');
+            }
         }
     } finally {
         isSchedulingGlobal = false;
@@ -229,17 +252,18 @@ export async function scheduleFuturePrayerNotifications(
     prayers: Array<{ name: string; time: Date }>
 ): Promise<void> {
     ensureNotificationHandler();
+    const offsetRaw = await AsyncStorage.getItem('prayer_reminder_offset');
+    const prayerOffset = offsetRaw ? parseInt(offsetRaw, 10) : 0;
+
     for (const { name, time } of prayers) {
-        // Re-use the internal helper; for future days we don't overwrite today's ID keys
-        // — that's fine because cancelAllScheduledNotificationsAsync clears everything on next load.
+        const scheduleTime = new Date(time.getTime() - prayerOffset * 60 * 1000);
         const now = new Date();
         const safetyMargin = 3 * 60 * 1000;
-        if (time <= new Date(now.getTime() + safetyMargin)) continue;
+        if (scheduleTime <= new Date(now.getTime() + safetyMargin)) continue;
         try {
             const key = name.toLowerCase();
             const content = PRAYER_CONTENT[key];
-            const title = content?.title ?? `🕌 ${name} Prayer`;
-            const body   = content?.body  ?? `It is time for ${name}.`;
+            const { title, body } = buildPrayerNotificationContent(name, content, prayerOffset, time);
             await Notifications.scheduleNotificationAsync({
                 content: {
                     title,
@@ -249,7 +273,7 @@ export async function scheduleFuturePrayerNotifications(
                 },
                 trigger: {
                     type: Notifications.SchedulableTriggerInputTypes.DATE,
-                    date: time,
+                    date: scheduleTime,
                     ...(Platform.OS === 'android' && { channelId: 'prayers' }),
                 },
             });
@@ -334,6 +358,27 @@ async function internalScheduleTahajjudNotificationRaw(targetTime: Date, bufferM
     }
 }
 
+// Builds the right title/body depending on whether we're notifying early or at-time
+function buildPrayerNotificationContent(
+    name: string,
+    content: { emoji: string; title: string; body: string } | undefined,
+    offsetMinutes: number,
+    prayerTime: Date,
+): { title: string; body: string } {
+    const emoji = content?.emoji ?? '🕌';
+    const timeStr = prayerTime.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+    if (offsetMinutes > 0) {
+        return {
+            title: `${emoji} ${name} in ${offsetMinutes} min`,
+            body: `${name} begins at ${timeStr}. Time to prepare.`,
+        };
+    }
+    return {
+        title: content?.title ?? `${emoji} ${name}`,
+        body: content?.body ?? `It is time for ${name}.`,
+    };
+}
+
 // Unique title + body for each prayer — and for Tahajjud at-the-time vs. prep reminder
 const PRAYER_CONTENT: Record<string, { emoji: string; title: string; body: string }> = {
     fajr: {
@@ -366,9 +411,9 @@ const PRAYER_CONTENT: Record<string, { emoji: string; title: string; body: strin
 /**
  * Internal helper that doesn't call cancelNotification to avoid redundant AsyncStorage hits
  */
-async function internalSchedulePrayerNotification(prayerName: string, targetTime: Date) {
+async function internalSchedulePrayerNotification(prayerName: string, targetTime: Date, offsetMinutes: number = 0) {
     const now = new Date();
-    const scheduleTime = new Date(targetTime);
+    const scheduleTime = new Date(targetTime.getTime() - offsetMinutes * 60 * 1000);
     const safetyMargin = 3 * 60 * 1000;
 
     if (scheduleTime <= new Date(now.getTime() + safetyMargin)) {
@@ -378,8 +423,7 @@ async function internalSchedulePrayerNotification(prayerName: string, targetTime
 
     const key = prayerName.toLowerCase();
     const content = PRAYER_CONTENT[key];
-    const title = content?.title ?? `🕌 ${prayerName} Prayer`;
-    const body   = content?.body  ?? `It is time for ${prayerName}.`;
+    const { title, body } = buildPrayerNotificationContent(prayerName, content, offsetMinutes, targetTime);
 
     const notificationId = await Notifications.scheduleNotificationAsync({
         content: {
@@ -396,5 +440,5 @@ async function internalSchedulePrayerNotification(prayerName: string, targetTime
     });
 
     await AsyncStorage.setItem(`${NOTIFICATION_ID_KEY_PREFIX}${key}`, notificationId);
-    console.log(`[DEBUG] ${prayerName} scheduled for ${scheduleTime.toLocaleString()}`);
+    console.log(`[DEBUG] ${prayerName} scheduled for ${scheduleTime.toLocaleString()} (${offsetMinutes} min before)`);
 }

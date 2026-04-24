@@ -28,7 +28,7 @@ interface SettingsScreenProps {
     onClose: () => void;
 }
 export const SettingsScreen: React.FC<SettingsScreenProps> = ({ onClose }) => {
-    const { theme, setTheme, colors, userName, setUserName } = useTheme();
+    const { theme, setTheme, colors, userName, setUserName, darkMode, setDarkMode, cardBg, cardBorder, blurIntensity } = useTheme();
     const { isPremium } = usePurchases();
     const [isDeleting, setIsDeleting] = useState(false);
     const [localPaywallVisible, setLocalPaywallVisible] = useState(false);
@@ -43,6 +43,8 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ onClose }) => {
     const [showNameModal, setShowNameModal] = useState(false);
     const [nameInput, setNameInput] = useState('');
     const [allPrayersEnabled, setAllPrayersEnabled] = useState(false);
+    const [prayerReminderOffset, setPrayerReminderOffset] = useState(0);
+    const [showReminderModal, setShowReminderModal] = useState(false);
 
     const prayerMethods = [
         { id: 2, name: 'ISNA', sub: 'North America (15°)' },
@@ -94,6 +96,8 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ onClose }) => {
 
         const allPrayers = await AsyncStorage.getItem('notification_all_prayers_enabled');
         setAllPrayersEnabled(allPrayers === 'true');
+        const offset = await AsyncStorage.getItem('prayer_reminder_offset');
+        setPrayerReminderOffset(offset ? parseInt(offset, 10) : 0);
     };
 
     const updatePrayerMethod = async (id: number) => {
@@ -105,30 +109,8 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ onClose }) => {
 
     const handleEditName = () => {
         haptic.medium();
-        if (Platform.OS === 'android') {
-            setNameInput(userName === 'Servant' ? '' : userName);
-            setShowNameModal(true);
-        } else {
-            Alert.prompt(
-                "Spiritual Name",
-                "How should we address you in your journey?",
-                [
-                    { text: "Cancel", style: "cancel" },
-                    {
-                        text: "Update",
-                        onPress: async (newName: string | undefined) => {
-                            if (newName && newName.trim()) {
-                                const trimmed = newName.trim();
-                                await setUserName(trimmed);
-                                haptic.success();
-                            }
-                        }
-                    }
-                ],
-                'plain-text',
-                userName === 'Servant' ? '' : userName
-            );
-        }
+        setNameInput(userName === 'Servant' ? '' : userName);
+        setShowNameModal(true);
     };
 
     const checkUser = async () => {
@@ -400,7 +382,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ onClose }) => {
                         hitSlop={{ top: 15, bottom: 15, left: 15, right: 15 }}
                         disabled={isDeleting}
                     >
-                        <BlurView intensity={20} tint="dark" style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(0,0,0,0.3)' }]} />
+                        <BlurView intensity={Math.round(20 * blurIntensity)} tint="dark" style={[StyleSheet.absoluteFill, { backgroundColor: cardBg }]} />
                         <X color="#ffffff" size={24} />
                     </TouchableOpacity>
                 </View>
@@ -433,7 +415,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ onClose }) => {
                 <Animated.View entering={FadeInDown.delay(100).duration(800)} style={styles.section}>
                     <Text style={[styles.sectionHeader, { color: colors.secondaryText }]}>Appearance</Text>
                     <View style={styles.card}>
-                        <BlurView intensity={20} tint="dark" style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(0,0,0,0.3)' }]} />
+                        <BlurView intensity={Math.round(20 * blurIntensity)} tint="dark" style={[StyleSheet.absoluteFill, { backgroundColor: cardBg }]} />
                         <View style={styles.cardItem}>
                             <View style={styles.cardIconContainer}>
                                 <Palette size={20} color={colors.primaryText} strokeWidth={2.5} />
@@ -445,7 +427,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ onClose }) => {
                         </View>
 
                         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.themeSelector}>
-                            {(['silver', 'teal', 'emerald', 'gold', 'rose', 'purple'] as ThemeType[]).map((t) => {
+                            {(['silver', 'teal', 'emerald', 'gold', 'rose', 'purple', 'cosmic'] as ThemeType[]).map((t) => {
                                 const isPremiumTheme = PREMIUM_THEMES.includes(t);
                                 const isLocked = isPremiumTheme && !isPremium;
                                 const GRADIENTS: Record<ThemeType, [string, string]> = {
@@ -455,6 +437,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ onClose }) => {
                                     gold: ['#fbbf24', '#f59e0b'],
                                     rose: ['#f472b6', '#ec4899'],
                                     purple: ['#a78bfa', '#8b5cf6'],
+                                    cosmic: ['#38bdf8', '#818cf8'],
                                 };
                                 return (
                                     <TouchableOpacity
@@ -489,13 +472,38 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ onClose }) => {
                                 );
                             })}
                         </ScrollView>
+
+                        {/* Dark Mode divider */}
+                        <View style={[styles.cardDivider, { backgroundColor: 'rgba(255,255,255,0.07)' }]} />
+
+                        {/* Dark Mode toggle */}
+                        <TouchableOpacity
+                            style={styles.cardItem}
+                            onPress={() => { haptic.light(); setDarkMode(!darkMode); }}
+                            activeOpacity={0.7}
+                        >
+                            <View style={styles.cardIconContainer}>
+                                <Moon size={20} color={darkMode ? colors.accent : colors.primaryText} strokeWidth={2.5} />
+                            </View>
+                            <View style={styles.cardTextContainer}>
+                                <Text style={[styles.cardLabel, { color: colors.primaryText }]}>Dark Mode</Text>
+                                <Text style={[styles.cardSub, { color: colors.secondaryText }]}>Dim the nebula background</Text>
+                            </View>
+                            <Switch
+                                value={darkMode}
+                                onValueChange={(v) => { haptic.light(); setDarkMode(v); }}
+                                trackColor={{ false: 'rgba(255,255,255,0.12)', true: colors.accent }}
+                                thumbColor={'#ffffff'}
+                                ios_backgroundColor="rgba(255,255,255,0.12)"
+                            />
+                        </TouchableOpacity>
                     </View>
                 </Animated.View>
 
                 <Animated.View entering={FadeInDown.delay(150).duration(800)} style={styles.section}>
                     <Text style={[styles.sectionHeader, { color: colors.secondaryText }]}>Prayer Times</Text>
                     <View style={styles.card}>
-                        <BlurView intensity={20} tint="dark" style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(0,0,0,0.3)' }]} />
+                        <BlurView intensity={Math.round(20 * blurIntensity)} tint="dark" style={[StyleSheet.absoluteFill, { backgroundColor: cardBg }]} />
                         <View style={styles.cardItem}>
                             <View style={styles.cardIconContainer}>
                                 <Moon size={20} color={colors.primaryText} strokeWidth={2.5} />
@@ -535,7 +543,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ onClose }) => {
                 <Animated.View entering={FadeInDown.delay(200).duration(800)} style={styles.section}>
                     <Text style={[styles.sectionHeader, { color: colors.secondaryText }]}>Profile</Text>
                     <View style={styles.card}>
-                        <BlurView intensity={20} tint="dark" style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(0,0,0,0.3)' }]} />
+                        <BlurView intensity={Math.round(20 * blurIntensity)} tint="dark" style={[StyleSheet.absoluteFill, { backgroundColor: cardBg }]} />
                         <TouchableOpacity style={styles.cardItem} onPress={handleEditName}>
                             <View style={styles.cardIconContainer}>
                                 <User size={20} color="#f8fafc" strokeWidth={2.5} />
@@ -553,7 +561,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ onClose }) => {
                     <Text style={styles.sectionHeader}>Sync & Cloud</Text>
                     {user ? (
                         <View style={styles.crystallineCard}>
-                            <BlurView intensity={20} tint="dark" style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(0,0,0,0.3)' }]} />
+                            <BlurView intensity={Math.round(20 * blurIntensity)} tint="dark" style={[StyleSheet.absoluteFill, { backgroundColor: cardBg }]} />
                             <LinearGradient
                                 colors={['rgba(34, 197, 94, 0.1)', 'transparent']}
                                 style={StyleSheet.absoluteFill}
@@ -569,7 +577,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ onClose }) => {
                         </View>
                     ) : (
                         <View style={styles.card}>
-                            <BlurView intensity={20} tint="dark" style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(0,0,0,0.3)' }]} />
+                            <BlurView intensity={Math.round(20 * blurIntensity)} tint="dark" style={[StyleSheet.absoluteFill, { backgroundColor: cardBg }]} />
                             <View style={styles.authArea}>
                                 <Text style={styles.authInfo}>
                                     Preserve your Tahajjud letters and growth across all devices.
@@ -600,9 +608,9 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ onClose }) => {
                 <Animated.View entering={FadeInDown.delay(300).duration(800)} style={styles.section}>
                     <Text style={[styles.sectionHeader, { color: colors.secondaryText }]}>Notifications</Text>
                     <View style={styles.card}>
-                        <BlurView intensity={20} tint="dark" style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(0,0,0,0.3)' }]} />
+                        <BlurView intensity={Math.round(20 * blurIntensity)} tint="dark" style={[StyleSheet.absoluteFill, { backgroundColor: cardBg }]} />
 
-                        <View style={styles.cardItem}>
+                        <View style={[styles.cardItem, allPrayersEnabled && styles.cardItemBorder]}>
                             <View style={styles.cardIconContainer}>
                                 <Bell size={20} color={colors.primaryText} strokeWidth={2.5} />
                             </View>
@@ -617,13 +625,31 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ onClose }) => {
                                 thumbColor={allPrayersEnabled ? '#ffffff' : '#94a3b8'}
                             />
                         </View>
+
+                        {allPrayersEnabled && (
+                            <TouchableOpacity
+                                style={styles.cardItem}
+                                onPress={() => setShowReminderModal(true)}
+                            >
+                                <View style={styles.cardIconContainer}>
+                                    <Bell size={20} color={colors.secondaryText} strokeWidth={2} />
+                                </View>
+                                <View style={styles.cardTextContainer}>
+                                    <Text style={[styles.cardLabel, { color: colors.primaryText }]}>Remind Before Prayer</Text>
+                                    <Text style={[styles.cardSub, { color: colors.secondaryText }]}>
+                                        {prayerReminderOffset === 0 ? 'At prayer time' : `${prayerReminderOffset} min before`}
+                                    </Text>
+                                </View>
+                                <ChevronRight size={18} color="#475569" />
+                            </TouchableOpacity>
+                        )}
                     </View>
                 </Animated.View>
 
                 <Animated.View entering={FadeInDown.delay(300).duration(800)} style={styles.section}>
                     <Text style={styles.sectionHeader}>Guardian Settings</Text>
                     <View style={styles.card}>
-                        <BlurView intensity={20} tint="dark" style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(0,0,0,0.3)' }]} />
+                        <BlurView intensity={Math.round(20 * blurIntensity)} tint="dark" style={[StyleSheet.absoluteFill, { backgroundColor: cardBg }]} />
                         <View style={[styles.cardItem, styles.cardItemBorder]}>
                             <View style={styles.cardIconContainer}>
                                 <Lock size={20} color="#f8fafc" strokeWidth={2.5} />
@@ -658,7 +684,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ onClose }) => {
                 <Animated.View entering={FadeInDown.delay(400).duration(800)} style={styles.section}>
                     <Text style={styles.sectionHeader}>Support & Community</Text>
                     <View style={styles.card}>
-                        <BlurView intensity={20} tint="dark" style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(0,0,0,0.3)' }]} />
+                        <BlurView intensity={Math.round(20 * blurIntensity)} tint="dark" style={[StyleSheet.absoluteFill, { backgroundColor: cardBg }]} />
                         <TouchableOpacity
                             style={styles.cardItem}
                             onPress={() => Linking.openURL('https://tahajjud-2d7bf.web.app/support.html')}
@@ -741,8 +767,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ onClose }) => {
                         start={{ x: 0, y: 0 }}
                         end={{ x: 1, y: 0 }}
                     />
-                    <Text style={styles.versionText}>TAHAJJUD PLUS v1.5.3 (Build 12)</Text>
-                    <Text style={styles.ummahText}>Bespoke spiritual tool for the Ummah</Text>
+                    <Text style={styles.versionText}>TAHAJJUD PLUS v1.5.3</Text>
                     <Text style={styles.creatorText}>Created by a Palestinian 🇵🇸</Text>
                 </View>
             </ScrollView >
@@ -757,7 +782,51 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ onClose }) => {
                 <PrivacyPolicy onClose={() => setShowPrivacy(false)} />
             </Modal>
 
-            {/* Android Name Edit Modal */}
+            {/* Remind Before Prayer Modal */}
+            <Modal
+                animationType="fade"
+                transparent={true}
+                visible={showReminderModal}
+                onRequestClose={() => setShowReminderModal(false)}
+            >
+                <View style={styles.nameModalOverlay}>
+                    <View style={styles.nameModalBox}>
+                        <Text style={styles.nameModalTitle}>Remind Before Prayer</Text>
+                        <Text style={styles.nameModalSub}>How many minutes before each prayer?</Text>
+                        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginVertical: 16 }}>
+                            {[0, 5, 10, 15, 20, 30].map(mins => (
+                                <TouchableOpacity
+                                    key={mins}
+                                    style={{
+                                        flex: 1, minWidth: 70, paddingVertical: 12, borderRadius: 12,
+                                        backgroundColor: prayerReminderOffset === mins ? colors.accent + '22' : 'rgba(255,255,255,0.05)',
+                                        borderWidth: 1,
+                                        borderColor: prayerReminderOffset === mins ? colors.accent + '66' : 'rgba(255,255,255,0.08)',
+                                        alignItems: 'center',
+                                    }}
+                                    onPress={async () => {
+                                        setPrayerReminderOffset(mins);
+                                        await AsyncStorage.setItem('prayer_reminder_offset', mins.toString());
+                                        haptic.light();
+                                    }}
+                                >
+                                    <Text style={{ color: prayerReminderOffset === mins ? colors.accent : '#94a3b8', fontWeight: '800', fontSize: 15 }}>
+                                        {mins === 0 ? 'At time' : `${mins}m`}
+                                    </Text>
+                                </TouchableOpacity>
+                            ))}
+                        </View>
+                        <TouchableOpacity
+                            style={[styles.nameModalBtn, { backgroundColor: colors.accent, width: '100%' }]}
+                            onPress={() => setShowReminderModal(false)}
+                        >
+                            <Text style={[styles.nameModalBtnText, { color: '#0f172a' }]}>Done</Text>
+                        </TouchableOpacity>
+                    </View>
+                </View>
+            </Modal>
+
+            {/* Name Edit Modal */}
             <Modal
                 animationType="fade"
                 transparent={true}
@@ -879,6 +948,10 @@ const styles = StyleSheet.create({
         flexDirection: 'row',
         alignItems: 'center',
         padding: 20,
+    },
+    cardDivider: {
+        height: 1,
+        marginHorizontal: 20,
     },
     cardItemBorder: {
         borderBottomWidth: 1,

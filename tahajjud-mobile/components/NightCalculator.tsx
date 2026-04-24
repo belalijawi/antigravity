@@ -1,11 +1,11 @@
 import React, { useEffect, useState } from "react";
 import Animated, { useSharedValue, useAnimatedStyle, withRepeat, withSequence, withTiming, cancelAnimation, Easing } from 'react-native-reanimated';
-import { View, Text, ActivityIndicator, StyleSheet, TouchableOpacity, Alert, AppState, AppStateStatus, Linking } from "react-native";
+import { View, Text, ActivityIndicator, StyleSheet, TouchableOpacity, Alert, AppState, AppStateStatus, Linking, DeviceEventEmitter, Modal, TextInput, KeyboardAvoidingView, Platform } from "react-native";
 import * as Location from "expo-location";
 import { BlurView } from 'expo-blur';
 import { getPrayerTimes } from "../lib/api";
 import { calculateLastThird, NightCalculation, PrayerTimes } from "../lib/prayer-times";
-import { Moon, Bell, BellOff, Lock } from "lucide-react-native";
+import { Moon, Bell, BellOff, Plus, X } from "lucide-react-native";
 import { LinearGradient } from 'expo-linear-gradient';
 import { PrayerCard } from "./PrayerCard";
 import { format, addDays } from "date-fns";
@@ -15,7 +15,7 @@ import { useTheme } from '../context/ThemeContext';
 import { updateWidget } from '../utils/widgetBridge';
 import { usePurchases } from '../context/PurchasesContext';
 
-export function NightCalculator({ onNightCalcReady, refreshKey }: { onNightCalcReady?: (calc: NightCalculation) => void, refreshKey?: number } = {}) {
+export function NightCalculator({ onNightCalcReady, onPrayerTimesReady, refreshKey }: { onNightCalcReady?: (calc: NightCalculation) => void, onPrayerTimesReady?: (times: PrayerTimes) => void, refreshKey?: number } = {}) {
     const { colors } = useTheme();
     const { isPremium, openPaywall } = usePurchases();
     const [location, setLocation] = useState<{ lat: number; lng: number } | null>(null);
@@ -26,10 +26,29 @@ export function NightCalculator({ onNightCalcReady, refreshKey }: { onNightCalcR
     const [locationDenied, setLocationDenied] = useState<boolean>(false);
     const [currentTime, setCurrentTime] = useState<Date>(new Date());
     const [notificationEnabled, setNotificationEnabled] = useState<boolean>(false);
-    const [selectedBuffer, setSelectedBuffer] = useState<number>(0); // Default to 0 (at the time)
+    const [buffers, setBuffers] = useState<number[]>([15]); // Array of reminder offsets in minutes
     const [selectedMethod, setSelectedMethod] = useState<number>(2); // Default ISNA
     const [lastScheduledKey, setLastScheduledKey] = useState<string | null>(null);
     const [internalRefresh, setInternalRefresh] = useState(0);
+    const [showBufferModal, setShowBufferModal] = useState(false);
+    const [editingBufferIdx, setEditingBufferIdx] = useState<number | null>(null);
+    const [bufferInput, setBufferInput] = useState('');
+    const [prayerReminderOffset, setPrayerReminderOffset] = useState(0);
+
+    // Listen for offset changes from Settings
+    useEffect(() => {
+        const loadOffset = async () => {
+            const raw = await AsyncStorage.getItem('prayer_reminder_offset');
+            const val = raw ? parseInt(raw, 10) : 0;
+            if (val !== prayerReminderOffset) {
+                setPrayerReminderOffset(val);
+                setLastScheduledKey(null); // force reschedule
+            }
+        };
+        loadOffset();
+        const sub = DeviceEventEmitter.addListener('prayerReminderOffsetChanged', loadOffset);
+        return () => sub.remove();
+    }, []);
     const [cityName, setCityName] = useState<string | null>(null);
 
     // Derived: are we currently in the last third?
@@ -169,20 +188,32 @@ export function NightCalculator({ onNightCalcReady, refreshKey }: { onNightCalcR
     }, []);
 
     useEffect(() => {
-        AsyncStorage.getItem('tahajjud_buffer_minutes').then(val => {
-            const saved = val ? parseInt(val, 10) : 15;
-            // Free users are always locked to 15 min
-            setSelectedBuffer(isPremium ? saved : 15);
+        AsyncStorage.getItem('tahajjud_buffers').then(val => {
+            if (val) {
+                setBuffers(JSON.parse(val));
+            } else {
+                // Migrate from old single-value key
+                AsyncStorage.getItem('tahajjud_buffer_minutes').then(old => {
+                    const saved = old ? parseInt(old, 10) : 15;
+                    setBuffers([saved]);
+                });
+            }
         });
         AsyncStorage.getItem('prayer_calculation_method').then(val => {
             if (val) setSelectedMethod(parseInt(val, 10));
         });
     }, []);
 
+    const saveBuffers = async (next: number[]) => {
+        setBuffers(next);
+        await AsyncStorage.setItem('tahajjud_buffers', JSON.stringify(next));
+        if (notificationEnabled) { setLastScheduledKey(null); setInternalRefresh(p => p + 1); }
+    };
+
     // Silently prefetch and cache prayer times for the next 6 nights,
     // then schedule wake-up + daily prayer notifications so they fire without an app open.
     const prefetchFutureNights = async (
-        lat: number, lng: number, method: number, buffer: number,
+        lat: number, lng: number, method: number, remindBuffers: number[],
         tahajjudEnabled: boolean, allPrayersEnabled: boolean
     ) => {
         try {
@@ -198,7 +229,9 @@ export function NightCalculator({ onNightCalcReady, refreshKey }: { onNightCalcR
                 ]);
                 if (tahajjudEnabled) {
                     const calc = calculateLastThird(nightTimes.maghrib, nextDayTimes.fajr);
-                    tahajjudNights.push({ targetTime: new Date(calc.lastThirdStart), buffer });
+                    for (const buf of remindBuffers) {
+                        tahajjudNights.push({ targetTime: new Date(calc.lastThirdStart), buffer: buf });
+                    }
                 }
                 if (allPrayersEnabled) {
                     futurePrayers.push(
@@ -314,6 +347,7 @@ export function NightCalculator({ onNightCalcReady, refreshKey }: { onNightCalcR
                 }
 
                 setPrayerTimes(activeTimes);
+                onPrayerTimesReady?.(activeTimes);
                 const calc = calculateLastThird(nightStart, nightEnd);
                 setNightCalc(calc);
                 onNightCalcReady?.(calc);
@@ -329,11 +363,11 @@ export function NightCalculator({ onNightCalcReady, refreshKey }: { onNightCalcR
                 const isTahajjudEnabled = tahajjudEnabled === 'true';
 
                 // Prevent duplicate scheduling if nothing changed
-                const currentKey = `${JSON.stringify(activeTimes)}_${isEnabled}_${isTahajjudEnabled}_${selectedBuffer}`;
+                const currentKey = `${JSON.stringify(activeTimes)}_${isEnabled}_${isTahajjudEnabled}_${JSON.stringify(buffers)}_${prayerReminderOffset}`;
                 if (currentKey !== lastScheduledKey) {
                     await scheduleAllPrayerNotifications(activeTimes, isEnabled, {
                         enabled: isTahajjudEnabled,
-                        buffer: selectedBuffer,
+                        buffers,
                         targetTime: new Date(calc.lastThirdStart)
                     });
                     setLastScheduledKey(currentKey);
@@ -342,7 +376,7 @@ export function NightCalculator({ onNightCalcReady, refreshKey }: { onNightCalcR
                     // Pre-fetch + schedule the next 6 nights so the alarm fires even if
                     // the user doesn't open the app every day.
                     if (isTahajjudEnabled || isEnabled) {
-                        prefetchFutureNights(location!.lat, location!.lng, selectedMethod, selectedBuffer, isTahajjudEnabled, isEnabled);
+                        prefetchFutureNights(location!.lat, location!.lng, selectedMethod, buffers, isTahajjudEnabled, isEnabled);
                     }
                 }
             } catch (err) {
@@ -353,7 +387,7 @@ export function NightCalculator({ onNightCalcReady, refreshKey }: { onNightCalcR
             }
         }
         fetchData();
-    }, [location, refreshKey, selectedMethod, selectedBuffer, internalRefresh]);
+    }, [location, refreshKey, selectedMethod, buffers, internalRefresh, prayerReminderOffset]);
 
     useEffect(() => {
         checkNotificationStatus();
@@ -385,8 +419,15 @@ export function NightCalculator({ onNightCalcReady, refreshKey }: { onNightCalcR
             setInternalRefresh(prev => prev + 1);
 
             const targetTime = new Date(nightCalc.lastThirdStart);
-            const wakeTime = new Date(targetTime.getTime() - selectedBuffer * 60 * 1000);
-            Alert.alert('Reminder Set! 🌙', `You will be woken up at ${format(wakeTime, 'h:mm a')}\n(${selectedBuffer} mins before Last Third)`);
+            const reminderLines = buffers
+                .slice()
+                .sort((a, b) => b - a)
+                .map(b => {
+                    const t = new Date(targetTime.getTime() - b * 60 * 1000);
+                    return `• ${format(t, 'h:mm a')}${b > 0 ? ` (${b} min before)` : ' (at start)'}`;
+                })
+                .join('\n');
+            Alert.alert('Reminder Set! 🌙', `Reminders scheduled:\n${reminderLines}`);
         }
     };
 
@@ -465,58 +506,69 @@ export function NightCalculator({ onNightCalcReady, refreshKey }: { onNightCalcR
                         </Text>
                     </TouchableOpacity>
 
-                    {isPremium ? (
-                        // Premium: custom 0–60 min stepper
-                        <View style={styles.prepRow}>
+                    <View style={styles.buffersRow}>
+                        {buffers.map((buf, idx) => (
+                            <View key={idx} style={[styles.bufferChip, { borderColor: colors.accent + '55' }]}>
+                                {/* − */}
+                                <TouchableOpacity
+                                    onPress={() => {
+                                        const next = [...buffers];
+                                        next[idx] = Math.max(0, next[idx] - 5);
+                                        saveBuffers(next);
+                                    }}
+                                    hitSlop={{ top: 6, bottom: 6, left: 6, right: 2 }}
+                                >
+                                    <Text style={styles.chipStepper}>−</Text>
+                                </TouchableOpacity>
+
+                                {/* value — tap to type custom */}
+                                <TouchableOpacity
+                                    onPress={() => {
+                                        setEditingBufferIdx(idx);
+                                        setBufferInput(buf.toString());
+                                        setShowBufferModal(true);
+                                    }}
+                                >
+                                    <Text style={[styles.chipValue, { color: colors.accent }]}>
+                                        {buf === 0 ? '0' : `${buf}m`}
+                                    </Text>
+                                </TouchableOpacity>
+
+                                {/* + */}
+                                <TouchableOpacity
+                                    onPress={() => {
+                                        const next = [...buffers];
+                                        next[idx] = Math.min(120, next[idx] + 5);
+                                        saveBuffers(next);
+                                    }}
+                                    hitSlop={{ top: 6, bottom: 6, left: 2, right: 6 }}
+                                >
+                                    <Text style={styles.chipStepper}>+</Text>
+                                </TouchableOpacity>
+
+                                {/* × delete — only when >1 reminder */}
+                                {buffers.length > 1 && (
+                                    <TouchableOpacity
+                                        onPress={() => saveBuffers(buffers.filter((_, i) => i !== idx))}
+                                        hitSlop={{ top: 6, bottom: 6, left: 4, right: 6 }}
+                                        style={styles.chipDelete}
+                                    >
+                                        <X size={9} color="#475569" />
+                                    </TouchableOpacity>
+                                )}
+                            </View>
+                        ))}
+
+                        {/* Add reminder — premium only */}
+                        {buffers.length < 4 && (
                             <TouchableOpacity
-                                style={styles.stepperBtn}
-                                onPress={() => {
-                                    const next = Math.max(0, selectedBuffer - 5);
-                                    setSelectedBuffer(next);
-                                    AsyncStorage.setItem('tahajjud_buffer_minutes', next.toString());
-                                    if (notificationEnabled) { setLastScheduledKey(null); setInternalRefresh(p => p + 1); }
-                                }}
+                                style={[styles.addChipBtn, { borderColor: isPremium ? colors.accent + '44' : 'rgba(255,255,255,0.08)' }]}
+                                onPress={() => isPremium ? saveBuffers([...buffers, 30]) : openPaywall()}
                             >
-                                <Text style={styles.stepperBtnText}>−</Text>
+                                <Plus size={11} color={isPremium ? colors.accent : '#475569'} />
                             </TouchableOpacity>
-                            <View style={styles.stepperValue}>
-                                <Text style={[styles.bufferTabTextActive, { fontSize: 13 }]}>
-                                    {selectedBuffer === 0 ? 'At start' : `${selectedBuffer} min`}
-                                </Text>
-                            </View>
-                            <TouchableOpacity
-                                style={styles.stepperBtn}
-                                onPress={() => {
-                                    const next = Math.min(60, selectedBuffer + 5);
-                                    setSelectedBuffer(next);
-                                    AsyncStorage.setItem('tahajjud_buffer_minutes', next.toString());
-                                    if (notificationEnabled) { setLastScheduledKey(null); setInternalRefresh(p => p + 1); }
-                                }}
-                            >
-                                <Text style={styles.stepperBtnText}>+</Text>
-                            </TouchableOpacity>
-                        </View>
-                    ) : (
-                        // Free: fixed 15 min with upgrade hint
-                        <TouchableOpacity
-                            style={styles.prepRow}
-                            onPress={() => openPaywall()}
-                            activeOpacity={0.7}
-                        >
-                            <View style={[styles.bufferTab, styles.bufferTabActive]}>
-                                <Text style={styles.bufferTabTextActive}>15 min</Text>
-                            </View>
-                            <View style={[styles.bufferTab, { opacity: 0.35 }]}>
-                                <Lock size={9} color="#64748b" />
-                            </View>
-                            <View style={[styles.bufferTab, { opacity: 0.35 }]}>
-                                <Lock size={9} color="#64748b" />
-                            </View>
-                            <View style={[styles.bufferTab, { opacity: 0.35 }]}>
-                                <Lock size={9} color="#64748b" />
-                            </View>
-                        </TouchableOpacity>
-                    )}
+                        )}
+                    </View>
                 </View>
             </View>
 
@@ -597,6 +649,74 @@ export function NightCalculator({ onNightCalcReady, refreshKey }: { onNightCalcR
                     </View>
                 );
             })()}
+
+            {/* In-app buffer time modal */}
+            <Modal
+                animationType="fade"
+                transparent
+                visible={showBufferModal}
+                onRequestClose={() => setShowBufferModal(false)}
+            >
+                <KeyboardAvoidingView
+                    behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+                    style={styles.bufferModalOverlay}
+                >
+                    <View style={styles.bufferModalBox}>
+                        <Text style={[styles.bufferModalTitle, { color: colors.primaryText }]}>Set Reminder</Text>
+                        <Text style={[styles.bufferModalSub, { color: colors.secondaryText }]}>Minutes before Tahajjud begins</Text>
+
+                        <View style={styles.bufferPresetRow}>
+                            {[0, 5, 10, 15, 20, 30].map(mins => (
+                                <TouchableOpacity
+                                    key={mins}
+                                    style={[
+                                        styles.bufferPresetBtn,
+                                        parseInt(bufferInput) === mins && { backgroundColor: colors.accent + '22', borderColor: colors.accent + '66' },
+                                    ]}
+                                    onPress={() => setBufferInput(mins.toString())}
+                                >
+                                    <Text style={[styles.bufferPresetText, { color: parseInt(bufferInput) === mins ? colors.accent : '#94a3b8' }]}>
+                                        {mins === 0 ? 'At start' : `${mins}m`}
+                                    </Text>
+                                </TouchableOpacity>
+                            ))}
+                        </View>
+
+                        <TextInput
+                            style={[styles.bufferInput, { color: colors.primaryText, borderColor: colors.accent + '44' }]}
+                            value={bufferInput}
+                            onChangeText={setBufferInput}
+                            keyboardType="number-pad"
+                            placeholder="Custom (e.g. 45)"
+                            placeholderTextColor="#475569"
+                            selectTextOnFocus
+                        />
+
+                        <View style={styles.bufferModalActions}>
+                            <TouchableOpacity
+                                style={[styles.bufferModalBtn, { backgroundColor: 'rgba(255,255,255,0.06)' }]}
+                                onPress={() => setShowBufferModal(false)}
+                            >
+                                <Text style={{ color: '#94a3b8', fontWeight: '700', fontSize: 15 }}>Cancel</Text>
+                            </TouchableOpacity>
+                            <TouchableOpacity
+                                style={[styles.bufferModalBtn, { backgroundColor: colors.accent }]}
+                                onPress={() => {
+                                    const val = parseInt(bufferInput, 10);
+                                    if (!isNaN(val) && val >= 0 && val <= 240 && editingBufferIdx !== null) {
+                                        const next = [...buffers];
+                                        next[editingBufferIdx] = val;
+                                        saveBuffers(next);
+                                    }
+                                    setShowBufferModal(false);
+                                }}
+                            >
+                                <Text style={{ color: '#020617', fontWeight: '800', fontSize: 15 }}>Save</Text>
+                            </TouchableOpacity>
+                        </View>
+                    </View>
+                </KeyboardAvoidingView>
+            </Modal>
         </View>
     );
 }
@@ -616,7 +736,48 @@ const styles = StyleSheet.create({
     pulseDot: { width: 5, height: 5, borderRadius: 2.5, backgroundColor: '#475569' },
     pulseDotActive: { backgroundColor: '#f8fafc' },
     statusText: { fontSize: 10, color: '#cbd5e1', fontWeight: '700' },
-    actionColumn: { alignItems: 'flex-end', gap: 8 },
+    actionColumn: { alignItems: 'flex-end', gap: 6 },
+    buffersRow: {
+        flexDirection: 'row',
+        flexWrap: 'wrap',
+        justifyContent: 'flex-end',
+        gap: 5,
+        maxWidth: 200,
+    },
+    bufferChip: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 4,
+        paddingHorizontal: 8,
+        paddingVertical: 5,
+        borderRadius: 10,
+        borderWidth: 1,
+        backgroundColor: 'rgba(255,255,255,0.05)',
+    },
+    chipStepper: {
+        color: '#94a3b8',
+        fontSize: 14,
+        fontWeight: '300',
+        lineHeight: 16,
+    },
+    chipValue: {
+        fontSize: 11,
+        fontWeight: '800',
+        minWidth: 24,
+        textAlign: 'center',
+    },
+    chipDelete: {
+        marginLeft: 2,
+    },
+    addChipBtn: {
+        width: 30,
+        height: 30,
+        borderRadius: 10,
+        borderWidth: 1,
+        backgroundColor: 'rgba(255,255,255,0.05)',
+        alignItems: 'center',
+        justifyContent: 'center',
+    },
     alarmButton: {
         backgroundColor: 'rgba(255, 255, 255, 0.05)',
         paddingVertical: 8,
@@ -736,5 +897,68 @@ const styles = StyleSheet.create({
         color: '#fbbf24',
         textTransform: 'uppercase',
         letterSpacing: 0.5,
+    },
+    bufferModalOverlay: {
+        flex: 1,
+        justifyContent: 'center',
+        alignItems: 'center',
+        backgroundColor: 'rgba(0,0,0,0.65)',
+        padding: 24,
+    },
+    bufferModalBox: {
+        width: '100%',
+        backgroundColor: '#0f172a',
+        borderRadius: 24,
+        padding: 24,
+        borderWidth: 1,
+        borderColor: 'rgba(255,255,255,0.08)',
+        gap: 16,
+    },
+    bufferModalTitle: {
+        fontSize: 20,
+        fontWeight: '900',
+    },
+    bufferModalSub: {
+        fontSize: 13,
+        fontWeight: '500',
+        marginTop: -10,
+    },
+    bufferPresetRow: {
+        flexDirection: 'row',
+        flexWrap: 'wrap',
+        gap: 8,
+    },
+    bufferPresetBtn: {
+        paddingHorizontal: 14,
+        paddingVertical: 9,
+        borderRadius: 12,
+        borderWidth: 1,
+        borderColor: 'rgba(255,255,255,0.10)',
+        backgroundColor: 'rgba(255,255,255,0.04)',
+    },
+    bufferPresetText: {
+        fontSize: 13,
+        fontWeight: '700',
+    },
+    bufferInput: {
+        height: 48,
+        borderWidth: 1,
+        borderRadius: 14,
+        paddingHorizontal: 16,
+        fontSize: 18,
+        fontWeight: '700',
+        backgroundColor: 'rgba(255,255,255,0.04)',
+        textAlign: 'center',
+    },
+    bufferModalActions: {
+        flexDirection: 'row',
+        gap: 10,
+    },
+    bufferModalBtn: {
+        flex: 1,
+        height: 48,
+        borderRadius: 14,
+        alignItems: 'center',
+        justifyContent: 'center',
     },
 });

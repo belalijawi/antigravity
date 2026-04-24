@@ -1,7 +1,9 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import { View, Text, ScrollView, TextInput, TouchableOpacity, StyleSheet, FlatList, Alert, Modal, KeyboardAvoidingView, Platform, ScrollView as RNScrollView, ActivityIndicator } from 'react-native';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import { View, Text, ScrollView, TextInput, TouchableOpacity, StyleSheet, FlatList, Alert, Modal, KeyboardAvoidingView, Platform, ScrollView as RNScrollView, ActivityIndicator, DeviceEventEmitter } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Search, Heart, Volume2, Square, Plus, X, Trash2, Mail, PenTool, Sprout, Lock } from 'lucide-react-native';
+import { Search, Heart, Volume2, Square, Plus, X, Trash2, Mail, PenTool, Sprout, Lock, Moon, BookHeart } from 'lucide-react-native';
+import { TahajjudJournalHistory } from './TahajjudJournalHistory';
+import { TahajjudJournal, STATE_OPTIONS, JournalEntry } from '../utils/tahajjudJournal';
 import { duaDatabase, categories, Dua } from '../data/duas';
 import { getBookmarkedDuas, toggleBookmark } from '../utils/bookmarks';
 import { getPersonalDuas, savePersonalDua, deletePersonalDua, PersonalDua } from '../utils/personalDuas';
@@ -24,19 +26,30 @@ interface DuaCardProps {
     isBookmarked?: boolean;
     onToggleBookmark?: (duaId: string) => void;
     isPlaying?: boolean;
+    activeArabicWord?: number;
     onPlay?: () => void;
     onDelete?: () => void;
 }
 
 // Memoized DuaCard to prevent unnecessary re-renders
-const DuaCard = React.memo(({ dua, isBookmarked, onToggleBookmark, isPlaying, onPlay, onDelete }: DuaCardProps) => {
-    const { colors } = useTheme();
+const DuaCard = React.memo(({ dua, isBookmarked, onToggleBookmark, isPlaying, activeArabicWord = -1, onPlay, onDelete }: DuaCardProps) => {
+    const { colors, cardBg, blurIntensity } = useTheme();
+
+    // Derive translation word index proportionally from arabic word position
+    const arabicWords = dua.arabic ? dua.arabic.split(' ') : [];
+    const translationWords = dua.translation ? dua.translation.split(' ') : [];
+    const activeTranslationWord = activeArabicWord >= 0 && arabicWords.length > 0
+        ? Math.min(
+            Math.floor((activeArabicWord / arabicWords.length) * translationWords.length),
+            translationWords.length - 1
+          )
+        : -1;
     return (
         <Animated.View
             entering={FadeInDown.duration(600)}
             style={styles.duaCard}
         >
-            <BlurView intensity={15} tint="dark" style={StyleSheet.absoluteFill} />
+            <BlurView intensity={Math.round(15 * blurIntensity)} tint="dark" style={[StyleSheet.absoluteFill, { backgroundColor: cardBg }]} />
             <LinearGradient
                 colors={['rgba(255, 255, 255, 0.05)', 'transparent']}
                 style={StyleSheet.absoluteFill}
@@ -88,15 +101,33 @@ const DuaCard = React.memo(({ dua, isBookmarked, onToggleBookmark, isPlaying, on
 
                 <Text style={styles.duaTitle}>{dua.title}</Text>
 
-                {dua.category === 'Personal' && dua.translation ? (
+                {dua.category === 'Personal' ? (
                     <View style={styles.letterContentContainer}>
-                        <Text style={styles.letterText}>{dua.translation}</Text>
+                        {dua.translation ? (
+                            <Text style={styles.letterText} numberOfLines={4}>{dua.translation}</Text>
+                        ) : (
+                            <Text style={[styles.letterText, { color: '#475569', fontStyle: 'italic' }]}>No content</Text>
+                        )}
                     </View>
                 ) : (
                     <>
                         {dua.arabic ? (
                             <View style={styles.arabicContainer}>
-                                <Text style={styles.arabicText}>{dua.arabic}</Text>
+                                {activeArabicWord >= 0 ? (
+                                    <Text style={[styles.arabicText, { textAlign: 'right' }]}>
+                                        {arabicWords.map((word, wi) => (
+                                            <Text key={wi} style={
+                                                wi === activeArabicWord
+                                                    ? { color: '#22d3ee', fontWeight: '800' }
+                                                    : { color: '#ffffff' }
+                                            }>
+                                                {word}{wi < arabicWords.length - 1 ? ' ' : ''}
+                                            </Text>
+                                        ))}
+                                    </Text>
+                                ) : (
+                                    <Text style={styles.arabicText}>{dua.arabic}</Text>
+                                )}
                             </View>
                         ) : null}
 
@@ -110,7 +141,21 @@ const DuaCard = React.memo(({ dua, isBookmarked, onToggleBookmark, isPlaying, on
                         {dua.translation ? (
                             <View style={styles.translationContainer}>
                                 <Text style={[styles.translationLabel, { color: colors.accent }]}>Translation</Text>
-                                <Text style={[styles.translationText, { color: '#f8fafc' }]}>{dua.translation}</Text>
+                                {activeTranslationWord >= 0 ? (
+                                    <Text style={styles.translationText}>
+                                        {translationWords.map((word, wi) => (
+                                            <Text key={wi} style={
+                                                wi === activeTranslationWord
+                                                    ? { color: '#67e8f9', fontWeight: '800' }
+                                                    : { color: '#f8fafc' }
+                                            }>
+                                                {word}{wi < translationWords.length - 1 ? ' ' : ''}
+                                            </Text>
+                                        ))}
+                                    </Text>
+                                ) : (
+                                    <Text style={[styles.translationText, { color: '#f8fafc' }]}>{dua.translation}</Text>
+                                )}
                             </View>
                         ) : null}
                     </>
@@ -127,6 +172,7 @@ const DuaCard = React.memo(({ dua, isBookmarked, onToggleBookmark, isPlaying, on
     return (
         prevProps.isBookmarked === nextProps.isBookmarked &&
         prevProps.isPlaying === nextProps.isPlaying &&
+        prevProps.activeArabicWord === nextProps.activeArabicWord &&
         prevProps.dua.id === nextProps.dua.id
     );
 });
@@ -142,12 +188,29 @@ export function DuasTab() {
     const [bookmarkedIds, setBookmarkedIds] = useState<string[]>([]);
     const [playingDuaId, setPlayingDuaId] = useState<string | null>(null);
     const [voiceIdentifier, setVoiceIdentifier] = useState<string | null>(null);
+    const [activeArabicWord, setActiveArabicWord] = useState(-1);
+    const wordTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+    const flatListRef = useRef<FlatList>(null);
+
+    useEffect(() => {
+        const sub = DeviceEventEmitter.addListener('scrollToTop', (tab: string) => {
+            if (tab === 'Duas') flatListRef.current?.scrollToOffset({ offset: 0, animated: true });
+        });
+        return () => sub.remove();
+    }, []);
+
+    const clearWordTimer = useCallback(() => {
+        if (wordTimerRef.current) { clearTimeout(wordTimerRef.current); wordTimerRef.current = null; }
+        setActiveArabicWord(-1);
+    }, []);
 
     // Personal Dua State
     const [activeTab, setActiveTab] = useState<'library' | 'personal'>('library');
     const [isLocked, setIsLocked] = useState(false);
     const [personalDuas, setPersonalDuas] = useState<PersonalDua[]>([]);
     const [isModalVisible, setIsModalVisible] = useState(false);
+    const [journalEntries, setJournalEntries] = useState<JournalEntry[]>([]);
+    const [showJournalHistory, setShowJournalHistory] = useState(false);
 
     // Form State
     const [newDuaTitle, setNewDuaTitle] = useState('');
@@ -164,6 +227,7 @@ export function DuasTab() {
         checkLockStatus();
         return () => {
             Speech.stop();
+            clearWordTimer();
         };
     }, []);
 
@@ -180,8 +244,12 @@ export function DuasTab() {
                     promptMessage: 'Access your private letters',
                     cancelLabel: 'Cancel',
                 });
-
-                if (!success) return; // Stay on library
+                if (!success) return;
+            }
+            // Load journal entries for premium users
+            if (isPremium) {
+                const entries = await TahajjudJournal.getAll();
+                setJournalEntries(entries);
             }
         }
         setActiveTab(tab);
@@ -329,53 +397,147 @@ export function DuasTab() {
 
     const handlePlayDua = useCallback(async (dua: Dua) => {
         try {
-            // If tapping the same card that is already playing, stop it.
             if (playingDuaId === dua.id) {
                 Speech.stop();
                 setPlayingDuaId(null);
+                clearWordTimer();
                 return;
             }
 
-            // If switching to a new card, stop previous immediately
             Speech.stop();
+            clearWordTimer();
             setPlayingDuaId(dua.id);
 
-            // Small delay to ensure the engine is ready
-            setTimeout(() => {
-                const options: Speech.SpeechOptions = {
-                    rate: 0.85, // Slower for more solemn recitation
-                    pitch: 1.0, // Natural pitch
-                    onDone: () => setPlayingDuaId(null),
-                    onStopped: () => setPlayingDuaId(null),
-                    onError: (e) => {
-                        console.log('Speech error:', e);
-                        setPlayingDuaId(null);
-                    }
-                };
+            const words = dua.arabic ? dua.arabic.split(' ') : [];
+            const wordDurations = words.map(w => Math.max(220, (280 + w.length * 30) / 0.85));
 
-                // Only set voice/language if we are sure we have an Arabic voice
-                if (voiceIdentifier) {
-                    options.voice = voiceIdentifier;
-                    options.language = 'ar';
-                } else {
-                    // Fallback to system default (likely English on Simulator)
-                    console.log('[Audio] Using system default voice');
+            const options: Speech.SpeechOptions = {
+                rate: 0.85,
+                pitch: 1.0,
+                onStart: () => {
+                    // Start word timer only when audio actually begins
+                    let current = 0;
+                    setActiveArabicWord(0);
+                    const scheduleNext = () => {
+                        if (current >= words.length - 1) return;
+                        wordTimerRef.current = setTimeout(() => {
+                            current++;
+                            setActiveArabicWord(current);
+                            scheduleNext();
+                        }, wordDurations[current]);
+                    };
+                    scheduleNext();
+                },
+                onDone: () => { setPlayingDuaId(null); clearWordTimer(); },
+                onStopped: () => { setPlayingDuaId(null); clearWordTimer(); },
+                onError: (e) => {
+                    console.log('Speech error:', e);
+                    setPlayingDuaId(null);
+                    clearWordTimer();
                 }
+            };
 
-                Speech.speak(dua.arabic, options);
-            }, 100);
+            if (voiceIdentifier) {
+                options.voice = voiceIdentifier;
+                options.language = 'ar';
+            }
+
+            Speech.speak(dua.arabic, options);
 
         } catch (error) {
             console.error('Playback failed', error);
             setPlayingDuaId(null);
+            clearWordTimer();
             Alert.alert('Error', 'Unable to play audio.');
         }
-    }, [playingDuaId, voiceIdentifier]);
+    }, [playingDuaId, voiceIdentifier, clearWordTimer]);
 
     const filteredDuas = useMemo(() => {
-        return duaDatabase.filter(dua => {
+        // Synonym / related-topic map
+        const SYNONYMS: Record<string, string[]> = {
+            money: ['wealth', 'rizq', 'provision', 'income', 'finance', 'rich', 'poor', 'poverty', 'halal', 'earning'],
+            rich: ['wealth', 'rizq', 'provision', 'money', 'income'],
+            poor: ['poverty', 'wealth', 'rizq', 'money', 'need'],
+            job: ['work', 'rizq', 'provision', 'wealth', 'income', 'success', 'career'],
+            work: ['job', 'rizq', 'provision', 'success', 'career'],
+            stress: ['anxiety', 'worry', 'fear', 'peace', 'calm', 'depression', 'mental'],
+            anxiety: ['stress', 'worry', 'fear', 'peace', 'calm', 'depression'],
+            sad: ['grief', 'sorrow', 'depression', 'anxiety', 'loss', 'heartbreak'],
+            depression: ['anxiety', 'stress', 'sad', 'grief', 'peace', 'mental'],
+            worry: ['anxiety', 'stress', 'fear', 'peace', 'trust', 'tawakkul'],
+            fear: ['anxiety', 'worry', 'protection', 'peace', 'trust'],
+            sick: ['health', 'illness', 'healing', 'shifa', 'disease', 'cure'],
+            illness: ['sick', 'health', 'healing', 'shifa', 'disease', 'cure'],
+            heal: ['health', 'sick', 'illness', 'shifa', 'cure'],
+            health: ['sick', 'healing', 'shifa', 'illness', 'disease'],
+            shifa: ['health', 'healing', 'sick', 'illness'],
+            wife: ['marriage', 'spouse', 'family', 'nikah', 'husband'],
+            husband: ['marriage', 'spouse', 'family', 'nikah', 'wife'],
+            marriage: ['spouse', 'wife', 'husband', 'family', 'nikah', 'wedding'],
+            nikah: ['marriage', 'spouse', 'family'],
+            kids: ['children', 'family', 'child', 'baby', 'offspring'],
+            children: ['family', 'kids', 'child', 'offspring', 'baby'],
+            child: ['children', 'family', 'kids', 'offspring'],
+            family: ['children', 'wife', 'husband', 'parents', 'marriage'],
+            parents: ['family', 'mother', 'father', 'forgiveness'],
+            mum: ['parents', 'mother', 'family'],
+            dad: ['parents', 'father', 'family'],
+            mother: ['parents', 'family', 'mum'],
+            father: ['parents', 'family', 'dad'],
+            sleep: ['night', 'rest', 'bedtime', 'daily routine'],
+            eat: ['food', 'meal', 'daily routine', 'blessing'],
+            food: ['eat', 'meal', 'daily routine', 'provision', 'rizq'],
+            travel: ['journey', 'trip', 'vehicle', 'road'],
+            journey: ['travel', 'trip', 'vehicle'],
+            forgive: ['forgiveness', 'sin', 'repentance', 'tawbah', 'mercy'],
+            sin: ['forgiveness', 'repentance', 'tawbah', 'guilt', 'regret'],
+            repent: ['repentance', 'tawbah', 'forgiveness', 'sin'],
+            repentance: ['tawbah', 'forgiveness', 'sin', 'regret'],
+            tawbah: ['repentance', 'forgiveness', 'sin'],
+            mercy: ['forgiveness', 'rahma', 'kindness'],
+            guidance: ['hidayah', 'right path', 'guide', 'direction'],
+            hidayah: ['guidance', 'right path'],
+            exam: ['study', 'knowledge', 'education', 'success', 'school'],
+            study: ['knowledge', 'education', 'exam', 'success'],
+            school: ['education', 'knowledge', 'study', 'exam'],
+            education: ['knowledge', 'study', 'school', 'exam', 'success'],
+            protection: ['evil eye', 'shaytan', 'devil', 'harm', 'safety', 'ruqyah'],
+            'evil eye': ['protection', 'envy', 'hasad', 'harm'],
+            envy: ['evil eye', 'hasad', 'protection'],
+            hasad: ['evil eye', 'envy', 'protection'],
+            jannah: ['paradise', 'heaven', 'afterlife', 'hereafter'],
+            paradise: ['jannah', 'heaven', 'afterlife', 'hereafter'],
+            heaven: ['jannah', 'paradise', 'afterlife'],
+            ummah: ['muslim', 'community', 'palestinians', 'oppressed'],
+            palestine: ['ummah', 'oppressed', 'muslim', 'war'],
+            morning: ['morning & evening', 'daily', 'adhkar', 'wake up'],
+            evening: ['morning & evening', 'daily', 'adhkar', 'night'],
+            adhkar: ['morning & evening', 'daily', 'dhikr', 'remembrance'],
+            dhikr: ['adhkar', 'remembrance', 'morning & evening'],
+            prayer: ['salah', 'namaz', 'fajr', 'dhuhr', 'asr', 'maghrib', 'isha'],
+            salah: ['prayer', 'namaz', 'worship'],
+            namaz: ['salah', 'prayer', 'worship'],
+            ramadan: ['fasting', 'iftar', 'suhoor', 'laylatul qadr'],
+            fasting: ['ramadan', 'fast', 'iftar', 'suhoor'],
+            dua: ['supplication', 'prayer', 'asking allah'],
+            supplication: ['dua', 'prayer', 'asking'],
+        };
+
+        // Expand search query with synonyms
+        const getSearchTerms = (q: string): string[] => {
+            const terms = [q];
+            const synonymList = SYNONYMS[q];
+            if (synonymList) terms.push(...synonymList);
+            // Also check if q is a value in any synonym list
+            Object.entries(SYNONYMS).forEach(([key, vals]) => {
+                if (vals.includes(q) && !terms.includes(key)) terms.push(key);
+            });
+            return terms;
+        };
+
+        const results = duaDatabase.filter(dua => {
             // Filter by bookmarked
-            if (selectedCategory === 'Bookmarked') {
+            if (selectedCategory === 'Liked') {
                 if (!bookmarkedIds.includes(dua.id)) return false;
             } else if (selectedCategory !== 'All') {
                 if (dua.category !== selectedCategory) return false;
@@ -383,20 +545,33 @@ export function DuasTab() {
 
             // Filter by search
             if (searchQuery) {
-                const query = searchQuery.toLowerCase();
-                return (
-                    dua.title.toLowerCase().includes(query) ||
-                    dua.category.toLowerCase().includes(query) ||
-                    dua.translation.toLowerCase().includes(query)
-                );
+                const query = searchQuery.toLowerCase().trim();
+                const terms = getSearchTerms(query);
+                const haystack = [dua.title, dua.category, dua.transliteration, dua.translation].join(' ').toLowerCase();
+                return terms.some(term => haystack.includes(term));
             }
 
             return true;
         });
+
+        if (!searchQuery) return results;
+
+        // Sort by relevance: direct title match first, then synonym matches
+        const q = searchQuery.toLowerCase().trim();
+        return results.sort((a, b) => {
+            const score = (dua: typeof a) => {
+                if (dua.title.toLowerCase().startsWith(q)) return 0;
+                if (dua.title.toLowerCase().includes(q)) return 1;
+                if (dua.transliteration.toLowerCase().includes(q)) return 2;
+                if (dua.translation.toLowerCase().includes(q)) return 3;
+                return 4; // synonym match
+            };
+            return score(a) - score(b);
+        });
     }, [selectedCategory, searchQuery, bookmarkedIds]);
 
     // Add Bookmarked to categories
-    const allCategories = useMemo(() => ['All', 'Bookmarked', ...categories.slice(1)], []);
+    const allCategories = useMemo(() => ['All', 'Liked', ...categories.slice(1)], []);
 
     const renderDuaItem = useCallback(({ item }: { item: Dua }) => (
         <DuaCard
@@ -404,34 +579,37 @@ export function DuasTab() {
             isBookmarked={bookmarkedIds.includes(item.id)}
             onToggleBookmark={handleToggleBookmark}
             isPlaying={playingDuaId === item.id}
+            activeArabicWord={playingDuaId === item.id ? activeArabicWord : -1}
             onPlay={() => handlePlayDua(item)}
         />
-    ), [bookmarkedIds, playingDuaId, handleToggleBookmark, handlePlayDua]);
+    ), [bookmarkedIds, playingDuaId, activeArabicWord, handleToggleBookmark, handlePlayDua]);
 
     const renderPersonalDuaItem = useCallback(({ item }: { item: PersonalDua }) => {
-        const adaptedDua: Dua = {
-            id: item.id,
-            title: item.title,
-            arabic: item.arabic || '',
-            translation: item.translation || '',
-            transliteration: item.transliteration || '',
-            source: 'My Journal',
-            category: 'Personal'
-        };
-
+        const date = new Date(item.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+        const wordCount = item.translation ? item.translation.trim().split(/\s+/).length : 0;
         return (
-            <DuaCard
-                dua={adaptedDua}
-                onDelete={() => handleDeleteDua(item.id)}
-            />
+            <View style={[styles.letterCard, { borderColor: colors.accent + '25', backgroundColor: colors.accent + '08' }]}>
+                <View style={styles.letterCardHeader}>
+                    <View style={{ flex: 1 }}>
+                        <Text style={[styles.letterCardTitle, { color: colors.primaryText }]} numberOfLines={1}>{item.title}</Text>
+                        <Text style={[styles.letterCardMeta, { color: colors.secondaryText }]}>{date} · {wordCount} words</Text>
+                    </View>
+                    <TouchableOpacity onPress={() => handleDeleteDua(item.id)} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+                        <Trash2 size={16} color="#ef4444" />
+                    </TouchableOpacity>
+                </View>
+                {item.translation ? (
+                    <Text style={[styles.letterCardPreview, { color: colors.secondaryText }]} numberOfLines={3}>{item.translation}</Text>
+                ) : null}
+            </View>
         );
-    }, [handleDeleteDua]);
+    }, [handleDeleteDua, colors]);
 
     const renderEmptyState = () => (
         <View style={styles.emptyState}>
             <Text style={styles.emptyText}>
-                {selectedCategory === 'Bookmarked'
-                    ? 'No bookmarked duas yet. Tap the heart icon to save your favorites!'
+                {selectedCategory === 'Liked'
+                    ? 'No liked duas yet. Tap the heart icon to save your favourites!'
                     : 'No duas found'}
             </Text>
         </View>
@@ -461,6 +639,7 @@ export function DuasTab() {
 
                 {activeTab === 'library' ? (
                     <FlatList
+                        ref={flatListRef}
                         style={{ flex: 1 }}
                         data={filteredDuas}
                         renderItem={renderDuaItem}
@@ -516,6 +695,27 @@ export function DuasTab() {
                     />
                 ) : (
                     <View style={{ flex: 1 }}>
+                        {/* Premium journal section */}
+                        {isPremium && (
+                            <TouchableOpacity
+                                onPress={() => setShowJournalHistory(true)}
+                                style={styles.journalBanner}
+                                activeOpacity={0.8}
+                            >
+                                <View style={[styles.journalBannerIcon, { backgroundColor: colors.accent + '18', borderColor: colors.accent + '33' }]}>
+                                    <Moon size={16} color={colors.accent} />
+                                </View>
+                                <View style={{ flex: 1 }}>
+                                    <Text style={styles.journalBannerTitle}>Night Journal</Text>
+                                    <Text style={styles.journalBannerSub}>
+                                        {journalEntries.length > 0
+                                            ? `${journalEntries.length} night${journalEntries.length !== 1 ? 's' : ''} logged`
+                                            : 'Reflects saved after Tahajjud'}
+                                    </Text>
+                                </View>
+                                <BookHeart size={16} color={colors.accent} />
+                            </TouchableOpacity>
+                        )}
                         <FlatList
                             style={{ flex: 1 }}
                             data={personalDuas}
@@ -525,7 +725,7 @@ export function DuasTab() {
                             ListEmptyComponent={() => (
                                 <View style={styles.emptyState}>
                                     <Text style={styles.emptyText}>Your heart's journey is a private conversation.</Text>
-                                    <Text style={styles.emptySubtext}>Tap the ✉️ icon to write your first letter to Allah.</Text>
+                                    <Text style={styles.emptySubtext}>Tap the ✏️ icon to write your first letter to Allah.</Text>
                                 </View>
                             )}
                             showsVerticalScrollIndicator={false}
@@ -534,7 +734,7 @@ export function DuasTab() {
                             style={[styles.fab, { backgroundColor: colors.accent, shadowColor: colors.shadow }]}
                             onPress={() => setIsModalVisible(true)}
                         >
-                            <Mail color="#020617" size={24} />
+                            <PenTool color="#020617" size={22} />
                             {!isPremium && (
                                 <View style={styles.fabBadge}>
                                     <Text style={styles.fabBadgeText}>
@@ -546,70 +746,76 @@ export function DuasTab() {
                     </View>
                 )}
 
+                <TahajjudJournalHistory
+                    visible={showJournalHistory}
+                    onClose={() => setShowJournalHistory(false)}
+                />
+
                 {/* Add Dua Modal */}
                 <Modal
                     visible={isModalVisible}
                     animationType="slide"
-                    transparent={true}
+                    presentationStyle="pageSheet"
                     onRequestClose={() => setIsModalVisible(false)}
                 >
                     <KeyboardAvoidingView
                         behavior={Platform.OS === "ios" ? "padding" : "height"}
-                        style={styles.modalContainer}
+                        style={styles.letterModal}
                     >
-                        <View style={styles.modalContent}>
-                            <View style={styles.modalHeader}>
-                                <View>
-                                    <Text style={styles.modalTitle}>Tahajjud Letter</Text>
-                                    <Text style={styles.modalSubtitle}>Write freely to your Lord...</Text>
-                                </View>
-                                <TouchableOpacity onPress={() => setIsModalVisible(false)}>
-                                    <X color="#94a3b8" size={24} />
-                                </TouchableOpacity>
+                        {/* Top bar */}
+                        <View style={styles.letterModalTopBar}>
+                            <TouchableOpacity onPress={() => setIsModalVisible(false)} style={styles.letterModalCancel}>
+                                <Text style={styles.letterModalCancelText}>Cancel</Text>
+                            </TouchableOpacity>
+                            <View style={styles.letterModalLabelWrap}>
+                                <PenTool size={11} color={colors.accent} />
+                                <Text style={[styles.letterModalLabel, { color: colors.accent }]}>LETTER TO ALLAH</Text>
                             </View>
-
-                            <RNScrollView
-                                style={styles.formScrollView}
-                                showsVerticalScrollIndicator={false}
-                            >
-                                <View style={styles.letterWritingArea}>
-                                    <TextInput
-                                        style={[styles.input, styles.letterTitleInput]}
-                                        placeholder="Optional Title (e.g. For my parents)"
-                                        placeholderTextColor="#64748b"
-                                        value={newDuaTitle}
-                                        onChangeText={setNewDuaTitle}
-                                    />
-
-                                    <View style={styles.divider} />
-
-                                    <TextInput
-                                        style={[styles.input, styles.letterTextArea]}
-                                        placeholder="What is on your heart tonight? Pour it all out here... Allah is listening."
-                                        placeholderTextColor="#475569"
-                                        value={newDuaTranslation}
-                                        onChangeText={setNewDuaTranslation}
-                                        multiline
-                                        autoFocus
-                                    />
-                                </View>
-
-                                {/* Hidden Advanced Options Toggle */}
-                                <TouchableOpacity
-                                    style={styles.advancedToggle}
-                                    onPress={() => Alert.alert("Tip", "You can just write in English/your language. Allah understands all hearts.")}
-                                >
-                                    <Text style={styles.advancedToggleText}>Need to add Arabic or Notes?</Text>
-                                </TouchableOpacity>
-                            </RNScrollView>
-
                             <TouchableOpacity
-                                style={[styles.saveButton, { backgroundColor: colors.accent, shadowColor: colors.shadow }]}
                                 onPress={handleSaveDua}
+                                style={[styles.letterModalSendBtn, { backgroundColor: colors.accent }]}
                             >
-                                <Text style={styles.saveButtonText}>Entrust to Allah ✨</Text>
+                                <Text style={styles.letterModalSendText}>Send</Text>
                             </TouchableOpacity>
                         </View>
+
+                        {/* Paper area */}
+                        <RNScrollView
+                            style={styles.letterPaperScroll}
+                            contentContainerStyle={styles.letterPaperContent}
+                            showsVerticalScrollIndicator={false}
+                            keyboardShouldPersistTaps="handled"
+                        >
+                            <Text style={[styles.letterArabicBismillah, { color: colors.accent }]}>بِسْمِ اللَّهِ</Text>
+
+                            <TextInput
+                                style={styles.letterTitleField}
+                                placeholder="Subject (optional)"
+                                placeholderTextColor="#334155"
+                                value={newDuaTitle}
+                                onChangeText={setNewDuaTitle}
+                                returnKeyType="next"
+                            />
+
+                            <View style={styles.letterHRule} />
+
+                            <TextInput
+                                style={styles.letterBodyField}
+                                placeholder={"Ya Allah,\n\nWrite whatever is on your heart…"}
+                                placeholderTextColor="#334155"
+                                value={newDuaTranslation}
+                                onChangeText={setNewDuaTranslation}
+                                multiline
+                                autoFocus
+                                textAlignVertical="top"
+                            />
+
+                            {newDuaTranslation.trim().length > 0 && (
+                                <Text style={[styles.wordCountText, { color: colors.secondaryText, opacity: 0.5 }]}>
+                                    {newDuaTranslation.trim().split(/\s+/).length} words
+                                </Text>
+                            )}
+                        </RNScrollView>
                     </KeyboardAvoidingView>
                 </Modal>
             </View>
@@ -717,6 +923,19 @@ const styles = StyleSheet.create({
         paddingHorizontal: 20,
         paddingBottom: 180,
     },
+    journalBanner: {
+        flexDirection: 'row', alignItems: 'center', gap: 12,
+        marginHorizontal: 16, marginTop: 12, marginBottom: 4,
+        padding: 14, borderRadius: 16, borderWidth: 1,
+        borderColor: 'rgba(255,255,255,0.08)',
+        backgroundColor: 'rgba(255,255,255,0.03)',
+    },
+    journalBannerIcon: {
+        width: 36, height: 36, borderRadius: 18,
+        borderWidth: 1, alignItems: 'center', justifyContent: 'center',
+    },
+    journalBannerTitle: { color: '#f1f5f9', fontSize: 14, fontWeight: '700' },
+    journalBannerSub: { color: '#475569', fontSize: 12, marginTop: 1 },
     emptyState: {
         paddingVertical: 80,
         alignItems: 'center',
@@ -904,86 +1123,121 @@ const styles = StyleSheet.create({
         fontSize: 9,
         fontWeight: '800',
     },
-    modalContainer: {
+    letterModal: {
         flex: 1,
-        justifyContent: 'flex-end',
-        backgroundColor: 'rgba(2, 6, 23, 0.85)',
+        backgroundColor: '#080d1a',
     },
-    modalContent: {
-        backgroundColor: '#0f172a',
-        borderTopLeftRadius: 32,
-        borderTopRightRadius: 32,
-        padding: 32,
-        maxHeight: '90%',
-        borderWidth: 1,
-        borderColor: 'rgba(255, 255, 255, 0.1)',
-    },
-    modalHeader: {
+    letterModalTopBar: {
         flexDirection: 'row',
+        alignItems: 'center',
         justifyContent: 'space-between',
-        alignItems: 'flex-start',
-        marginBottom: 32,
+        paddingHorizontal: 20,
+        paddingTop: 16,
+        paddingBottom: 12,
+        borderBottomWidth: 1,
+        borderBottomColor: 'rgba(255,255,255,0.06)',
     },
-    modalTitle: {
-        fontSize: 28,
-        fontWeight: '900',
-        color: '#ffffff',
-        letterSpacing: -0.5,
+    letterModalCancel: {
+        paddingVertical: 6,
+        paddingHorizontal: 4,
+        minWidth: 60,
     },
-    modalSubtitle: {
+    letterModalCancelText: {
         color: '#64748b',
-        fontSize: 15,
-        marginTop: 4,
+        fontSize: 16,
         fontWeight: '500',
     },
-    formScrollView: {
-        marginBottom: 24,
+    letterModalLabelWrap: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 6,
     },
-    letterWritingArea: {
-        paddingBottom: 40,
-    },
-    letterTitleInput: {
-        fontSize: 24,
+    letterModalLabel: {
+        fontSize: 10,
         fontWeight: '800',
-        color: '#ffffff',
-        marginBottom: 16,
-        padding: 0,
+        letterSpacing: 1.5,
     },
-    divider: {
-        height: 1,
-        backgroundColor: 'rgba(255, 255, 255, 0.05)',
-        marginBottom: 24,
+    letterModalSendBtn: {
+        paddingVertical: 7,
+        paddingHorizontal: 18,
+        borderRadius: 20,
+        minWidth: 60,
+        alignItems: 'center',
     },
-    letterTextArea: {
-        fontSize: 18,
+    letterModalSendText: {
+        color: '#020617',
+        fontSize: 14,
+        fontWeight: '800',
+    },
+    letterPaperScroll: {
+        flex: 1,
+    },
+    letterPaperContent: {
+        paddingHorizontal: 28,
+        paddingTop: 32,
+        paddingBottom: 60,
+    },
+    letterArabicBismillah: {
+        fontSize: 22,
+        textAlign: 'center',
+        marginBottom: 28,
+        fontWeight: '400',
+    },
+    letterTitleField: {
+        fontSize: 22,
+        fontWeight: '700',
         color: '#f8fafc',
-        lineHeight: 28,
+        padding: 0,
+        marginBottom: 12,
+    },
+    letterHRule: {
+        height: 1,
+        backgroundColor: 'rgba(255,255,255,0.06)',
+        marginBottom: 20,
+    },
+    letterBodyField: {
+        fontSize: 17,
+        color: '#e2e8f0',
+        lineHeight: 30,
         minHeight: 300,
         textAlignVertical: 'top',
         padding: 0,
+        fontWeight: '400',
     },
-    saveButton: {
-        paddingVertical: 18,
-        borderRadius: 20,
-        alignItems: 'center',
-        shadowOffset: { width: 0, height: 4 },
-        shadowOpacity: 0.2,
-        shadowRadius: 8,
+    letterCard: {
+        borderRadius: 16,
+        borderWidth: 1,
+        padding: 16,
+        marginHorizontal: 16,
+        marginBottom: 12,
+        gap: 8,
     },
-    saveButtonText: {
-        color: '#020617',
-        fontSize: 18,
-        fontWeight: '900',
-        letterSpacing: 0.2,
+    letterCardHeader: {
+        flexDirection: 'row',
+        alignItems: 'flex-start',
+        gap: 12,
     },
-    advancedToggle: {
-        marginTop: 24,
-        alignItems: 'center',
+    letterCardTitle: {
+        fontSize: 16,
+        fontWeight: '800',
     },
-    advancedToggleText: {
-        color: '#475569',
-        fontSize: 13,
+    letterCardMeta: {
+        fontSize: 11,
         fontWeight: '600',
-        textDecorationLine: 'underline',
-    }
+        marginTop: 2,
+        opacity: 0.7,
+    },
+    letterCardPreview: {
+        fontSize: 14,
+        lineHeight: 20,
+        opacity: 0.8,
+    },
+    wordCountText: {
+        textAlign: 'right',
+        fontSize: 11,
+        color: '#475569',
+        fontWeight: '600',
+        marginTop: 4,
+        marginBottom: 8,
+    },
 });

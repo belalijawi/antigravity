@@ -3,8 +3,8 @@ import { View, Text, StyleSheet, Platform, Animated, ActivityIndicator, Linking 
 import * as Location from 'expo-location';
 import { LinearGradient } from 'expo-linear-gradient';
 import { BlurView } from 'expo-blur';
-import { Compass as CompassIcon, MapPin, AlertTriangle, Smartphone } from 'lucide-react-native';
-import { calculateQibla } from '../utils/qiblaCalculator';
+import { AlertTriangle, Smartphone } from 'lucide-react-native';
+import { calculateQibla, getCompassDirection } from '../utils/qiblaCalculator';
 import { useTheme } from '../context/ThemeContext';
 import { haptic } from '../utils/haptic';
 
@@ -52,8 +52,8 @@ export function QiblaCompass() {
             Animated.spring(rotationAnim, {
                 toValue: finalNeedleTarget,
                 useNativeDriver: true,
-                tension: 10,
-                friction: 10,
+                tension: 50,
+                friction: 8,
             }).start();
 
             // Rose target (relative to phone)
@@ -61,8 +61,8 @@ export function QiblaCompass() {
             Animated.spring(roseAnim, {
                 toValue: roseTarget,
                 useNativeDriver: true,
-                tension: 10,
-                friction: 10,
+                tension: 50,
+                friction: 8,
             }).start();
 
             // Lock Logic
@@ -178,8 +178,8 @@ export function QiblaCompass() {
     };
 
     const rotation = rotationAnim.interpolate({
-        inputRange: [-360, 360],
-        outputRange: ['-360deg', '360deg'],
+        inputRange: [-7200, 7200],
+        outputRange: ['-7200deg', '7200deg'],
     });
 
     if (loading) {
@@ -234,14 +234,6 @@ export function QiblaCompass() {
             <BlurView intensity={20} tint="dark" style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(0,0,0,0.3)', borderRadius: 32 }]} />
 
             <View style={styles.content}>
-                {/* Header */}
-                <View style={styles.header}>
-                    <View style={styles.iconWrapper}>
-                        <CompassIcon size={20} color={colors.primaryText} strokeWidth={2.5} />
-                    </View>
-                    <Text style={[styles.title, { color: colors.accent }]}>Qibla Direction</Text>
-                </View>
-
                 {/* Compass */}
                 <View style={styles.compassContainer}>
                     {/* Guidance Text Overlay */}
@@ -277,8 +269,8 @@ export function QiblaCompass() {
                         {
                             transform: [{
                                 rotate: roseAnim.interpolate({
-                                    inputRange: [-360, 360],
-                                    outputRange: ['-360deg', '360deg']
+                                    inputRange: [-7200, 7200],
+                                    outputRange: ['-7200deg', '7200deg']
                                 })
                             }]
                         }
@@ -347,13 +339,30 @@ export function QiblaCompass() {
                 {/* Info */}
                 <View style={styles.infoContainer}>
                     <View style={styles.infoItem}>
-                        <Text style={[styles.infoLabel, { color: colors.secondaryText }]}>Current Location</Text>
-                        <Text style={[styles.infoValue, { color: colors.primaryText, fontSize: 14 }]}>{cityName || 'Detecting...'}</Text>
+                        <Text style={[styles.infoLabel, { color: colors.secondaryText }]}>From</Text>
+                        <Text style={[styles.infoValue, { color: colors.primaryText, fontSize: 13 }]} numberOfLines={1}>
+                            {cityName || 'Detecting...'}
+                        </Text>
                     </View>
                     <View style={styles.divider} />
                     <View style={styles.infoItem}>
-                        <Text style={[styles.infoLabel, { color: colors.secondaryText }]}>Qibla</Text>
-                        <Text style={[styles.infoValue, { color: colors.primaryText }]}>{qiblaDirection}°</Text>
+                        <Text style={[styles.infoLabel, { color: colors.secondaryText }]}>Direction</Text>
+                        <Text style={[styles.infoValue, { color: colors.primaryText }]}>
+                            {qiblaDirection}°{' '}
+                            <Text style={{ color: colors.accent }}>
+                                {qiblaDirection !== null ? getCompassDirection(qiblaDirection) : ''}
+                            </Text>
+                        </Text>
+                    </View>
+                    <View style={styles.divider} />
+                    <View style={styles.infoItem}>
+                        <Text style={[styles.infoLabel, { color: colors.secondaryText }]}>Distance</Text>
+                        <Text style={[styles.infoValue, { color: colors.primaryText }]}>
+                            {distance !== null ? distance.toLocaleString() : '—'}
+                        </Text>
+                        {distance !== null && (
+                            <Text style={[styles.infoUnit, { color: colors.secondaryText }]}>km</Text>
+                        )}
                     </View>
                 </View>
 
@@ -616,8 +625,15 @@ const styles = StyleSheet.create({
         paddingTop: 12,
     },
     infoItem: {
+        flex: 1,
         alignItems: 'center',
-        gap: 4,
+        gap: 2,
+    },
+    infoUnit: {
+        fontSize: 10,
+        fontWeight: '700',
+        textTransform: 'uppercase',
+        letterSpacing: 0.5,
     },
     infoLabel: {
         fontSize: 11,
@@ -627,7 +643,7 @@ const styles = StyleSheet.create({
         opacity: 0.6,
     },
     infoValue: {
-        fontSize: 18,
+        fontSize: 15,
         fontWeight: '900',
     },
     divider: {

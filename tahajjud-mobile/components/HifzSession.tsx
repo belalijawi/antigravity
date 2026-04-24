@@ -16,11 +16,27 @@ import {
     HIDE_FRACTION, getAllHifzData, recordReview, initAyah, getDueReviewsForSurah,
     getStreakData, recordPracticeDay, getDailyGoal, getTodayProgress, addTodayProgress,
     saveSession, loadSession, clearSession, getHardestAyahs, setAyahHifz,
+    nextIntervalDays, newLevel as computeNewLevel,
 } from '../utils/hifzStorage';
 import { haptic } from '../utils/haptic';
+import { scheduleHifzNotifications } from '../utils/hifzNotifications';
 import Animated, { FadeInDown, FadeInUp } from 'react-native-reanimated';
 
 const AUDIO_CACHE_DIR = FileSystem.documentDirectory + 'hifz_audio/';
+const TRANSLATION_EDITION_KEY = 'hifz_translation_edition_v1';
+
+const TRANSLATION_OPTIONS: { edition: string; label: string; flag: string }[] = [
+    { edition: 'en.sahih',        label: 'English – Sahih Intl',   flag: '🇬🇧' },
+    { edition: 'en.pickthall',    label: 'English – Pickthall',    flag: '🇬🇧' },
+    { edition: 'en.yusufali',     label: 'English – Yusuf Ali',    flag: '🇬🇧' },
+    { edition: 'fr.hamidullah',   label: 'French – Hamidullah',    flag: '🇫🇷' },
+    { edition: 'ur.ahmedali',     label: 'Urdu – Ahmed Ali',       flag: '🇵🇰' },
+    { edition: 'tr.ates',         label: 'Turkish – Ateş',         flag: '🇹🇷' },
+    { edition: 'es.asad',         label: 'Spanish – Asad',         flag: '🇪🇸' },
+    { edition: 'de.aburida',      label: 'German – Abu Rida',      flag: '🇩🇪' },
+    { edition: 'id.indonesian',   label: 'Indonesian',             flag: '🇮🇩' },
+    { edition: 'ru.kuliev',       label: 'Russian – Kuliev',       flag: '🇷🇺' },
+];
 
 interface Props {
     surahNumber: number;
@@ -62,11 +78,11 @@ function buildProgressiveQueue(ayahNumbers: number[]): QueueItem[] {
 }
 
 function levelToColor(level: number, started: boolean): string {
-    if (!started) return 'rgba(255,255,255,0.05)';
-    if (level === 0) return 'rgba(34,211,238,0.2)';
-    if (level <= 2) return 'rgba(239,68,68,0.4)';
-    if (level <= 4) return 'rgba(245,158,11,0.45)';
-    return 'rgba(34,197,94,0.5)';
+    if (!started) return 'rgba(255,255,255,0.04)';
+    if (level === 0) return 'rgba(34,197,94,0.15)';
+    if (level <= 2) return 'rgba(34,197,94,0.32)';
+    if (level <= 4) return 'rgba(34,197,94,0.58)';
+    return 'rgba(34,197,94,0.9)';
 }
 
 const RECITATION_SECS = 30;
@@ -132,6 +148,14 @@ export function HifzSession({ surahNumber, surahName, surahNameTranslation, tota
     // Surah ref for dynamic recitation timer
     const surahRef = useRef<SurahDetail | null>(null);
 
+    // Mastery celebration
+    const [masteryVisible, setMasteryVisible] = useState(false);
+    const [masteredAyahNum, setMasteredAyahNum] = useState<number | null>(null);
+
+    // Auto-play next ayah
+    const [autoPlay, setAutoPlay] = useState(false);
+    const autoPlayRef = useRef(false);
+
     // Practice phase
     const [practicePhase, setPracticePhase] = useState<PracticePhase>('listening');
     const [recitationSecsLeft, setRecitationSecsLeft] = useState(RECITATION_SECS);
@@ -146,8 +170,10 @@ export function HifzSession({ surahNumber, surahName, surahNameTranslation, tota
     const recitationModeRef = useRef(true);
     const [showTranslit, setShowTranslit] = useState(false);
     const [showTranslation, setShowTranslation] = useState(false);
+    const [translationEdition, setTranslationEdition] = useState('en.sahih');
+    const [translationPickerVisible, setTranslationPickerVisible] = useState(false);
 
-    // Translation (English) for each ayah — ayahNumber → text
+    // Translation for each ayah — ayahNumber → text
     const translationMapRef = useRef<Record<number, string>>({});
 
     // Audio
@@ -177,6 +203,7 @@ export function HifzSession({ surahNumber, surahName, surahNameTranslation, tota
     useEffect(() => { recitationModeRef.current = recitationMode; }, [recitationMode]);
     useEffect(() => { surahRef.current = surah; }, [surah]);
     useEffect(() => { recitationTimeSettingRef.current = recitationTimeSetting; }, [recitationTimeSetting]);
+    useEffect(() => { autoPlayRef.current = autoPlay; }, [autoPlay]);
     useEffect(() => {
         if (queue.length > 0 && queuePos < queue.length) {
             currentItemRef.current = queue[queuePos];
@@ -204,15 +231,19 @@ export function HifzSession({ surahNumber, surahName, surahNameTranslation, tota
         };
     }, []);
 
-    const loadData = async () => {
+    const loadData = async (editionOverride?: string) => {
         setLoading(true);
         // Ensure audio cache directory exists
         await FileSystem.makeDirectoryAsync(AUDIO_CACHE_DIR, { intermediates: true }).catch(() => {});
 
+        // Load stored translation edition preference
+        const storedEdition = editionOverride ?? await AsyncStorage.getItem(TRANSLATION_EDITION_KEY).catch(() => null) ?? 'en.sahih';
+        setTranslationEdition(storedEdition);
+
         const [surahData, audioAyahs, translationData, timingData, wordsData, allHifz, streak, goal, progress] = await Promise.all([
             QuranService.getSurah(surahNumber, 'quran-uthmani'),
             QuranService.getAudioRecitation(surahNumber),
-            QuranService.getSurah(surahNumber, 'en.sahih'),
+            QuranService.getSurah(surahNumber, storedEdition),
             QuranTimingService.getSurahAudioData(surahNumber),
             QuranWordService.getSurahWords(surahNumber),
             getAllHifzData(),
@@ -252,6 +283,21 @@ export function HifzSession({ surahNumber, surahName, surahNameTranslation, tota
         const seen = await AsyncStorage.getItem('hifz_guide_seen_v1');
         if (!seen) setGuideVisible(true);
     };
+
+    // ── Translation language ────────────────────────────────────────
+
+    const changeTranslationEdition = useCallback(async (edition: string) => {
+        await AsyncStorage.setItem(TRANSLATION_EDITION_KEY, edition);
+        setTranslationEdition(edition);
+        setTranslationPickerVisible(false);
+        // Re-fetch translations for the current surah
+        try {
+            const data = await QuranService.getSurah(surahNumber, edition);
+            const transMap: Record<number, string> = {};
+            data?.ayahs?.forEach((a: any) => { transMap[a.numberInSurah] = a.text; });
+            translationMapRef.current = transMap;
+        } catch { /* keep existing translations */ }
+    }, [surahNumber]);
 
     // ── Offline-first audio cache ───────────────────────────────────
 
@@ -409,9 +455,8 @@ export function HifzSession({ surahNumber, surahName, surahNameTranslation, tota
                     positionMillis: 0,
                     shouldPlay: true,
                     progressUpdateIntervalMillis: 50,
-                    rate: playbackSpeedRef.current,
-                    shouldCorrectPitch: true,
                 });
+                await preloaded.setRateAsync(playbackSpeedRef.current, true);
                 sound = preloaded;
             } else {
                 // Resolve URI (local cache first, then remote)
@@ -422,10 +467,11 @@ export function HifzSession({ surahNumber, surahName, surahNameTranslation, tota
                 }
                 const result = await Audio.Sound.createAsync(
                     { uri },
-                    { shouldPlay: true, progressUpdateIntervalMillis: 50, rate: playbackSpeedRef.current, shouldCorrectPitch: true },
+                    { shouldPlay: true, progressUpdateIntervalMillis: 50 },
                     onPlaybackStatus
                 );
                 sound = result.sound;
+                await sound.setRateAsync(playbackSpeedRef.current, true);
             }
 
             soundRef.current = sound;
@@ -590,6 +636,7 @@ export function HifzSession({ surahNumber, surahName, surahNameTranslation, tota
         if (!currentItem.isAccumulation) {
             const key = `${surahNumber}:${currentItem.rateIndex + 1}`;
             const prevRecord = hifzData[key] ?? null;
+            const prevLevel = prevRecord?.level ?? 0;
             // Store undo snapshot before mutating
             undoRef.current = {
                 item: currentItem,
@@ -602,6 +649,13 @@ export function HifzSession({ surahNumber, surahName, surahNameTranslation, tota
             await recordReview(surahNumber, currentItem.rateIndex + 1, rating);
             const updatedHifz = await getAllHifzData();
             setHifzData(updatedHifz);
+            // Check for mastery (first time reaching level 5)
+            const newLvl = updatedHifz[key]?.level ?? 0;
+            if (newLvl === 5 && prevLevel < 5) {
+                setMasteredAyahNum(currentItem.rateIndex + 1);
+                setMasteryVisible(true);
+                setTimeout(() => setMasteryVisible(false), 2500);
+            }
         } else {
             // Accumulation — still allow undo of queue position (no storage change)
             undoRef.current = {
@@ -644,10 +698,11 @@ export function HifzSession({ surahNumber, surahName, surahNameTranslation, tota
             setStreakData(updatedStreak);
             setQueue(newQueue);
             queueRef.current = newQueue;
-            // Session complete — discard any saved mid-session state
+            // Session complete — discard any saved mid-session state, reschedule notifications
             await clearSession(surahNumber).catch(() => {});
             setUndoAvailable(false);
             undoRef.current = null;
+            getAllHifzData().then(all => scheduleHifzNotifications(all)).catch(() => {});
             setSessionState('summary');
             return;
         }
@@ -660,6 +715,11 @@ export function HifzSession({ surahNumber, surahName, surahNameTranslation, tota
         setForgotCount(0);
         // Don't clear undoRef here — user may still want to undo on the new item
         setRevealed(false);
+        // Auto-play: start listening to next ayah automatically
+        if (autoPlayRef.current) {
+            const nextItem = newQueue[nextPos];
+            if (nextItem) setTimeout(() => playAyahAudio(nextItem.ayahIndices[0] + 1), 350);
+        }
         setPeekedWords(new Set());
         setPlayingGroupIdx(0);
         playingGroupIdxRef.current = 0;
@@ -762,6 +822,22 @@ export function HifzSession({ surahNumber, surahName, surahNameTranslation, tota
         allEntries.forEach(a => { ayahLevelMap[a.ayahNumber] = { level: a.level }; });
         const goalDone = todayProgress >= dailyGoal;
 
+        // Next review date across all started ayahs
+        const nextReviewDate = allEntries.length > 0
+            ? allEntries.reduce<Date | null>((min, a) => {
+                const d = new Date(a.nextReview);
+                return !min || d < min ? d : min;
+            }, null)
+            : null;
+        const nextReviewText = nextReviewDate
+            ? (() => {
+                const diff = Math.ceil((nextReviewDate.getTime() - Date.now()) / (1000 * 60 * 60 * 24));
+                if (diff <= 0) return 'today';
+                if (diff === 1) return 'tomorrow';
+                return `in ${diff} days`;
+            })()
+            : null;
+
         return (
             <ScrollView contentContainerStyle={styles.setupContainer} showsVerticalScrollIndicator={false}>
                 {/* Streak + daily goal */}
@@ -823,10 +899,10 @@ export function HifzSession({ surahNumber, surahName, surahNameTranslation, tota
                             <>
                                 <View style={styles.heatmapLegend}>
                                     {[
-                                        { color: 'rgba(34,211,238,0.2)', label: 'New' },
-                                        { color: 'rgba(239,68,68,0.4)', label: 'Learning' },
-                                        { color: 'rgba(245,158,11,0.45)', label: 'Strong' },
-                                        { color: 'rgba(34,197,94,0.5)', label: 'Mastered' },
+                                        { color: 'rgba(34,197,94,0.15)', label: 'New' },
+                                        { color: 'rgba(34,197,94,0.32)', label: 'Learning' },
+                                        { color: 'rgba(34,197,94,0.58)', label: 'Strong' },
+                                        { color: 'rgba(34,197,94,0.9)', label: 'Mastered' },
                                     ].map(l => (
                                         <View key={l.label} style={styles.legendItem}>
                                             <View style={[styles.legendDot, { backgroundColor: l.color }]} />
@@ -847,6 +923,17 @@ export function HifzSession({ surahNumber, surahName, surahNameTranslation, tota
                                 </View>
                             </>
                         )}
+                    </Animated.View>
+                )}
+
+                {/* All caught up */}
+                {startedCount > 0 && dueReviews.length === 0 && nextReviewText && (
+                    <Animated.View entering={FadeInDown.duration(500)} style={styles.caughtUpCard}>
+                        <Text style={styles.caughtUpEmoji}>✅</Text>
+                        <View style={{ flex: 1 }}>
+                            <Text style={styles.caughtUpTitle}>All caught up!</Text>
+                            <Text style={styles.caughtUpSub}>Next review {nextReviewText}</Text>
+                        </View>
                     </Animated.View>
                 )}
 
@@ -1014,13 +1101,20 @@ export function HifzSession({ surahNumber, surahName, surahNameTranslation, tota
                                 onValueChange={v => {
                                     setRecitationMode(v);
                                     recitationModeRef.current = v;
-                                    // If toggled off while recitation phase is active, skip to rating
-                                    if (!v && practicePhase === 'reciting') {
-                                        skipRecitation();
-                                    }
+                                    if (!v && practicePhase === 'reciting') skipRecitation();
                                 }}
                                 trackColor={{ false: '#334155', true: colors.accent + '88' }}
                                 thumbColor={recitationMode ? colors.accent : '#94a3b8'}
+                                style={{ transform: [{ scaleX: 0.8 }, { scaleY: 0.8 }] }}
+                            />
+                        </View>
+                        <View style={styles.settingsGroup}>
+                            <Text style={styles.settingsLabel}>AUTO</Text>
+                            <Switch
+                                value={autoPlay}
+                                onValueChange={v => { setAutoPlay(v); autoPlayRef.current = v; }}
+                                trackColor={{ false: '#334155', true: '#22c55e88' }}
+                                thumbColor={autoPlay ? '#22c55e' : '#94a3b8'}
                                 style={{ transform: [{ scaleX: 0.8 }, { scaleY: 0.8 }] }}
                             />
                         </View>
@@ -1050,14 +1144,23 @@ export function HifzSession({ surahNumber, surahName, surahNameTranslation, tota
                             style={[styles.displayToggle, showTranslit && { backgroundColor: '#7c3aed22', borderColor: '#7c3aed66' }]}
                             onPress={() => setShowTranslit(v => !v)}
                         >
-                            <Text style={[styles.displayToggleText, showTranslit && { color: '#a78bfa' }]}>A Translit</Text>
+                            <Text style={[styles.displayToggleText, showTranslit && { color: '#a78bfa' }]}>Transliteration</Text>
                         </TouchableOpacity>
-                        <TouchableOpacity
-                            style={[styles.displayToggle, showTranslation && { backgroundColor: '#0369a122', borderColor: '#0369a166' }]}
-                            onPress={() => setShowTranslation(v => !v)}
-                        >
-                            <Text style={[styles.displayToggleText, showTranslation && { color: '#38bdf8' }]}>EN Translation</Text>
-                        </TouchableOpacity>
+                        <View style={[styles.displayToggle, { flex: 1, flexDirection: 'row', padding: 0, overflow: 'hidden' }, showTranslation && { backgroundColor: '#0369a122', borderColor: '#0369a166' }]}>
+                            <TouchableOpacity
+                                style={{ flex: 1, paddingVertical: 7, alignItems: 'center', justifyContent: 'center' }}
+                                onPress={() => setShowTranslation(v => !v)}
+                            >
+                                <Text style={[styles.displayToggleText, showTranslation && { color: '#38bdf8' }]}>Translation</Text>
+                            </TouchableOpacity>
+                            <View style={{ width: 1, backgroundColor: 'rgba(255,255,255,0.08)' }} />
+                            <TouchableOpacity
+                                style={{ paddingVertical: 7, paddingHorizontal: 10, alignItems: 'center', justifyContent: 'center' }}
+                                onPress={() => setTranslationPickerVisible(true)}
+                            >
+                                <ChevronRight size={14} color={showTranslation ? '#38bdf8' : '#475569'} />
+                            </TouchableOpacity>
+                        </View>
                     </View>
 
                     {/* Level badge */}
@@ -1110,7 +1213,7 @@ export function HifzSession({ surahNumber, surahName, surahNameTranslation, tota
                         const translation = translationMapRef.current[ayahNum] ?? '';
 
                         return (
-                            <View key={ayahIdx}>
+                            <View key={ayahIdx} style={{ flexShrink: 0 }}>
                                 {currentItem.ayahIndices.length > 1 && (
                                     <Text style={[styles.groupAyahLabel, isRateAyah && { color: colors.accent }]}>
                                         Ayah {ayahNum}{isRateAyah ? ' · practice' : ' · context'}
@@ -1122,29 +1225,38 @@ export function HifzSession({ surahNumber, surahName, surahNameTranslation, tota
                                     isPlayingThis && { borderColor: colors.accent + '44' },
                                     hideAll && styles.arabicCardReciting,
                                 ]}>
-                                    <Text style={styles.arabicText}>
+                                    <View style={styles.arabicTextRow}>
                                         {words.map((word, wi) => {
                                             const isHidden = !revealed && wi >= hideFrom;
                                             const isPeeked = isHidden && peekedWords.has(wi);
                                             const isActive = !isHidden && wi === activeWord;
+                                            if (isHidden && !isPeeked) {
+                                                return (
+                                                    <TouchableOpacity
+                                                        key={wi}
+                                                        activeOpacity={0.65}
+                                                        onPress={isRateAyah && !hideAll ? () => handlePeek(wi) : undefined}
+                                                        style={styles.arabicWordHiddenWrap}
+                                                    >
+                                                        <Text style={[styles.arabicWord, { color: 'transparent' }]}>{word}</Text>
+                                                    </TouchableOpacity>
+                                                );
+                                            }
                                             return (
                                                 <Text
                                                     key={wi}
                                                     suppressHighlighting
-                                                    onPress={isHidden && !isPeeked && isRateAyah && !hideAll ? () => handlePeek(wi) : undefined}
                                                     style={[
                                                         styles.arabicWord,
-                                                        isHidden && !isPeeked && styles.arabicWordHidden,
                                                         isPeeked && styles.arabicWordPeeked,
                                                         isActive && styles.arabicWordActive,
                                                     ]}
                                                 >
-                                                    {(isHidden && !isPeeked) ? '\u2581\u2581\u2581' : word}
-                                                    {wi < words.length - 1 ? ' ' : ''}
+                                                    {word}
                                                 </Text>
                                             );
                                         })}
-                                    </Text>
+                                    </View>
 
                                     {/* Transliteration row — mirrors Arabic word hiding */}
                                     {showTranslit && wordList.length > 0 && (
@@ -1194,7 +1306,7 @@ export function HifzSession({ surahNumber, surahName, surahNameTranslation, tota
                     })}
 
                     {hideFraction > 0 && !revealed && !isReciting && (
-                        <Text style={styles.peekHint}>Tap any ▁▁▁ word to peek for 1.5s</Text>
+                        <Text style={styles.peekHint}>Tap covered words to reveal</Text>
                     )}
 
                     {/* Audio controls */}
@@ -1272,18 +1384,27 @@ export function HifzSession({ surahNumber, surahName, surahNameTranslation, tota
                                     : currentItem.isAccumulation ? 'How did the full group feel?' : 'How did you do?'}
                             </Text>
                             <View style={styles.ratingRow}>
-                                {(['forgot', 'hard', 'good', 'easy'] as HifzRating[]).map(r => (
-                                    <TouchableOpacity
-                                        key={r}
-                                        style={[styles.ratingBtn, { borderColor: ratingColor(r) + '55', backgroundColor: ratingColor(r) + '18' }]}
-                                        onPress={() => handleRate(r)}
-                                    >
-                                        <Text style={styles.ratingEmoji}>{ratingEmoji(r)}</Text>
-                                        <Text style={[styles.ratingBtnText, { color: ratingColor(r) }]}>
-                                            {r.charAt(0).toUpperCase() + r.slice(1)}
-                                        </Text>
-                                    </TouchableOpacity>
-                                ))}
+                                {(['forgot', 'hard', 'good', 'easy'] as HifzRating[]).map(r => {
+                                    const days = nextIntervalDays(level, r);
+                                    const nextLvl = computeNewLevel(level, r);
+                                    const lvlDelta = nextLvl - level;
+                                    const intervalLabel = days === 1 ? 'tomorrow' : `${days}d`;
+                                    const levelLabel = lvlDelta < 0 ? `▼ L${nextLvl}` : lvlDelta === 0 ? `L${nextLvl}` : `▲ L${nextLvl}`;
+                                    return (
+                                        <TouchableOpacity
+                                            key={r}
+                                            style={[styles.ratingBtn, { borderColor: ratingColor(r) + '55', backgroundColor: ratingColor(r) + '18' }]}
+                                            onPress={() => handleRate(r)}
+                                        >
+                                            <Text style={styles.ratingEmoji}>{ratingEmoji(r)}</Text>
+                                            <Text style={[styles.ratingBtnText, { color: ratingColor(r) }]}>
+                                                {r.charAt(0).toUpperCase() + r.slice(1)}
+                                            </Text>
+                                            <Text style={[styles.ratingInterval, { color: ratingColor(r) + 'aa' }]}>{intervalLabel}</Text>
+                                            <Text style={[styles.ratingLevelHint, { color: ratingColor(r) + '77' }]}>{levelLabel}</Text>
+                                        </TouchableOpacity>
+                                    );
+                                })}
                             </View>
                             {/* After 3 forgots let them bail out */}
                             {forgotCount >= 3 && (
@@ -1306,6 +1427,17 @@ export function HifzSession({ surahNumber, surahName, surahNameTranslation, tota
                         </TouchableOpacity>
                     )}
                 </ScrollView>
+
+                {/* Mastery celebration overlay */}
+                {masteryVisible && masteredAyahNum !== null && (
+                    <Animated.View entering={FadeInUp.duration(400)} style={styles.masteryOverlay}>
+                        <Text style={styles.masteryEmoji}>⭐</Text>
+                        <View style={{ flex: 1 }}>
+                            <Text style={styles.masteryTitle}>Mastered!</Text>
+                            <Text style={styles.masterySub}>Ayah {masteredAyahNum} is now fully memorised</Text>
+                        </View>
+                    </Animated.View>
+                )}
             </View>
         );
     };
@@ -1383,136 +1515,121 @@ export function HifzSession({ surahNumber, surahName, surahNameTranslation, tota
                             <Text style={[styles.modalClose, { color: colors.accent }]}>Got it</Text>
                         </TouchableOpacity>
                     </View>
-                    <ScrollView contentContainerStyle={{ padding: 20, paddingBottom: 40, gap: 20 }} showsVerticalScrollIndicator={false}>
+                    <ScrollView contentContainerStyle={{ padding: 20, paddingBottom: 60, gap: 16 }} showsVerticalScrollIndicator={false}>
 
-                        {/* Overview */}
-                        <View style={styles.guideSection}>
-                            <Text style={styles.guideSectionTitle}>🧠  What is Hifz Mode?</Text>
+                        {/* What is it */}
+                        <View style={[styles.guideSection, { backgroundColor: colors.accent + '10', borderColor: colors.accent + '30', borderWidth: 1 }]}>
+                            <Text style={[styles.guideSectionTitle, { color: colors.accent }]}>🧠  What is Hifz Mode?</Text>
                             <Text style={styles.guideBody}>
-                                Hifz Mode helps you memorise the Quran using{' '}
-                                <Text style={styles.guideHighlight}>spaced repetition</Text> — a proven method that
-                                shows you each ayah at the exact right time so it sticks in long-term memory.
-                                The more you know an ayah, the less often you need to review it.
+                                Hifz Mode helps you memorise the Quran using <Text style={styles.guideHighlight}>spaced repetition</Text> — a scientifically proven method that shows you each ayah at exactly the right time before you forget it.{'\n\n'}
+                                The more you know an ayah, the less often you see it. The less you know it, the more it comes back. Over time every ayah gets locked into long-term memory.
                             </Text>
                         </View>
 
-                        {/* Step 1 */}
+                        {/* Quick start */}
                         <View style={styles.guideSection}>
-                            <Text style={styles.guideSectionTitle}>1️⃣  Add Ayahs to Learn</Text>
-                            <Text style={styles.guideBody}>
-                                Tap <Text style={styles.guideHighlight}>Add New Ayahs</Text> and select the verses
-                                you want to memorise.{'\n\n'}
-                                <Text style={styles.guideHighlight}>Progressive Mode</Text> (recommended) introduces
-                                them gradually: learn Ayah 1, then Ayah 2, then recite both together, then add Ayah 3, and so on.
-                                This builds a chain so each new ayah connects to what came before.
-                            </Text>
+                            <Text style={styles.guideSectionTitle}>🚀  Quick Start</Text>
+                            {[
+                                { n: '1', text: 'Open a surah from the Hifz tab', color: colors.accent },
+                                { n: '2', text: 'Tap Add New Ayahs → select verses → Start', color: colors.accent },
+                                { n: '3', text: 'Listen to each ayah, recite it, rate yourself', color: colors.accent },
+                                { n: '4', text: 'Come back when the red badge appears — those are your due reviews', color: '#ef4444' },
+                            ].map(s => (
+                                <View key={s.n} style={styles.guideStepRow}>
+                                    <View style={[styles.guideStepNum, { borderColor: s.color + '66', backgroundColor: s.color + '18' }]}>
+                                        <Text style={[styles.guideStepNumText, { color: s.color }]}>{s.n}</Text>
+                                    </View>
+                                    <Text style={styles.guideStepText}>{s.text}</Text>
+                                </View>
+                            ))}
                         </View>
 
-                        {/* Step 2 */}
+                        {/* 3 phases */}
                         <View style={styles.guideSection}>
-                            <Text style={styles.guideSectionTitle}>2️⃣  Practice — 3 Phases</Text>
+                            <Text style={styles.guideSectionTitle}>🔄  The 3 Practice Phases</Text>
 
                             <View style={styles.guidePhaseRow}>
-                                <View style={[styles.guidePhaseDot, { backgroundColor: '#22d3ee33', borderColor: '#22d3ee66' }]}>
+                                <View style={[styles.guidePhaseDot, { backgroundColor: '#22d3ee22', borderColor: '#22d3ee55' }]}>
                                     <Text style={[styles.guidePhaseNum, { color: '#22d3ee' }]}>1</Text>
                                 </View>
                                 <View style={{ flex: 1 }}>
-                                    <Text style={styles.guidePhaseTitle}>Listen</Text>
+                                    <Text style={[styles.guidePhaseTitle, { color: '#22d3ee' }]}>Listen</Text>
                                     <Text style={styles.guidePhaseBody}>
-                                        Press <Text style={styles.guideHighlight}>Listen</Text> to hear the ayah.
-                                        Words light up as they're recited so you can follow along.
-                                        Each word's English meaning appears below it.{'\n'}
-                                        Use <Text style={styles.guideHighlight}>Speed</Text> (0.75× / 1× / 1.25×) and
-                                        <Text style={styles.guideHighlight}> Repeats</Text> (1–3×) to control playback.
+                                        Tap <Text style={styles.guideHighlight}>Listen</Text> to hear the ayah. Words highlight as they're recited and each word's meaning appears below.{'\n'}
+                                        Tap the progress bar to skip to any point. Use <Text style={styles.guideHighlight}>Speed</Text> (0.75×–1.25×) and <Text style={styles.guideHighlight}>Repeats</Text> (1–3×) to control playback.{'\n'}
+                                        Turn on <Text style={styles.guideHighlight}>AUTO</Text> to automatically start the next ayah after rating.
                                     </Text>
                                 </View>
                             </View>
 
                             <View style={styles.guidePhaseRow}>
-                                <View style={[styles.guidePhaseDot, { backgroundColor: '#f9741633', borderColor: '#f9741666' }]}>
+                                <View style={[styles.guidePhaseDot, { backgroundColor: '#f9741622', borderColor: '#f9741655' }]}>
                                     <Text style={[styles.guidePhaseNum, { color: '#f97416' }]}>2</Text>
                                 </View>
                                 <View style={{ flex: 1 }}>
-                                    <Text style={styles.guidePhaseTitle}>Recite (optional)</Text>
+                                    <Text style={[styles.guidePhaseTitle, { color: '#f97416' }]}>Recite</Text>
                                     <Text style={styles.guidePhaseBody}>
-                                        If the <Text style={styles.guideHighlight}>Recite toggle</Text> is on, after
-                                        listening the text goes blank and a 30-second timer starts.
-                                        Say the ayah aloud from memory, then tap <Text style={styles.guideHighlight}>Done</Text>.
+                                        When <Text style={styles.guideHighlight}>Recite</Text> is on, after listening the text goes blank and a timer starts — say the ayah aloud from memory, then tap <Text style={styles.guideHighlight}>Done</Text>.{'\n'}
+                                        The timer auto-scales to the ayah's length, or set it manually: <Text style={styles.guideHighlight}>Auto / 15s / 30s / 45s / 60s</Text>.
                                     </Text>
                                 </View>
                             </View>
 
                             <View style={styles.guidePhaseRow}>
-                                <View style={[styles.guidePhaseDot, { backgroundColor: '#22c55e33', borderColor: '#22c55e66' }]}>
+                                <View style={[styles.guidePhaseDot, { backgroundColor: '#22c55e22', borderColor: '#22c55e55' }]}>
                                     <Text style={[styles.guidePhaseNum, { color: '#22c55e' }]}>3</Text>
                                 </View>
                                 <View style={{ flex: 1 }}>
-                                    <Text style={styles.guidePhaseTitle}>Rate Yourself</Text>
-                                    <Text style={styles.guidePhaseBody}>
-                                        Be honest — tap how well you recalled it:
-                                    </Text>
-                                    <View style={{ gap: 6, marginTop: 8 }}>
+                                    <Text style={[styles.guidePhaseTitle, { color: '#22c55e' }]}>Rate Yourself</Text>
+                                    <Text style={styles.guidePhaseBody}>Be honest — each button shows your next review date and new level before you tap:</Text>
+                                    <View style={{ gap: 8, marginTop: 10 }}>
                                         {[
-                                            { emoji: '😔', label: 'Forgot', desc: 'Blank. Level drops, review again today.', color: '#ef4444' },
-                                            { emoji: '😤', label: 'Hard', desc: 'Struggled but got it. Review tomorrow.', color: '#f97316' },
-                                            { emoji: '😊', label: 'Good', desc: 'Recalled well. Level up, longer gap.', color: '#22d3ee' },
-                                            { emoji: '🌟', label: 'Easy', desc: 'Perfect recall. Level +2, much longer gap.', color: '#22c55e' },
+                                            { emoji: '😔', label: 'Forgot', desc: 'Complete blank. Level drops, re-queued in this session and reviewed again tomorrow.', color: '#ef4444' },
+                                            { emoji: '😤', label: 'Hard', desc: 'Struggled but recalled it. Level stays, review tomorrow.', color: '#f97316' },
+                                            { emoji: '😊', label: 'Good', desc: 'Recalled well with some effort. Level +1, gap gets longer.', color: '#22d3ee' },
+                                            { emoji: '🌟', label: 'Easy', desc: 'Perfect recall, no hesitation. Level +2, much longer gap.', color: '#22c55e' },
                                         ].map(r => (
-                                            <View key={r.label} style={styles.guideRatingRow}>
-                                                <Text style={{ fontSize: 18 }}>{r.emoji}</Text>
-                                                <Text style={[styles.guideRatingLabel, { color: r.color }]}>{r.label}</Text>
-                                                <Text style={styles.guideRatingDesc}>{r.desc}</Text>
+                                            <View key={r.label} style={[styles.guideRatingRow, { backgroundColor: r.color + '10', borderRadius: 10, padding: 8 }]}>
+                                                <Text style={{ fontSize: 20, width: 28 }}>{r.emoji}</Text>
+                                                <View style={{ flex: 1 }}>
+                                                    <Text style={[styles.guideRatingLabel, { color: r.color, marginBottom: 2 }]}>{r.label}</Text>
+                                                    <Text style={[styles.guideRatingDesc, { lineHeight: 18 }]}>{r.desc}</Text>
+                                                </View>
                                             </View>
                                         ))}
                                     </View>
+                                    <Text style={[styles.guidePhaseBody, { marginTop: 10, color: '#475569' }]}>
+                                        Mis-tapped? The <Text style={styles.guideHighlight}>Undo</Text> button appears after each rating to reverse it.
+                                    </Text>
                                 </View>
                             </View>
                         </View>
 
-                        {/* Transliteration + Translation */}
+                        {/* Forgot re-listen */}
                         <View style={styles.guideSection}>
-                            <Text style={styles.guideSectionTitle}>🔤  Can't Read Arabic?</Text>
+                            <Text style={styles.guideSectionTitle}>😔  When You Forget</Text>
                             <Text style={styles.guideBody}>
-                                No problem — two toggles in the practice screen make Hifz Mode fully accessible:
+                                If you tap <Text style={styles.guideHighlight}>Forgot</Text>, the ayah doesn't move on — it plays again automatically so you hear it before your next attempt. This repeats until you've recalled it.{'\n\n'}
+                                After <Text style={styles.guideHighlight}>3 forgots</Text> a "Move on for now" button appears so you're never stuck. Forgotten ayahs are re-queued at the end of the session and come back tomorrow.
                             </Text>
-                            <View style={{ gap: 10, marginTop: 4 }}>
-                                <View style={styles.guidePhaseRow}>
-                                    <View style={[styles.guidePhaseDot, { backgroundColor: '#7c3aed22', borderColor: '#7c3aed66' }]}>
-                                        <Text style={[styles.guidePhaseNum, { color: '#a78bfa' }]}>A</Text>
-                                    </View>
-                                    <View style={{ flex: 1 }}>
-                                        <Text style={[styles.guidePhaseTitle, { color: '#a78bfa' }]}>Translit</Text>
-                                        <Text style={styles.guidePhaseBody}>
-                                            Shows the <Text style={styles.guideHighlight}>romanized pronunciation</Text> below
-                                            each Arabic word (e.g. <Text style={[styles.guideHighlight, { fontStyle: 'italic' }]}>bismillāhi r-raḥmāni r-raḥīm</Text>).
-                                            Hidden words are hidden here too — so the memory challenge works the same way.
-                                        </Text>
-                                    </View>
-                                </View>
-                                <View style={styles.guidePhaseRow}>
-                                    <View style={[styles.guidePhaseDot, { backgroundColor: '#0369a122', borderColor: '#0369a166' }]}>
-                                        <Text style={[styles.guidePhaseNum, { color: '#38bdf8' }]}>EN</Text>
-                                    </View>
-                                    <View style={{ flex: 1 }}>
-                                        <Text style={[styles.guidePhaseTitle, { color: '#38bdf8' }]}>Translation</Text>
-                                        <Text style={styles.guidePhaseBody}>
-                                            Shows the <Text style={styles.guideHighlight}>full English meaning</Text> of the ayah
-                                            below the Arabic card, so you always understand what you're memorising.
-                                        </Text>
-                                    </View>
-                                </View>
-                            </View>
+                        </View>
+
+                        {/* Progressive mode */}
+                        <View style={styles.guideSection}>
+                            <Text style={styles.guideSectionTitle}>📈  Progressive Mode</Text>
+                            <Text style={styles.guideBody}>
+                                When adding new ayahs, <Text style={styles.guideHighlight}>Progressive Mode</Text> (recommended) builds a chain:{'\n\n'}
+                                Learn Ayah 1 → Learn Ayah 2 → Recite 1+2 together → Learn Ayah 3 → Recite 1+2+3...{'\n\n'}
+                                This way each new ayah connects to everything before it, which is how Quran memorisation traditionally works.
+                            </Text>
                         </View>
 
                         {/* Hidden words */}
                         <View style={styles.guideSection}>
-                            <Text style={styles.guideSectionTitle}>👁  Hidden Words</Text>
+                            <Text style={styles.guideSectionTitle}>👁  Hidden Words & Levels</Text>
                             <Text style={styles.guideBody}>
-                                As your level rises, more words get hidden (shown as{' '}
-                                <Text style={[styles.guideHighlight, { letterSpacing: 2 }]}>▁▁▁</Text>).
-                                At Level 5 the whole ayah is hidden — pure memory recall.{'\n\n'}
-                                Tap any hidden word to <Text style={styles.guideHighlight}>peek</Text> at it for 1.5 seconds.
-                                Tap <Text style={styles.guideHighlight}>Reveal All</Text> to show everything if you're stuck.
+                                As your level rises, more words are hidden (shown as <Text style={[styles.guideHighlight, { letterSpacing: 2 }]}>▁▁▁</Text>). This progressively reduces your reliance on reading — at Level 5, the entire ayah is blank.{'\n\n'}
+                                <Text style={styles.guideHighlight}>Tap any hidden word</Text> to peek at it for 1.5s. Tap <Text style={styles.guideHighlight}>Reveal All</Text> to show everything.
                             </Text>
                             <View style={styles.guideLevelGrid}>
                                 {[
@@ -1531,25 +1648,69 @@ export function HifzSession({ surahNumber, surahName, surahNameTranslation, tota
                             </View>
                         </View>
 
-                        {/* Streak + goal */}
+                        {/* Non-Arabic speakers */}
                         <View style={styles.guideSection}>
-                            <Text style={styles.guideSectionTitle}>🔥  Streak & Daily Goal</Text>
+                            <Text style={styles.guideSectionTitle}>🔤  Can't Read Arabic?</Text>
+                            <Text style={styles.guideBody}>Two toggles make Hifz Mode fully accessible without Arabic:</Text>
+                            <View style={{ gap: 10, marginTop: 8 }}>
+                                <View style={[styles.guidePhaseRow, { backgroundColor: '#7c3aed12', borderRadius: 12, padding: 10 }]}>
+                                    <View style={[styles.guidePhaseDot, { backgroundColor: '#7c3aed22', borderColor: '#7c3aed55' }]}>
+                                        <Text style={[styles.guidePhaseNum, { color: '#a78bfa' }]}>A</Text>
+                                    </View>
+                                    <View style={{ flex: 1 }}>
+                                        <Text style={[styles.guidePhaseTitle, { color: '#a78bfa' }]}>Translit</Text>
+                                        <Text style={styles.guidePhaseBody}>Shows romanized pronunciation below each word (e.g. <Text style={[styles.guideHighlight, { fontStyle: 'italic' }]}>bismillāh</Text>). Hidden words stay hidden here too.</Text>
+                                    </View>
+                                </View>
+                                <View style={[styles.guidePhaseRow, { backgroundColor: '#0369a112', borderRadius: 12, padding: 10 }]}>
+                                    <View style={[styles.guidePhaseDot, { backgroundColor: '#0369a122', borderColor: '#0369a155' }]}>
+                                        <Text style={[styles.guidePhaseNum, { color: '#38bdf8' }]}>EN</Text>
+                                    </View>
+                                    <View style={{ flex: 1 }}>
+                                        <Text style={[styles.guidePhaseTitle, { color: '#38bdf8' }]}>Translation</Text>
+                                        <Text style={styles.guidePhaseBody}>Shows the full English meaning of the ayah so you always understand what you're memorising.</Text>
+                                    </View>
+                                </View>
+                            </View>
+                        </View>
+
+                        {/* Setup screen features */}
+                        <View style={styles.guideSection}>
+                            <Text style={styles.guideSectionTitle}>📋  Setup Screen</Text>
+                            {[
+                                { icon: '🔔', title: 'Review Due', desc: 'Ayahs whose scheduled date has arrived. Always do these first.' },
+                                { icon: '▶️', title: 'Practice All', desc: 'Run through every ayah regardless of schedule — useful for a full revision.' },
+                                { icon: '😓', title: 'Hardest Ayahs', desc: 'Your top 5 most-forgotten ayahs with a quick-practice button. Great for targeted drilling.' },
+                                { icon: '⏸️', title: 'Resume Session', desc: 'If you exit mid-session and save, this card lets you pick up exactly where you left off.' },
+                                { icon: '🗺️', title: 'Surah Map', desc: 'A heatmap showing the level of every ayah. Tap to expand. Green = mastered, red = still learning.' },
+                            ].map(f => (
+                                <View key={f.title} style={styles.guideFeatureRow}>
+                                    <Text style={{ fontSize: 18, width: 28 }}>{f.icon}</Text>
+                                    <View style={{ flex: 1 }}>
+                                        <Text style={styles.guideFeatureTitle}>{f.title}</Text>
+                                        <Text style={styles.guideFeatureDesc}>{f.desc}</Text>
+                                    </View>
+                                </View>
+                            ))}
+                        </View>
+
+                        {/* Streak + notifications */}
+                        <View style={styles.guideSection}>
+                            <Text style={styles.guideSectionTitle}>🔥  Streaks & Notifications</Text>
                             <Text style={styles.guideBody}>
-                                Complete at least one session every day to keep your streak alive.
-                                The default daily goal is <Text style={styles.guideHighlight}>5 reviews</Text>.
-                                Check the heatmap on the setup screen to see your progress across every ayah in the surah.
+                                Complete at least one session daily to keep your streak alive. The default goal is <Text style={styles.guideHighlight}>5 reviews</Text> per day.{'\n\n'}
+                                The app schedules a <Text style={styles.guideHighlight}>notification at 9am</Text> on each day that reviews become due — so you never have to remember to check.
                             </Text>
                         </View>
 
-                        {/* Tip */}
-                        <View style={[styles.guideSection, { backgroundColor: colors.accent + '12', borderColor: colors.accent + '33', borderWidth: 1 }]}>
-                            <Text style={[styles.guideSectionTitle, { color: colors.accent }]}>💡  Tips for Beginners</Text>
+                        {/* Tips */}
+                        <View style={[styles.guideSection, { backgroundColor: colors.accent + '0e', borderColor: colors.accent + '33', borderWidth: 1 }]}>
+                            <Text style={[styles.guideSectionTitle, { color: colors.accent }]}>💡  Tips</Text>
                             <Text style={styles.guideBody}>
-                                • Start with just <Text style={styles.guideHighlight}>3–5 ayahs</Text> in Progressive Mode.{'\n'}
-                                • Listen 2–3 times with the Recite toggle on.{'\n'}
-                                • If you can't read Arabic, turn on <Text style={styles.guideHighlight}>Translit</Text> and follow the pronunciation.{'\n'}
-                                • Turn on <Text style={styles.guideHighlight}>Translation</Text> to understand what you're saying.{'\n'}
-                                • Be honest with ratings — marking <Text style={styles.guideHighlight}>Forgot</Text> when you forget is what makes the system work. It'll keep bringing it back until it sticks.
+                                <Text style={styles.guideHighlight}>Beginners:</Text> Start with 3–5 ayahs in Progressive Mode. Don't try to do the whole surah at once.{'\n\n'}
+                                <Text style={styles.guideHighlight}>Non-Arabic:</Text> Turn on Translit + Translation. Focus on the sounds rather than the letters.{'\n\n'}
+                                <Text style={styles.guideHighlight}>Be honest:</Text> Always rate Forgot when you forget. The system only works if you're truthful — it will keep bringing it back until it sticks.{'\n\n'}
+                                <Text style={styles.guideHighlight}>Consistency beats intensity:</Text> 10 minutes every day will get you further than an hour once a week.
                             </Text>
                         </View>
 
@@ -1565,15 +1726,33 @@ export function HifzSession({ surahNumber, surahName, surahNameTranslation, tota
         const alreadyAdded = new Set(
             Object.values(hifzData).filter(a => a.surahNumber === surahNumber).map(a => a.ayahNumber)
         );
+        const availableAyahs = (surah?.ayahs ?? [])
+            .map(a => a.numberInSurah)
+            .filter(n => !alreadyAdded.has(n));
+        const allSelected = availableAyahs.length > 0 && availableAyahs.every(n => selectedAyahs.includes(n));
+
         return (
             <Modal visible={addAyahsModalVisible} animationType="slide" transparent>
                 <View style={styles.modalOverlay}>
                     <View style={styles.modalContent}>
                         <View style={styles.modalHeader}>
                             <Text style={styles.modalTitle}>Select Ayahs</Text>
-                            <TouchableOpacity onPress={() => { setAddAyahsModalVisible(false); setSelectedAyahs([]); }}>
-                                <Text style={[styles.modalClose, { color: colors.accent }]}>Cancel</Text>
-                            </TouchableOpacity>
+                            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 16 }}>
+                                <TouchableOpacity onPress={() => {
+                                    if (allSelected) {
+                                        setSelectedAyahs([]);
+                                    } else {
+                                        setSelectedAyahs(availableAyahs);
+                                    }
+                                }}>
+                                    <Text style={[styles.modalClose, { color: allSelected ? '#ef4444' : colors.accent }]}>
+                                        {allSelected ? 'Deselect All' : 'Select All'}
+                                    </Text>
+                                </TouchableOpacity>
+                                <TouchableOpacity onPress={() => { setAddAyahsModalVisible(false); setSelectedAyahs([]); }}>
+                                    <Text style={[styles.modalClose, { color: '#64748b' }]}>Cancel</Text>
+                                </TouchableOpacity>
+                            </View>
                         </View>
                         <View style={styles.progressiveToggle}>
                             <View style={{ flex: 1 }}>
@@ -1683,6 +1862,43 @@ export function HifzSession({ surahNumber, surahName, surahNameTranslation, tota
             {sessionState === 'summary' && renderSummary()}
             {renderAddAyahsModal()}
             {renderGuide()}
+
+            {/* Translation Language Picker */}
+            <Modal visible={translationPickerVisible} animationType="slide" transparent>
+                <View style={styles.modalOverlay}>
+                    <View style={styles.modalContent}>
+                        <View style={styles.modalHeader}>
+                            <Text style={styles.modalTitle}>Translation Language</Text>
+                            <TouchableOpacity onPress={() => setTranslationPickerVisible(false)}>
+                                <Text style={[styles.modalClose, { color: '#94a3b8' }]}>✕</Text>
+                            </TouchableOpacity>
+                        </View>
+                        <ScrollView>
+                            {TRANSLATION_OPTIONS.map(opt => (
+                                <TouchableOpacity
+                                    key={opt.edition}
+                                    style={{
+                                        flexDirection: 'row', alignItems: 'center', gap: 14,
+                                        paddingHorizontal: 20, paddingVertical: 16,
+                                        borderBottomWidth: 1, borderBottomColor: 'rgba(255,255,255,0.05)',
+                                        backgroundColor: opt.edition === translationEdition ? 'rgba(56,189,248,0.08)' : 'transparent',
+                                    }}
+                                    onPress={() => changeTranslationEdition(opt.edition)}
+                                >
+                                    <Text style={{ fontSize: 22 }}>{opt.flag}</Text>
+                                    <Text style={{ flex: 1, color: opt.edition === translationEdition ? '#38bdf8' : '#f8fafc', fontSize: 15, fontWeight: '700' }}>
+                                        {opt.label}
+                                    </Text>
+                                    {opt.edition === translationEdition && (
+                                        <Text style={{ color: '#38bdf8', fontSize: 18 }}>✓</Text>
+                                    )}
+                                </TouchableOpacity>
+                            ))}
+                            <View style={{ height: 40 }} />
+                        </ScrollView>
+                    </View>
+                </View>
+            </Modal>
         </View>
     );
 }
@@ -1776,9 +1992,9 @@ const styles = StyleSheet.create({
     arabicCard: { backgroundColor: 'rgba(255,255,255,0.04)', borderRadius: 20, borderWidth: 1, borderColor: 'rgba(255,255,255,0.08)', padding: 20, marginBottom: 4 },
     arabicCardContext: { backgroundColor: 'rgba(255,255,255,0.02)', borderColor: 'rgba(255,255,255,0.05)' },
     arabicCardReciting: { borderColor: 'rgba(34,211,238,0.25)', backgroundColor: 'rgba(34,211,238,0.03)' },
-    arabicText: { textAlign: 'right', lineHeight: 52 },
-    arabicWord: { color: '#f8fafc', fontSize: 26, lineHeight: 52 },
-    arabicWordHidden: { color: '#1e293b', backgroundColor: '#1e293b', borderRadius: 3 },
+    arabicTextRow: { flexDirection: 'row-reverse', flexWrap: 'wrap', gap: 6, alignItems: 'center' },
+    arabicWord: { color: '#f8fafc', fontSize: 26, lineHeight: 44 },
+    arabicWordHiddenWrap: { backgroundColor: 'rgba(51, 65, 85, 0.55)', borderRadius: 12, borderWidth: 1, borderColor: 'rgba(148, 163, 184, 0.15)', paddingHorizontal: 6, paddingVertical: 3 },
     arabicWordPeeked: { color: '#64748b' },
     arabicWordActive: { color: '#22d3ee', fontWeight: '700' },
 
@@ -1788,15 +2004,15 @@ const styles = StyleSheet.create({
     meaningPillText: { fontSize: 13, fontWeight: '700' },
 
     displayRow: { flexDirection: 'row', gap: 8, marginBottom: 12 },
-    displayToggle: { flex: 1, paddingVertical: 7, borderRadius: 10, backgroundColor: 'rgba(255,255,255,0.04)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.08)', alignItems: 'center' },
+    displayToggle: { flex: 1, paddingVertical: 7, borderRadius: 10, backgroundColor: 'rgba(255,255,255,0.04)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.08)', alignItems: 'center', justifyContent: 'center' },
     displayToggleText: { color: '#475569', fontSize: 12, fontWeight: '800' },
 
     translitRow: { flexDirection: 'row', flexWrap: 'wrap', marginTop: 10, paddingTop: 10, borderTopWidth: 1, borderTopColor: 'rgba(255,255,255,0.06)' },
     translitWord: { color: '#7c3aed', fontSize: 13, fontStyle: 'italic', lineHeight: 22 },
     translitWordHidden: { color: '#1e293b' },
 
-    translationBox: { backgroundColor: 'rgba(3,105,161,0.1)', borderRadius: 12, borderWidth: 1, borderColor: 'rgba(56,189,248,0.2)', padding: 12, marginBottom: 8 },
-    translationText: { color: '#7dd3fc', fontSize: 14, lineHeight: 22, fontStyle: 'italic' },
+    translationBox: { backgroundColor: 'rgba(3,105,161,0.1)', borderRadius: 12, borderWidth: 1, borderColor: 'rgba(56,189,248,0.2)', padding: 12, marginBottom: 8, flexShrink: 0 },
+    translationText: { color: '#7dd3fc', fontSize: 14, lineHeight: 22, fontStyle: 'italic', flexShrink: 1 },
 
     controlsRow: { flexDirection: 'row', gap: 12, marginBottom: 20, justifyContent: 'center' },
     audioBtn: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 20, paddingVertical: 12, borderRadius: 14, backgroundColor: 'rgba(34,211,238,0.1)', borderWidth: 1, borderColor: 'rgba(34,211,238,0.3)' },
@@ -1807,9 +2023,11 @@ const styles = StyleSheet.create({
     ratingSection: { gap: 10 },
     ratingLabel: { color: '#cbd5e1', fontSize: 13, fontWeight: '700', textAlign: 'center', letterSpacing: 0.5 },
     ratingRow: { flexDirection: 'row', gap: 8 },
-    ratingBtn: { flex: 1, alignItems: 'center', paddingVertical: 12, borderRadius: 16, borderWidth: 1, gap: 4 },
-    ratingEmoji: { fontSize: 20 },
+    ratingBtn: { flex: 1, alignItems: 'center', paddingVertical: 10, borderRadius: 16, borderWidth: 1, gap: 2 },
+    ratingEmoji: { fontSize: 18 },
     ratingBtnText: { fontSize: 11, fontWeight: '800' },
+    ratingInterval: { fontSize: 10, fontWeight: '700' },
+    ratingLevelHint: { fontSize: 9, fontWeight: '700' },
     requeueNote: { color: '#475569', fontSize: 12, textAlign: 'center', fontStyle: 'italic' },
     skipToRateBtn: { alignSelf: 'center', marginTop: 12, paddingVertical: 8, paddingHorizontal: 16 },
     skipToRateText: { color: '#334155', fontSize: 13 },
@@ -1858,6 +2076,27 @@ const styles = StyleSheet.create({
     startBtn: { margin: 16, borderRadius: 16, paddingVertical: 16, alignItems: 'center' },
     startBtnText: { color: '#0f172a', fontSize: 16, fontWeight: '900' },
 
+    // All caught up
+    caughtUpCard: {
+        flexDirection: 'row', alignItems: 'center', gap: 14,
+        backgroundColor: 'rgba(34,197,94,0.08)', borderRadius: 20,
+        borderWidth: 1, borderColor: 'rgba(34,197,94,0.25)', padding: 18,
+    },
+    caughtUpEmoji: { fontSize: 26 },
+    caughtUpTitle: { color: '#4ade80', fontSize: 16, fontWeight: '900' },
+    caughtUpSub: { color: '#22c55e99', fontSize: 13, fontWeight: '600', marginTop: 2 },
+
+    // Mastery celebration overlay
+    masteryOverlay: {
+        position: 'absolute', bottom: 80, left: 20, right: 20,
+        flexDirection: 'row', alignItems: 'center', gap: 12,
+        backgroundColor: 'rgba(34,197,94,0.15)', borderRadius: 20,
+        borderWidth: 1, borderColor: 'rgba(34,197,94,0.4)', padding: 16,
+    },
+    masteryEmoji: { fontSize: 28 },
+    masteryTitle: { color: '#4ade80', fontSize: 17, fontWeight: '900' },
+    masterySub: { color: '#22c55e99', fontSize: 13, marginTop: 2 },
+
     // Hardest ayahs
     hardestCard: { backgroundColor: 'rgba(255,255,255,0.03)', borderRadius: 20, borderWidth: 1, borderColor: 'rgba(239,68,68,0.15)', padding: 16, gap: 10 },
     hardestRow: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 6, borderBottomWidth: 1, borderBottomColor: 'rgba(255,255,255,0.04)' },
@@ -1902,4 +2141,13 @@ const styles = StyleSheet.create({
     guideLevelCell: { borderRadius: 10, paddingHorizontal: 10, paddingVertical: 8, alignItems: 'center', gap: 2, minWidth: 90 },
     guideLevelNum: { color: '#f8fafc', fontSize: 13, fontWeight: '900' },
     guideLevelLabel: { color: '#cbd5e1', fontSize: 11, fontWeight: '600' },
+
+    guideStepRow: { flexDirection: 'row', gap: 12, alignItems: 'flex-start' },
+    guideStepNum: { width: 28, height: 28, borderRadius: 8, backgroundColor: 'rgba(255,255,255,0.08)', alignItems: 'center', justifyContent: 'center', marginTop: 2 },
+    guideStepNumText: { color: '#f8fafc', fontSize: 13, fontWeight: '900' },
+    guideStepText: { flex: 1, color: '#94a3b8', fontSize: 14, lineHeight: 22 },
+
+    guideFeatureRow: { flexDirection: 'row', gap: 12, alignItems: 'flex-start', paddingVertical: 4 },
+    guideFeatureTitle: { color: '#f8fafc', fontSize: 14, fontWeight: '800', marginBottom: 2 },
+    guideFeatureDesc: { color: '#64748b', fontSize: 13, lineHeight: 19 },
 });
