@@ -2,7 +2,7 @@
   "expo": {
     "name": "Tahajjud+",
     "slug": "tahajjud-plus",
-    "version": "1.5.3",
+    "version": "1.7.0",
     "scheme": "tahajjud-plus",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
@@ -16,17 +16,28 @@
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.tahajjudplus.app",
-      "buildNumber": "15",
+      "appStoreUrl": "https://apps.apple.com/app/id6759176533",
+      "buildNumber": "29",
       "googleServicesFile": "./GoogleService-Info.plist",
+      "entitlements": {
+        "com.apple.developer.usernotifications.time-sensitive": true
+      },
       "infoPlist": {
         "UIBackgroundModes": [
-          "audio"
+          "audio",
+          "remote-notification"
         ],
         "NSLocationWhenInUseUsageDescription": "Tahajjud+ uses your location to calculate the five daily Islamic prayer times (Fajr, Dhuhr, Asr, Maghrib, and Isha) specific to your city, and to orient the Qibla compass toward Mecca. For example, a user in Dubai will see prayer times calculated for Dubai and a compass pointing from Dubai toward the Kaaba in Mecca.",
         "NSLocationAlwaysAndWhenInUseUsageDescription": "Tahajjud+ uses your location to calculate the five daily Islamic prayer times (Fajr, Dhuhr, Asr, Maghrib, and Isha) specific to your city, and to orient the Qibla compass toward Mecca. For example, a user in Dubai will see prayer times calculated for Dubai and a compass pointing from Dubai toward the Kaaba in Mecca.",
         "NSLocationAlwaysUsageDescription": "Tahajjud+ uses your location to calculate the five daily Islamic prayer times specific to your city and to orient the Qibla compass toward Mecca. For example, a user in London will receive prayer times calculated for London.",
         "NSLocalNetworkUsageDescription": "Tahajjud+ uses the local network to connect to Firebase for syncing your Tahajjud prayer logs and journal entries across your devices. For example, a Tahajjud letter you write on your iPhone will sync and appear on your iPad.",
-        "NSFaceIDUsageDescription": "Tahajjud+ uses FaceID to provide a secure biometric lock for your private Tahajjud letters and journal entries, ensuring your spiritual journey remains for your eyes only."
+        "NSFaceIDUsageDescription": "Tahajjud+ uses FaceID to provide a secure biometric lock for your private Tahajjud letters and journal entries, ensuring your spiritual journey remains for your eyes only.",
+        "NSCameraUsageDescription": "Tahajjud+ uses the camera to photograph your mosque's monthly prayer timetable so the app can automatically import all the prayer times for the month.",
+        "NSPhotoLibraryUsageDescription": "Tahajjud+ accesses your photo library so you can select a photo of your mosque's monthly prayer timetable to import the times automatically.",
+        "NSHealthShareUsageDescription": "Tahajjud+ reads your sleep data to suggest the best bedtime so you can wake during the last third of the night for Tahajjud. Your sleep data never leaves your device.",
+        "NSHealthUpdateUsageDescription": "Tahajjud+ does not write to Health, but iOS requires this string before requesting Health access.",
+        "NSSupportsLiveActivities": true,
+        "NSSupportsLiveActivitiesFrequentUpdates": true
       }
     },
     "android": {
@@ -47,7 +58,7 @@
         "FOREGROUND_SERVICE_MEDIA_PLAYBACK"
       ],
       "package": "com.tahajjudplus.app",
-      "versionCode": 5,
+      "versionCode": 14,
       "googleServicesFile": "./google-services.json",
       "edgeToEdgeEnabled": true,
       "predictiveBackGestureEnabled": false
@@ -68,7 +79,17 @@
         }
       ],
       "@react-native-google-signin/google-signin",
-      "expo-apple-authentication"
+      "expo-apple-authentication",
+      "expo-font",
+      [
+        "react-native-health",
+        {
+          "isClinicalDataEnabled": false,
+          "healthSharePermission": "Tahajjud+ reads your sleep data to suggest the best bedtime for Tahajjud. Sleep data stays on your device.",
+          "healthUpdatePermission": "Tahajjud+ does not write to Health."
+        }
+      ],
+      "expo-localization"
     ],
     "extra": {
       "revenueCatAppleKey": "appl_nyGORtabGsjtnLjpdnujergeIfI",
