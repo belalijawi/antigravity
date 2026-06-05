@@ -1,4 +1,5 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { localDateStr } from './localDate';
 
 const STATS_KEY = 'tahajjud-community-stats';
 
@@ -10,7 +11,7 @@ interface CommunityStats {
 
 export const getCommunityStats = async (): Promise<CommunityStats> => {
     try {
-        const today = new Date().toISOString().split('T')[0];
+        const today = localDateStr(new Date());
         const stored = await AsyncStorage.getItem(STATS_KEY);
 
         if (stored) {
@@ -26,13 +27,13 @@ export const getCommunityStats = async (): Promise<CommunityStats> => {
 
         return { duasSent: 0, duasReceived: 0, lastUpdate: today };
     } catch (e) {
-        return { duasSent: 0, duasReceived: 0, lastUpdate: new Date().toISOString().split('T')[0] };
+        return { duasSent: 0, duasReceived: 0, lastUpdate: localDateStr(new Date()) };
     }
 };
 
 export const incrementDuasSent = async () => {
     try {
-        const today = new Date().toISOString().split('T')[0];
+        const today = localDateStr(new Date());
         const stats = await getCommunityStats();
         const newStats = {
             ...stats,
@@ -48,7 +49,7 @@ export const incrementDuasSent = async () => {
 
 export const incrementDuasReceived = async () => {
     try {
-        const today = new Date().toISOString().split('T')[0];
+        const today = localDateStr(new Date());
         const stats = await getCommunityStats();
         const newStats = {
             ...stats,

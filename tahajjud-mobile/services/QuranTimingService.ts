@@ -51,12 +51,15 @@ export const QuranTimingService = {
             if (cached) return JSON.parse(cached);
         } catch { /* ignore cache miss */ }
 
-        // Fetch from QDC
+        // Fetch from QDC — with 10s timeout so slow networks don't leave the
+        // word-highlighter spinning forever
         try {
+            const controller = new AbortController();
+            const tid = setTimeout(() => controller.abort(), 10000);
             const res = await fetch(
                 `${QDC_BASE}/audio/reciters/${RECITER_ID}/audio_files?chapter_number=${surahNumber}&segments=true`,
-                { headers: { 'Accept': 'application/json' } }
-            );
+                { headers: { 'Accept': 'application/json' }, signal: controller.signal }
+            ).finally(() => clearTimeout(tid));
             if (!res.ok) return [];
             const data = await res.json();
 

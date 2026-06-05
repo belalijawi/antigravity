@@ -6,15 +6,19 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { Tracker } from './Tracker';
 import { HistoryCalendar } from './HistoryCalendar';
 import { QiblaCompass } from './QiblaCompass';
+import { PrayerAnalytics } from './PrayerAnalytics';
 import { tabletContentStyle } from '../utils/layout';
 import { useTheme } from '../context/ThemeContext';
+import { usePurchases } from '../context/PurchasesContext';
+import { Lock } from 'lucide-react-native';
 
-type PrayerSubTab = 'tracker' | 'history' | 'qibla';
+type PrayerSubTab = 'tracker' | 'history' | 'qibla' | 'stats';
 
-const TABS: { key: PrayerSubTab; label: string }[] = [
-    { key: 'tracker', label: 'Tracker' },
-    { key: 'history', label: 'History' },
-    { key: 'qibla',   label: 'Qibla'   },
+const TABS: { key: PrayerSubTab; label: string; premium?: boolean }[] = [
+    { key: 'tracker', label: 'Tracker'  },
+    { key: 'history', label: 'History'  },
+    { key: 'qibla',   label: 'Qibla'    },
+    { key: 'stats',   label: 'Stats', premium: true },
 ];
 
 const PRAYER_QUOTES = [
@@ -87,6 +91,7 @@ function PrayerQuotes() {
 export function PrayersTab() {
     const insets = useSafeAreaInsets();
     const { colors } = useTheme();
+    const { isPremium, openPaywall } = usePurchases();
     const [activeTab, setActiveTab] = useState<PrayerSubTab>('tracker');
     const scrollRef = useRef<ScrollView>(null);
 
@@ -110,22 +115,29 @@ export function PrayersTab() {
                 <View style={[styles.tabBar, { backgroundColor: 'rgba(255,255,255,0.03)', borderColor: 'rgba(255,255,255,0.06)' }]}>
                     {TABS.map(tab => {
                         const active = activeTab === tab.key;
+                        const locked = tab.premium && !isPremium;
                         return (
                             <TouchableOpacity
                                 key={tab.key}
-                                onPress={() => setActiveTab(tab.key)}
+                                onPress={() => {
+                                    if (locked) { openPaywall(); return; }
+                                    setActiveTab(tab.key);
+                                }}
                                 style={[
                                     styles.tabPill,
                                     active && { backgroundColor: colors.accent },
                                 ]}
                                 activeOpacity={0.7}
                             >
-                                <Text style={[
-                                    styles.tabLabel,
-                                    { color: active ? '#020617' : colors.secondaryText },
-                                ]}>
-                                    {tab.label}
-                                </Text>
+                                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                                    <Text style={[
+                                        styles.tabLabel,
+                                        { color: active ? '#020617' : locked ? '#334155' : colors.secondaryText },
+                                    ]}>
+                                        {tab.label}
+                                    </Text>
+                                    {locked && <Lock size={9} color="#f59e0b" />}
+                                </View>
                             </TouchableOpacity>
                         );
                     })}
@@ -148,6 +160,7 @@ export function PrayersTab() {
                     )}
                     {activeTab === 'history' && <HistoryCalendar />}
                     {activeTab === 'qibla'   && <QiblaCompass />}
+                    {activeTab === 'stats'   && <PrayerAnalytics />}
                 </View>
             </ScrollView>
         </SafeAreaView>

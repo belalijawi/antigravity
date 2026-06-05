@@ -8,12 +8,15 @@ import { BlurView } from 'expo-blur';
 import { LinearGradient } from 'expo-linear-gradient';
 import Animated, {
     useSharedValue, useAnimatedStyle, withSpring, withSequence,
+    withTiming, withDelay, runOnJS,
 } from 'react-native-reanimated';
 import * as Haptics from 'expo-haptics';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import Svg, { Circle } from 'react-native-svg';
-import { Plus, Target, X } from 'lucide-react-native';
+import { Plus, Target, X, Lock, BarChart2 } from 'lucide-react-native';
+import { subDays } from 'date-fns';
 import { useTheme } from '../context/ThemeContext';
+import { usePurchases } from '../context/PurchasesContext';
 
 const SESSIONS_KEY     = 'tasbeeh-sessions';
 const CUSTOM_KEY       = 'tasbeeh-custom-dhikrs';
@@ -25,6 +28,7 @@ interface Dhikr {
     id: string;
     arabic: string;
     transliteration: string;
+    meaning?: string;
     target: number;
     custom?: boolean;
 }
@@ -37,12 +41,12 @@ interface Session {
 }
 
 const BUILT_IN: Dhikr[] = [
-    { id: 'subhan',    arabic: 'سُبْحَانَ اللَّهِ',              transliteration: 'SubhanAllah',              target: 33  },
-    { id: 'hamd',      arabic: 'الْحَمْدُ لِلَّهِ',              transliteration: 'Alhamdulillah',             target: 33  },
-    { id: 'akbar',     arabic: 'اللَّهُ أَكْبَرُ',               transliteration: 'Allahu Akbar',              target: 34  },
-    { id: 'istighfar', arabic: 'أَسْتَغْفِرُ اللَّهَ',            transliteration: 'Astaghfirullah',            target: 100 },
-    { id: 'tahleel',   arabic: 'لَا إِلَٰهَ إِلَّا اللَّهُ',     transliteration: 'La ilaha illallah',         target: 100 },
-    { id: 'salawat',   arabic: 'اللَّهُمَّ صَلِّ عَلَى مُحَمَّد', transliteration: "Allahuma Salli 'ala Muhammad", target: 100 },
+    { id: 'subhan',    arabic: 'سُبْحَانَ اللَّهِ',              transliteration: 'SubhanAllah',                  meaning: 'Glory be to Allah',                  target: 33  },
+    { id: 'hamd',      arabic: 'الْحَمْدُ لِلَّهِ',              transliteration: 'Alhamdulillah',                 meaning: 'All praise be to Allah',             target: 33  },
+    { id: 'akbar',     arabic: 'اللَّهُ أَكْبَرُ',               transliteration: 'Allahu Akbar',                  meaning: 'Allah is the Greatest',              target: 34  },
+    { id: 'istighfar', arabic: 'أَسْتَغْفِرُ اللَّهَ',            transliteration: 'Astaghfirullah',                meaning: 'I seek forgiveness from Allah',       target: 100 },
+    { id: 'tahleel',   arabic: 'لَا إِلَٰهَ إِلَّا اللَّهُ',     transliteration: 'La ilaha illallah',             meaning: 'There is no god but Allah',          target: 100 },
+    { id: 'salawat',   arabic: 'اللَّهُمَّ صَلِّ عَلَى مُحَمَّد', transliteration: "Allahuma Salli 'ala Muhammad",  meaning: 'O Allah, send blessings upon Muhammad', target: 100 },
 ];
 
 function todayKey() {
@@ -73,6 +77,7 @@ function Ring({ count, target, accent }: { count: number; target: number; accent
 
 export function TasbeehCard() {
     const { colors, cardBg, blurIntensity } = useTheme();
+    const { isPremium, openPaywall } = usePurchases();
 
     const [customDhikrs, setCustomDhikrs]   = useState<Dhikr[]>([]);
     const [selectedIndex, setSelectedIndex] = useState(0);
@@ -80,6 +85,9 @@ export function TasbeehCard() {
     const [rounds, setRounds]               = useState(0);
     const [sessions, setSessions]           = useState<Session[]>([]);
     const [dailyGoal, setDailyGoal]         = useState<number>(0); // 0 = no goal
+
+    // Views
+    const [showStats, setShowStats] = useState(false);
 
     // Modals
     const [showCustomModal, setShowCustomModal] = useState(false);
@@ -90,7 +98,11 @@ export function TasbeehCard() {
     const [newArabic, setNewArabic]     = useState('');
     const [newTarget, setNewTarget]     = useState('33');
 
-    const tapScale = useSharedValue(1);
+    const tapScale       = useSharedValue(1);
+    const celebScale     = useSharedValue(1);
+    const celebOpacity   = useSharedValue(0);
+    const [celebText, setCelebText] = useState('');
+    const goalCelebratedRef = useRef<string>(''); // tracks which day+goal we already celebrated
 
     const allDhikrs: Dhikr[] = [...BUILT_IN, ...customDhikrs];
     const dhikr = allDhikrs[selectedIndex] ?? BUILT_IN[0];
@@ -115,6 +127,77 @@ export function TasbeehCard() {
     const todaySessions = sessions.filter(s => new Date(s.date).toDateString() === todayKey());
     const dailyTotal    = todaySessions.reduce((sum, s) => sum + s.count, 0) + count;
     const goalProgress  = dailyGoal > 0 ? Math.min(dailyTotal / dailyGoal, 1) : 0;
+
+    // ── Goal completion celebration ───────────────────────────────────────────
+    useEffect(() => {
+        if (dailyGoal <= 0 || dailyTotal < dailyGoal) return;
+        const key = `${todayKey()}_${dailyGoal}`;
+        if (goalCelebratedRef.current === key) return; // already celebrated today
+        goalCelebratedRef.current = key;
+
+        // Strong haptic
+        if (Platform.OS === 'ios') {
+            Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+            setTimeout(() => Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy), 150);
+        } else {
+            Vibration.vibrate([0, 80, 60, 120, 60, 80]);
+        }
+
+        // Pop + fade animation on the ring
+        setCelebText('🎉 Goal reached!');
+        celebScale.value = withSequence(
+            withSpring(1.18, { damping: 6, stiffness: 180 }),
+            withSpring(1.0, { damping: 12 }),
+        );
+        celebOpacity.value = withSequence(
+            withTiming(1, { duration: 200 }),
+            withDelay(1600, withTiming(0, { duration: 400 })),
+        );
+    }, [dailyTotal, dailyGoal]);
+
+    const celebAnimStyle = useAnimatedStyle(() => ({
+        transform: [{ scale: celebScale.value }],
+    }));
+    const celebTextStyle = useAnimatedStyle(() => ({
+        opacity: celebOpacity.value,
+        transform: [{ translateY: celebOpacity.value * -8 + 8 }],
+    }));
+
+    // ── Stats computation ─────────────────────────────────────────────────────
+    const allTimeTotal = sessions.reduce((sum, s) => sum + s.count, 0) + count;
+
+    // Per-dhikr totals (all time) — skip sessions with no label
+    const dhikrTotals = sessions.reduce<Record<string, number>>((acc, s) => {
+        const label = s.dhikrLabel?.trim();
+        if (!label || label === 'undefined') return acc;
+        acc[label] = (acc[label] || 0) + s.count;
+        return acc;
+    }, {});
+    const topDhikr = Object.entries(dhikrTotals).sort((a, b) => b[1] - a[1])[0];
+
+    // Last 7 days totals
+    const last7 = Array.from({ length: 7 }, (_, i) => {
+        const d = subDays(new Date(), 6 - i);
+        const key = d.toDateString();
+        const total = sessions.filter(s => new Date(s.date).toDateString() === key)
+            .reduce((sum, s) => sum + s.count, 0);
+        return { label: d.toLocaleDateString('en-GB', { weekday: 'short' }), total, isToday: i === 6 };
+    });
+    const maxDay = Math.max(...last7.map(d => d.total), 1);
+
+    // Daily streak — consecutive days with at least one session
+    const dailyStreak = (() => {
+        let streak = 0;
+        for (let i = 1; i <= 365; i++) {
+            const key = subDays(new Date(), i).toDateString();
+            const hadSession = sessions.some(s => new Date(s.date).toDateString() === key);
+            if (hadSession) streak++;
+            else break;
+        }
+        // Count today if already has sessions
+        if (dailyTotal > 0) streak++;
+        return streak;
+    })();
 
     // ── Save session ──────────────────────────────────────────────────────────
     const saveSession = async (finalCount: number) => {
@@ -224,7 +307,7 @@ export function TasbeehCard() {
 
             <View style={styles.content}>
 
-                {/* Header: daily total + goal button */}
+                {/* Header: daily total + stats + goal button */}
                 <View style={styles.headerRow}>
                     <View>
                         <Text style={[styles.headerLabel, { color: colors.secondaryText }]}>Today's Dhikr</Text>
@@ -233,12 +316,27 @@ export function TasbeehCard() {
                             {dailyGoal > 0 && <Text style={[styles.headerGoalOf, { color: colors.secondaryText }]}> / {dailyGoal.toLocaleString()}</Text>}
                         </Text>
                     </View>
-                    <TouchableOpacity onPress={() => setShowGoalModal(true)} style={[styles.goalBtn, { borderColor: dailyGoal > 0 ? colors.accent + '55' : 'rgba(255,255,255,0.10)' }]}>
-                        <Target size={12} color={dailyGoal > 0 ? colors.accent : colors.secondaryText} />
-                        <Text style={[styles.goalBtnText, { color: dailyGoal > 0 ? colors.accent : colors.secondaryText }]}>
-                            {dailyGoal > 0 ? `Goal: ${dailyGoal.toLocaleString()}` : 'Set goal'}
-                        </Text>
-                    </TouchableOpacity>
+                    <View style={{ flexDirection: 'row', gap: 8 }}>
+                        <TouchableOpacity
+                            onPress={() => isPremium ? setShowStats(s => !s) : openPaywall()}
+                            style={[styles.goalBtn, { borderColor: showStats ? colors.accent + '55' : 'rgba(255,255,255,0.10)', backgroundColor: showStats ? colors.accent + '15' : 'rgba(255,255,255,0.04)' }]}
+                        >
+                            {showStats
+                                ? <X size={12} color={colors.accent} />
+                                : isPremium
+                                    ? <BarChart2 size={12} color={colors.secondaryText} />
+                                    : <Lock size={11} color="#f59e0b" />}
+                            <Text style={[styles.goalBtnText, { color: showStats ? colors.accent : colors.secondaryText }]}>
+                                {showStats ? 'Done' : 'Stats'}
+                            </Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity onPress={() => setShowGoalModal(true)} style={[styles.goalBtn, { borderColor: dailyGoal > 0 ? colors.accent + '55' : 'rgba(255,255,255,0.10)' }]}>
+                            <Target size={12} color={dailyGoal > 0 ? colors.accent : colors.secondaryText} />
+                            <Text style={[styles.goalBtnText, { color: dailyGoal > 0 ? colors.accent : colors.secondaryText }]}>
+                                {dailyGoal > 0 ? `Goal: ${dailyGoal.toLocaleString()}` : 'Goal'}
+                            </Text>
+                        </TouchableOpacity>
+                    </View>
                 </View>
 
                 {/* Goal progress bar */}
@@ -248,6 +346,77 @@ export function TasbeehCard() {
                             width: `${goalProgress * 100}%` as any,
                             backgroundColor: goalProgress >= 1 ? colors.success : colors.accent,
                         }]} />
+                    </View>
+                )}
+
+                {/* ── Stats view ── */}
+                {showStats && (
+                    <View style={styles.statsSection}>
+                        {/* Top row: all-time + streak */}
+                        <View style={styles.statsTopRow}>
+                            <View style={[styles.statBox, { borderColor: 'rgba(255,255,255,0.07)' }]}>
+                                <Text style={[styles.statBoxNum, { color: colors.accent }]}>{allTimeTotal.toLocaleString()}</Text>
+                                <Text style={[styles.statBoxLabel, { color: colors.secondaryText }]}>All time</Text>
+                            </View>
+                            <View style={[styles.statBox, { borderColor: 'rgba(255,255,255,0.07)' }]}>
+                                <Text style={[styles.statBoxNum, { color: colors.accent }]}>{dailyStreak}</Text>
+                                <Text style={[styles.statBoxLabel, { color: colors.secondaryText }]}>Day streak 🔥</Text>
+                            </View>
+                            {topDhikr && topDhikr[0] && (
+                                <View style={[styles.statBox, { borderColor: 'rgba(255,255,255,0.07)', flex: 1.4 }]}>
+                                    <Text style={[styles.statBoxNum, { color: colors.accent }]} numberOfLines={1}>{topDhikr[0]}</Text>
+                                    <Text style={[styles.statBoxLabel, { color: colors.secondaryText }]}>Most recited</Text>
+                                </View>
+                            )}
+                        </View>
+
+                        {/* 7-day bar chart */}
+                        <Text style={[styles.statsChartLabel, { color: colors.secondaryText }]}>LAST 7 DAYS</Text>
+                        <View style={styles.barChart}>
+                            {last7.map((d, i) => (
+                                <View key={i} style={styles.barCol}>
+                                    <Text style={[styles.barValue, { color: colors.secondaryText }]}>
+                                        {d.total > 0 ? d.total >= 1000 ? `${(d.total/1000).toFixed(1)}k` : d.total : ''}
+                                    </Text>
+                                    <View style={styles.barTrack}>
+                                        <View style={[
+                                            styles.barFill,
+                                            {
+                                                height: `${Math.round((d.total / maxDay) * 100)}%` as any,
+                                                backgroundColor: d.isToday ? colors.accent : colors.accent + '55',
+                                            }
+                                        ]} />
+                                    </View>
+                                    <Text style={[styles.barDayLabel, { color: d.isToday ? colors.accent : colors.secondaryText }]}>{d.label}</Text>
+                                </View>
+                            ))}
+                        </View>
+
+                        {/* Per-dhikr breakdown today */}
+                        {Object.keys(dhikrTotals).length > 0 && (
+                            <>
+                                <Text style={[styles.statsChartLabel, { color: colors.secondaryText }]}>ALL TIME BREAKDOWN</Text>
+                                {Object.entries(dhikrTotals)
+                                    .sort((a, b) => b[1] - a[1])
+                                    .slice(0, 5)
+                                    .map(([label, total]) => {
+                                        const pct = allTimeTotal > 0 ? total / allTimeTotal : 0;
+                                        return (
+                                            <View key={label} style={styles.breakdownRow}>
+                                                <Text style={[styles.breakdownLabel, { color: colors.primaryText }]} numberOfLines={1}>{label}</Text>
+                                                <View style={styles.breakdownBarTrack}>
+                                                    <LinearGradient
+                                                        colors={[colors.accent, colors.accent + '66']}
+                                                        start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}
+                                                        style={[styles.breakdownBarFill, { width: `${Math.round(pct * 100)}%` as any }]}
+                                                    />
+                                                </View>
+                                                <Text style={[styles.breakdownCount, { color: colors.secondaryText }]}>{total.toLocaleString()}</Text>
+                                            </View>
+                                        );
+                                    })}
+                            </>
+                        )}
                     </View>
                 )}
 
@@ -269,30 +438,45 @@ export function TasbeehCard() {
                             </Text>
                         </TouchableOpacity>
                     ))}
-                    <TouchableOpacity onPress={() => setShowCustomModal(true)} style={styles.pillAdd}>
-                        <Plus size={12} color={colors.secondaryText} />
+                    <TouchableOpacity
+                        onPress={() => isPremium ? setShowCustomModal(true) : openPaywall()}
+                        style={styles.pillAdd}
+                    >
+                        {isPremium
+                            ? <Plus size={12} color={colors.secondaryText} />
+                            : <Lock size={11} color="#f59e0b" />}
                     </TouchableOpacity>
                 </ScrollView>
 
                 {/* Counter ring */}
-                <Pressable onPress={handleTap} onLongPress={handleReset} delayLongPress={600} style={styles.counterArea}>
-                    <Animated.View style={[styles.ring, tapAnimStyle]}>
-                        <Ring count={count} target={dhikr.target} accent={colors.accent} />
-                        <View style={styles.countInner}>
-                            <Text style={[styles.arabicText, { color: colors.primaryText }]}>{dhikr.arabic}</Text>
-                            <Text style={[styles.countNum, { color: colors.accent }]}>{count}</Text>
-                            <Text style={[styles.targetText, { color: colors.secondaryText }]}>/ {dhikr.target}</Text>
-                        </View>
-                    </Animated.View>
-                </Pressable>
+                <View style={{ alignItems: 'center' }}>
+                    <Pressable onPress={handleTap} onLongPress={handleReset} delayLongPress={600} style={styles.counterArea}>
+                        <Animated.View style={[styles.ring, tapAnimStyle, celebAnimStyle]}>
+                            <Ring count={count} target={dhikr.target} accent={colors.accent} />
+                            <View style={styles.countInner}>
+                                <Text style={[styles.arabicText, { color: colors.primaryText }]}>{dhikr.arabic}</Text>
+                                {dhikr.meaning ? (
+                                    <Text style={[styles.translitText, { color: colors.secondaryText }]}>{dhikr.meaning}</Text>
+                                ) : null}
+                                <Text style={[styles.countNum, { color: colors.accent }]}>{count}</Text>
+                                <Text style={[styles.targetText, { color: colors.secondaryText }]}>/ {dhikr.target}</Text>
+                            </View>
+                        </Animated.View>
+                    </Pressable>
+                </View>
 
-                {/* Rounds + hint */}
-                <Text style={[styles.hintText, { color: rounds > 0 ? colors.success : '#334155' }]}>
-                    {rounds > 0 ? `${rounds}× round${rounds > 1 ? 's' : ''} completed` : 'Tap to count · Hold to reset'}
-                </Text>
+                {/* Rounds + hint — replaced by celebration text when goal just hit */}
+                <View style={{ height: 18, justifyContent: 'center', alignItems: 'center' }}>
+                    <Animated.Text style={[styles.celebText, celebTextStyle, { position: 'absolute' }]}>
+                        {celebText}
+                    </Animated.Text>
+                    <Animated.Text style={[styles.hintText, { color: rounds > 0 ? colors.success : '#334155' }, useAnimatedStyle(() => ({ opacity: 1 - celebOpacity.value }))]}>
+                        {rounds > 0 ? `${rounds}× round${rounds > 1 ? 's' : ''} completed` : 'Tap to count · Hold to reset'}
+                    </Animated.Text>
+                </View>
 
-                {/* Today's sessions */}
-                {todaySessions.length > 0 && (
+                {/* Today's sessions — premium only */}
+                {isPremium && todaySessions.length > 0 && (
                     <View style={styles.sessionsSection}>
                         <Text style={[styles.sessionsTitle, { color: colors.secondaryText }]}>Today's Sessions</Text>
                         {todaySessions.slice(0, 5).map((s, i) => (
@@ -533,6 +717,11 @@ const styles = StyleSheet.create({
         fontWeight: '600',
         textAlign: 'center',
     },
+    translitText: {
+        fontSize: 10,
+        fontWeight: '600',
+        textAlign: 'center',
+    },
     countNum: {
         fontSize: 30,
         fontWeight: '900',
@@ -695,5 +884,112 @@ const styles = StyleSheet.create({
         borderRadius: 12,
         alignItems: 'center',
         justifyContent: 'center',
+    },
+    celebText: {
+        fontSize: 13,
+        fontWeight: '800',
+        color: '#34d399',
+        textAlign: 'center',
+    },
+    // ── Stats ──
+    statsSection: {
+        width: '100%',
+        gap: 12,
+        paddingTop: 4,
+        paddingBottom: 8,
+        borderTopWidth: 1,
+        borderTopColor: 'rgba(255,255,255,0.06)',
+    },
+    statsTopRow: {
+        flexDirection: 'row',
+        gap: 8,
+    },
+    statBox: {
+        flex: 1,
+        borderWidth: 1,
+        borderRadius: 12,
+        padding: 10,
+        alignItems: 'center',
+        gap: 2,
+        backgroundColor: 'rgba(255,255,255,0.03)',
+    },
+    statBoxNum: {
+        fontSize: 18,
+        fontWeight: '900',
+    },
+    statBoxLabel: {
+        fontSize: 9,
+        fontWeight: '700',
+        textTransform: 'uppercase',
+        letterSpacing: 0.5,
+        textAlign: 'center',
+    },
+    statsChartLabel: {
+        fontSize: 9,
+        fontWeight: '800',
+        letterSpacing: 1.2,
+        textTransform: 'uppercase',
+        marginBottom: -4,
+    },
+    barChart: {
+        flexDirection: 'row',
+        alignItems: 'flex-end',
+        height: 70,
+        gap: 4,
+    },
+    barCol: {
+        flex: 1,
+        alignItems: 'center',
+        height: '100%',
+        justifyContent: 'flex-end',
+        gap: 3,
+    },
+    barValue: {
+        fontSize: 8,
+        fontWeight: '700',
+    },
+    barTrack: {
+        width: '100%',
+        height: 44,
+        borderRadius: 4,
+        backgroundColor: 'rgba(255,255,255,0.06)',
+        overflow: 'hidden',
+        justifyContent: 'flex-end',
+    },
+    barFill: {
+        width: '100%',
+        borderRadius: 4,
+        minHeight: 2,
+    },
+    barDayLabel: {
+        fontSize: 9,
+        fontWeight: '700',
+    },
+    breakdownRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 8,
+    },
+    breakdownLabel: {
+        width: 90,
+        fontSize: 11,
+        fontWeight: '600',
+    },
+    breakdownBarTrack: {
+        flex: 1,
+        height: 5,
+        borderRadius: 3,
+        backgroundColor: 'rgba(255,255,255,0.07)',
+        overflow: 'hidden',
+    },
+    breakdownBarFill: {
+        height: '100%',
+        borderRadius: 3,
+    },
+    breakdownCount: {
+        fontSize: 11,
+        fontWeight: '700',
+        width: 44,
+        textAlign: 'right',
     },
 });

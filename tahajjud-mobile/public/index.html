@@ -1,179 +1,476 @@
 <!DOCTYPE html>
 <html lang="en">
-
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Privacy Policy - Tahajjud+</title>
+    <title>Tahajjud+ · Pray in the last third of the night</title>
+    <meta name="description" content="A focused companion for praying Tahajjud. Smart sleep schedule, Quran reader with 30+ translations and 7 reciters, Hifz memorization mode, accountability partner circle, journal, prayer tracker, anonymous community dua wall.">
+    <meta property="og:title" content="Tahajjud+ — Pray in the last third of the night">
+    <meta property="og:description" content="The companion app for Tahajjud. Wake on time, reflect, and stay consistent.">
+    <meta property="og:image" content="https://tahajjud-2d7bf.web.app/icon.png">
+
+    <!-- Apple Smart App Banner — when an iPhone visits the site in Safari,
+         iOS shows a one-tap "VIEW" / "OPEN" banner that deep-links to the
+         App Store listing or opens the installed app directly. -->
+    <meta name="apple-itunes-app" content="app-id=6759176533">
+    <meta name="theme-color" content="#020617">
+
+    <link rel="icon" type="image/png" href="/favicon.png">
+
     <style>
-        body {
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-            line-height: 1.6;
-            color: #1a1a1a;
-            margin: 0;
-            padding: 40px 20px;
-            background-color: #f9fafb;
-            text-align: center;
+        :root {
+            --bg: #020617;
+            --bg-2: #06091e;
+            --bg-3: #0a1228;
+            --accent: #22d3ee;
+            --accent-2: #38bdf8;
+            --text: #f1f5f9;
+            --text-2: #94a3b8;
+            --text-3: #64748b;
+            --border: rgba(255, 255, 255, 0.08);
         }
+
+        * { box-sizing: border-box; }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto, sans-serif;
+            background: radial-gradient(ellipse at top, var(--bg-3) 0%, var(--bg) 60%);
+            color: var(--text);
+            margin: 0;
+            min-height: 100vh;
+            line-height: 1.6;
+            -webkit-font-smoothing: antialiased;
+        }
+
+        a { color: var(--accent); text-decoration: none; }
+        a:hover { text-decoration: underline; }
 
         .container {
-            background-color: #ffffff;
-            padding: 40px;
-            border-radius: 12px;
-            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.05);
+            max-width: 1100px;
             margin: 0 auto;
-            text-align: left;
-            width: 100%;
-            max-width: 800px;
-            box-sizing: border-box;
-            display: block;
+            padding: 0 24px;
         }
 
-        h1 {
-            color: #0f172a;
-            margin-bottom: 10px;
-            border-bottom: 2px solid #e2e8f0;
-            padding-bottom: 20px;
+        nav {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 24px 0;
         }
 
-        h2 {
-            color: #334155;
-            margin-top: 30px;
-            font-size: 1.5rem;
+        .logo {
+            display: flex; align-items: center; gap: 10px;
+            font-weight: 800; font-size: 18px;
+            color: var(--text);
         }
 
-        h3 {
-            color: #475569;
-            margin-top: 20px;
-            font-size: 1.2rem;
+        .logo-icon {
+            width: 36px; height: 36px;
+            border-radius: 9px;
+            overflow: hidden;
+            box-shadow: 0 2px 10px rgba(34,211,238,0.25);
+        }
+        .logo-icon img { width: 100%; height: 100%; display: block; object-fit: cover; }
+
+        nav .links {
+            display: flex; gap: 24px; font-size: 14px; color: var(--text-2);
+        }
+        nav .links a { color: var(--text-2); font-weight: 600; }
+        nav .links a:hover { color: var(--text); text-decoration: none; }
+
+        /* Hero */
+        .hero {
+            padding: 80px 0 60px;
+            text-align: center;
         }
 
-        p,
-        ul {
-            color: #4b5563;
-            margin-bottom: 16px;
+        .hero h1 {
+            font-size: clamp(36px, 6vw, 64px);
+            font-weight: 900;
+            letter-spacing: -1.5px;
+            margin: 0 0 20px;
+            background: linear-gradient(180deg, #fff, #94a3b8);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
         }
 
-        ul {
-            padding-left: 20px;
+        .hero p {
+            font-size: clamp(16px, 2vw, 20px);
+            color: var(--text-2);
+            max-width: 620px;
+            margin: 0 auto 36px;
         }
 
-        .date {
-            color: #64748b;
+        .arabic-line {
+            font-family: "Amiri Quran", "Amiri", "Scheherazade", serif;
+            font-size: 24px;
+            color: var(--accent);
+            margin: 0 0 8px;
+            opacity: 0.85;
+        }
+
+        .arabic-translation {
+            font-size: 13px;
+            color: var(--text-3);
+            margin: 0 0 40px;
             font-style: italic;
-            margin-bottom: 30px;
-            display: block;
         }
 
-        .contact-section {
+        .cta-row {
+            display: flex; gap: 12px; justify-content: center; flex-wrap: wrap;
+            margin-top: 16px;
+        }
+
+        .btn {
+            display: inline-flex; align-items: center; gap: 8px;
+            padding: 14px 28px;
+            border-radius: 14px;
+            font-weight: 700; font-size: 15px;
+            border: 1px solid var(--border);
+            transition: transform 0.15s, background 0.15s;
+            cursor: pointer;
+        }
+
+        .btn:hover { transform: translateY(-2px); text-decoration: none; }
+
+        .btn-primary {
+            background: var(--accent);
+            color: #0a1228;
+            border-color: var(--accent);
+        }
+        .btn-primary:hover { background: var(--accent-2); }
+
+        .btn-secondary {
+            background: transparent;
+            color: var(--text);
+            border-color: var(--border);
+        }
+        .btn-secondary:hover { background: rgba(255,255,255,0.05); }
+
+        /* Apple App Store badge — black pill with white type, follows Apple's badge guidelines */
+        .btn-appstore {
+            background: #000;
+            color: #fff;
+            border-color: #000;
+            padding: 10px 22px;
+            gap: 10px;
+        }
+        .btn-appstore:hover { background: #111; text-decoration: none; }
+        .appstore-copy {
+            display: flex; flex-direction: column;
+            line-height: 1; text-align: left;
+        }
+        .appstore-small { font-size: 10px; font-weight: 500; opacity: 0.85; letter-spacing: 0.2px; }
+        .appstore-large { font-size: 19px; font-weight: 700; letter-spacing: -0.3px; margin-top: 2px; }
+
+        /* Features grid */
+        section {
+            padding: 80px 0;
+        }
+
+        .section-title {
             text-align: center;
-            margin-top: 40px;
-            width: 100%;
-            display: block;
+            font-size: clamp(28px, 4vw, 40px);
+            font-weight: 800;
+            letter-spacing: -0.5px;
+            margin: 0 0 12px;
         }
 
-        .contact-box {
-            background-color: #f1f5f9;
-            padding: 30px;
-            border-radius: 8px;
-            margin: 20px auto !important;
-            width: 90%;
-            max-width: 500px;
-            box-sizing: border-box;
+        .section-subtitle {
             text-align: center;
-            display: block;
+            color: var(--text-2);
+            max-width: 600px;
+            margin: 0 auto 60px;
+            font-size: 16px;
         }
 
-        a {
-            color: #2563eb;
-            text-decoration: none;
+        .grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+            gap: 20px;
         }
 
-        a:hover {
-            text-decoration: underline;
+        .card {
+            background: rgba(255, 255, 255, 0.02);
+            border: 1px solid var(--border);
+            border-radius: 20px;
+            padding: 28px;
+            transition: border-color 0.2s, transform 0.2s;
+        }
+
+        .card:hover {
+            border-color: rgba(34, 211, 238, 0.3);
+            transform: translateY(-2px);
+        }
+
+        .card-emoji { font-size: 28px; margin-bottom: 14px; }
+
+        .card-title {
+            font-size: 17px;
+            font-weight: 800;
+            margin: 0 0 8px;
+            color: var(--text);
+        }
+
+        .card-desc {
+            font-size: 13px;
+            color: var(--text-2);
+            margin: 0;
+            line-height: 1.55;
+        }
+
+        /* Stats strip */
+        .stats {
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: center;
+            gap: 60px;
+            padding: 60px 0;
+            border-top: 1px solid var(--border);
+            border-bottom: 1px solid var(--border);
+            margin: 60px 0;
+        }
+
+        .stat {
+            text-align: center;
+        }
+
+        .stat-num {
+            font-size: 40px;
+            font-weight: 900;
+            background: linear-gradient(135deg, var(--accent), var(--accent-2));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            line-height: 1;
+            margin-bottom: 6px;
+        }
+
+        .stat-label {
+            font-size: 12px;
+            font-weight: 700;
+            color: var(--text-3);
+            letter-spacing: 1.5px;
+            text-transform: uppercase;
+        }
+
+        /* Quote section */
+        .quote-section {
+            text-align: center;
+            padding: 100px 24px;
+        }
+
+        .quote-arabic {
+            font-family: "Amiri Quran", "Amiri", serif;
+            font-size: clamp(22px, 3vw, 28px);
+            line-height: 2.2;
+            color: var(--accent);
+            opacity: 0.9;
+            margin-bottom: 20px;
+            direction: rtl;
+        }
+
+        .quote-translation {
+            font-size: clamp(16px, 2vw, 19px);
+            font-style: italic;
+            max-width: 700px;
+            margin: 0 auto 12px;
+            color: var(--text);
+            line-height: 1.6;
+        }
+
+        .quote-citation {
+            font-size: 12px;
+            font-weight: 700;
+            color: var(--text-3);
+            letter-spacing: 1px;
+            text-transform: uppercase;
+        }
+
+        /* Footer */
+        footer {
+            border-top: 1px solid var(--border);
+            padding: 48px 0;
+            text-align: center;
+        }
+
+        footer .footer-links {
+            display: flex; justify-content: center; gap: 28px; flex-wrap: wrap;
+            margin-bottom: 24px;
+        }
+
+        footer .footer-links a {
+            color: var(--text-2);
+            font-size: 14px;
+        }
+
+        footer .copyright {
+            color: var(--text-3);
+            font-size: 12px;
+        }
+
+        @media (max-width: 600px) {
+            nav .links { display: none; }
+            .stats { gap: 30px; }
+            section { padding: 60px 0; }
         }
     </style>
 </head>
-
 <body>
-    <div class="container">
-        <h1>Privacy Policy</h1>
-        <span class="date">Last Updated: February 13, 2026</span>
 
-        <p>Your privacy is important to us. This Privacy Policy explains how <strong>Tahajjud+</strong> ("we," "us," or
-            "our") collects, uses, and protects your information when you use our mobile application.</p>
+<div class="container">
+    <nav>
+        <div class="logo">
+            <div class="logo-icon"><img src="/icon.png" alt="" /></div>
+            <span>Tahajjud+</span>
+        </div>
+        <div class="links">
+            <a href="#features">Features</a>
+            <a href="/support">Support</a>
+            <a href="/privacy">Privacy</a>
+        </div>
+    </nav>
+</div>
 
-        <h2>1. Information We Collect</h2>
+<div class="hero container">
+    <div class="arabic-line">إِنَّ نَاشِئَةَ ٱلَّيْلِ هِىَ أَشَدُّ وَطْـًٔا وَأَقْوَمُ قِيلًا</div>
+    <div class="arabic-translation">"Indeed, the hours of the night are more effective for concurrence and more suitable for words." — Quran 73:6</div>
+    <h1>Pray in the last third of the night.</h1>
+    <p>The Lord descends to the lowest heaven in the last third of every night and asks who is calling. Tahajjud+ helps you be there.</p>
+    <div class="cta-row">
+        <a href="https://apps.apple.com/us/app/tahajjud/id6759176533"
+           class="btn btn-appstore"
+           target="_blank"
+           rel="noopener">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                <path d="M17.05 20.28c-.98.95-2.05.8-3.08.35-1.09-.46-2.09-.48-3.24 0-1.44.62-2.2.44-3.06-.35C2.79 15.25 3.51 7.59 9.05 7.31c1.35.07 2.29.74 3.08.8 1.18-.24 2.31-.93 3.57-.84 1.51.12 2.65.72 3.4 1.8-3.12 1.87-2.38 5.98.48 7.13-.57 1.5-1.31 2.99-2.54 4.09zM12.03 7.25c-.15-2.23 1.66-4.07 3.74-4.25.29 2.58-2.34 4.5-3.74 4.25z"/>
+            </svg>
+            <span class="appstore-copy">
+                <span class="appstore-small">Download on the</span>
+                <span class="appstore-large">App Store</span>
+            </span>
+        </a>
+        <a href="#features" class="btn btn-secondary">See what's inside</a>
+    </div>
+</div>
 
-        <h3>a. Location Information</h3>
-        <p>We request access to your device's precise or approximate location. This data is used <strong>solely to
-                calculate accurate local prayer times and determine the Qibla direction</strong> relative to your
-            position. This calculation is performed on your device or via ephemeral requests to prayer time services. We
-            do not store your location history.</p>
+<section id="features" class="container">
+    <h2 class="section-title">Built for one thing</h2>
+    <p class="section-subtitle">Every feature exists to make praying Tahajjud easier to start, sustain, and deepen.</p>
+    <div class="grid">
 
-        <h3>b. Account Information</h3>
-        <p>If you choose to create an account using Google Sign-In or Apple Sign-In, we collect your
-            <strong>Name</strong> and <strong>Email Address</strong>. This information is used to:
-        </p>
-        <ul>
-            <li>Authenticate your identity.</li>
-            <li>Synchronize your App data (such as prayer logs, streak history, and personal duas) across your devices
-                via Firebase Cloud Sync.</li>
-        </ul>
+        <div class="card">
+            <div class="card-emoji">🌙</div>
+            <h3 class="card-title">Smart bedtime</h3>
+            <p class="card-desc">We read your past sleep (with permission) and suggest a bedtime that lands you in the blessed last third — naturally, without dragging yourself awake.</p>
+        </div>
 
-        <h3>c. Device and Usage Data</h3>
-        <p>We may use third-party services like <strong>Google Firebase</strong> to collect anonymous usage statistics
-            and crash reports. This helps us identify stability issues and improve the app experience. This data does
-            not personally identify you.</p>
+        <div class="card">
+            <div class="card-emoji">🔔</div>
+            <h3 class="card-title">Stacked reminders</h3>
+            <p class="card-desc">Multiple gentle alarms before Fajr so the first miss doesn't break your night. Live Activities on your Lock Screen count down to the moment.</p>
+        </div>
 
-        <h2>2. Use of Your Information</h2>
-        <p>We use the information we collect for the following purposes:</p>
-        <ul>
-            <li><strong>App Functionality:</strong> To provide core features (Prayer Times, Qibla, Cloud Sync).</li>
-            <li><strong>Account Management:</strong> To maintain your user account and secure your data.</li>
-            <li><strong>Authentication:</strong> To verify your identity when you log in.</li>
-            <li><strong>Notifications:</strong> To send you prayer reminders and alerts (if opted in).</li>
-        </ul>
+        <div class="card">
+            <div class="card-emoji">📖</div>
+            <h3 class="card-title">Madinah Mushaf</h3>
+            <p class="card-desc">The Quran in 30+ verified translations — Tanzil-sourced, scholar-endorsed. Beautiful Amiri Quran typography. Word-by-word audio sync.</p>
+        </div>
 
-        <h2>3. Data Sharing and Third Parties</h2>
-        <p>We do not sell your personal data. We share data only with trusted third-party service providers necessary
-            for app functionality. These third parties include:</p>
-        <ul>
-            <li><strong>Google Play Services:</strong> Used for core Android functionality and app distribution.</li>
-            <li><strong>Google Firebase:</strong> Used for secure authentication, database storage, crash reporting, and
-                analytics.</li>
-            <li><strong>Apple:</strong> Used for Apple Sign-In and iCloud synchronization features.</li>
-        </ul>
+        <div class="card">
+            <div class="card-emoji">🎙️</div>
+            <h3 class="card-title">7 reciters</h3>
+            <p class="card-desc">Alafasy, Sudais, Maher Al-Mueaqly, Saood Ash-Shuraym, Abdul Basit, Minshawi, Husary. Download for offline listening. Full-screen player with sleep timer.</p>
+        </div>
 
-        <h2 id="deletion">4. Data Retention and Deletion</h2>
-        <p>We retain your personal data (Name, Email, Sync Data) as long as you maintain an active account. You have
-            full control over your data.</p>
+        <div class="card">
+            <div class="card-emoji">✍️</div>
+            <h3 class="card-title">Night journal</h3>
+            <p class="card-desc">Reflect after every Tahajjud. Log mood, rakats, and the dua on your heart. Look back at flashbacks from a month ago.</p>
+        </div>
 
-        <h3>Requesting Data Deletion</h3>
-        <p>You have the right to request the deletion of your account and all associated data. To do so, you may:</p>
-        <ul>
-            <li><strong>In-App:</strong> Use the "Delete Account" option within the app settings (Settings > Account >
-                Delete Account).</li>
-            <li><strong>Email:</strong> Contact us directly at <a
-                    href="mailto:tahajjud.letters@gmail.com">tahajjud.letters@gmail.com</a> with
-                the subject line "Account Deletion Request".</li>
-        </ul>
-        <p>Upon receiving your request, we will permanently delete your account and personal data from our servers
-            within 30 days. This includes all synced prayer logs, streak history, and personal duas.</p>
+        <div class="card">
+            <div class="card-emoji">🤲</div>
+            <h3 class="card-title">Dua Wall</h3>
+            <p class="card-desc">An anonymous community feed of duas. Publish your own (privately tied to your account but never shown), say Ameen on others'.</p>
+        </div>
 
-        <h2>5. Children's Privacy</h2>
-        <p>Our app does not knowingly collect personal information from children under the age of 13. If needed, please
-            contact us to remove such information.</p>
+        <div class="card">
+            <div class="card-emoji">🔥</div>
+            <h3 class="card-title">Streaks that forgive</h3>
+            <p class="card-desc">Weekly freeze — miss a night, keep the streak. Built for sustainability, not pressure.</p>
+        </div>
 
-        <div class="contact-section">
-            <h2>6. Contact Us</h2>
-            <div class="contact-box">
-                <p>If you have any questions or concerns about this Privacy Policy, please contact us at:</p>
-                <p><strong>Email:</strong> <a href="mailto:tahajjud.letters@gmail.com">tahajjud.letters@gmail.com</a>
-                </p>
-            </div>
+        <div class="card">
+            <div class="card-emoji">🧠</div>
+            <h3 class="card-title">Hifz mode</h3>
+            <p class="card-desc">Structured ayah repetition for serious Quran memorization. Progressive locking, review tracking, audio loops.</p>
+        </div>
+
+        <div class="card">
+            <div class="card-emoji">👥</div>
+            <h3 class="card-title">Accountability Circle</h3>
+            <p class="card-desc">Connect with up to 5 partners. Wake each other for Tahajjud, see who prayed tonight, build a community of night-worshippers.</p>
+        </div>
+
+        <div class="card">
+            <div class="card-emoji">⌚</div>
+            <h3 class="card-title">Apple Watch + Siri</h3>
+            <p class="card-desc">Log Tahajjud from your wrist. "Hey Siri, log Fajr" from anywhere. Lock Screen widgets show your next prayer and streak.</p>
+        </div>
+
+        <div class="card">
+            <div class="card-emoji">🎨</div>
+            <h3 class="card-title">Five premium themes</h3>
+            <p class="card-desc">Emerald, Gold, Rose, Purple, Cosmic. Each one is a different mood for a different night.</p>
         </div>
     </div>
-</body>
+</section>
 
+<div class="stats container">
+    <div class="stat">
+        <div class="stat-num">30+</div>
+        <div class="stat-label">Translations</div>
+    </div>
+    <div class="stat">
+        <div class="stat-num">7</div>
+        <div class="stat-label">Reciters</div>
+    </div>
+    <div class="stat">
+        <div class="stat-num">114</div>
+        <div class="stat-label">Surahs offline</div>
+    </div>
+    <div class="stat">
+        <div class="stat-num">0</div>
+        <div class="stat-label">Ads, ever</div>
+    </div>
+</div>
+
+<section class="quote-section">
+    <div class="quote-arabic">
+        يَنْزِلُ رَبُّنَا تَبَارَكَ وَتَعَالَى كُلَّ لَيْلَةٍ إِلَى السَّمَاءِ الدُّنْيَا
+        <br>حِينَ يَبْقَى ثُلُثُ اللَّيْلِ الْآخِرُ
+    </div>
+    <p class="quote-translation">
+        "Our Lord — blessed and exalted — descends every night to the lowest heaven when the last third of the night remains, saying: 'Who is calling upon Me, that I may answer him? Who is asking of Me, that I may give him? Who is seeking My forgiveness, that I may forgive him?'"
+    </p>
+    <div class="quote-citation">— Sahih al-Bukhari 1145, Sahih Muslim 758</div>
+</section>
+
+<footer>
+    <div class="container">
+        <div class="footer-links">
+            <a href="/privacy">Privacy Policy</a>
+            <a href="/terms">Terms of Use</a>
+            <a href="/support">Support</a>
+            <a href="mailto:tahajjud.letters@gmail.com">Contact</a>
+        </div>
+        <div class="copyright">
+            © 2026 Tahajjud+ · Built with iḥsān
+        </div>
+    </div>
+</footer>
+
+</body>
 </html>

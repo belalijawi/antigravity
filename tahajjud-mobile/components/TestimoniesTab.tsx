@@ -1,7 +1,8 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { View, Text, FlatList, TouchableOpacity, StyleSheet, Linking, Share, ScrollView, Platform, Alert, RefreshControl, DeviceEventEmitter } from 'react-native';
+import { View, Text, FlatList, TouchableOpacity, StyleSheet, Linking, Share, ScrollView, Platform, Alert, RefreshControl, DeviceEventEmitter, Dimensions, NativeSyntheticEvent, NativeScrollEvent } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Heart, Send, Share2, BookHeart, Sparkles } from 'lucide-react-native';
+import { Heart, Send, Share2, BookHeart, Sparkles, PenLine } from 'lucide-react-native';
+import { SubmitTestimonyModal } from './SubmitTestimonyModal';
 import { BlurView } from 'expo-blur';
 import { LinearGradient } from 'expo-linear-gradient';
 import Animated, { FadeInDown, FadeIn } from 'react-native-reanimated';
@@ -71,8 +72,8 @@ const TestimonyCard = ({ item, onShare }: { item: Testimony, onShare: (item: Tes
                     >
                         <Heart
                             size={16}
-                            color={liked ? "#f8fafc" : "#94a3b8"}
-                            fill={liked ? "#f8fafc" : "none"}
+                            color={liked ? "#ef4444" : "#94a3b8"}
+                            fill={liked ? "#ef4444" : "none"}
                         />
                         <Text style={[styles.reactionCount, liked && styles.reactionCountActive]}>
                             {count}
@@ -98,8 +99,16 @@ export function TestimoniesTab() {
     const [isRefreshing, setIsRefreshing] = useState(false);
     const [featured, setFeatured] = useState<Testimony[]>(() => pickFeatured(initialTestimonies));
     const [featuredIndex, setFeaturedIndex] = useState(0);
+    const [showSubmit, setShowSubmit] = useState(false);
     const viewShotRef = useRef<View>(null);
     const flatListRef = useRef<FlatList>(null);
+    const featuredScrollRef = useRef<FlatList<Testimony>>(null);
+    // When the user swipes, pause auto-rotation for a bit so it doesn't fight
+    // them. Stored as a timestamp until which auto-rotation is paused.
+    const userInteractionUntilRef = useRef<number>(0);
+    // Each featured "page" is the full screen width so pagingEnabled snaps cleanly.
+    const SCREEN_WIDTH = Dimensions.get('window').width;
+    const FEATURED_CARD_WIDTH = SCREEN_WIDTH;
 
     useEffect(() => {
         const sub = DeviceEventEmitter.addListener('scrollToTop', (tab: string) => {
@@ -108,13 +117,36 @@ export function TestimoniesTab() {
         return () => sub.remove();
     }, []);
 
-    // Cycle through featured stories every 5 seconds
+    // Cycle through featured stories every 5 seconds, but pause auto-rotation
+    // for 10 seconds after the user manually swipes — so the app doesn't fight
+    // their gesture by snapping back.
     useEffect(() => {
+        if (featured.length <= 1) return;
         const t = setInterval(() => {
-            setFeaturedIndex(i => (i + 1) % featured.length);
+            if (Date.now() < userInteractionUntilRef.current) return;
+            setFeaturedIndex(prev => {
+                const next = (prev + 1) % featured.length;
+                try {
+                    featuredScrollRef.current?.scrollToOffset({
+                        offset: next * FEATURED_CARD_WIDTH,
+                        animated: true,
+                    });
+                } catch { /* ignore */ }
+                return next;
+            });
         }, 5000);
         return () => clearInterval(t);
-    }, [featured.length]);
+    }, [featured.length, FEATURED_CARD_WIDTH]);
+
+    const handleFeaturedScroll = (e: NativeSyntheticEvent<NativeScrollEvent>) => {
+        const x = e.nativeEvent.contentOffset.x;
+        const i = Math.round(x / FEATURED_CARD_WIDTH);
+        if (i !== featuredIndex && i >= 0 && i < featured.length) {
+            setFeaturedIndex(i);
+        }
+        // User swiped — pause auto-rotation for 10 seconds.
+        userInteractionUntilRef.current = Date.now() + 10_000;
+    };
 
     useEffect(() => {
         loadTestimonies();
@@ -216,6 +248,10 @@ export function TestimoniesTab() {
                 renderItem={({ item }) => <TestimonyCard item={item} onShare={handleShareQuote} />}
                 keyExtractor={item => item.id}
                 contentContainerStyle={[styles.listContent, { flexGrow: 1 }]}
+                removeClippedSubviews={Platform.OS === 'android'}
+                initialNumToRender={6}
+                maxToRenderPerBatch={4}
+                windowSize={5}
                 refreshControl={
                     <RefreshControl
                         refreshing={isRefreshing}
@@ -231,34 +267,52 @@ export function TestimoniesTab() {
                             <Text style={[styles.headerSubtitle, { color: colors.secondaryText }]}>Echoes of faith from the silent hours</Text>
                         </View>
 
-                        {/* Featured cycling story */}
+                        {/* Featured stories — auto-rotating + swipeable horizontal pager.
+                            Negative margin breaks out of the parent FlatList's
+                            paddingHorizontal: 20 so the inner pager spans the
+                            full screen width — required for pagingEnabled to
+                            snap each card cleanly. */}
                         {featured.length > 0 && (
-                            <TouchableOpacity
-                                activeOpacity={0.85}
-                                style={styles.featuredCard}
-                                onPress={() => setSharingQuote(featured[featuredIndex])}
-                            >
-                                <BlurView intensity={20} tint="dark" style={StyleSheet.absoluteFill} />
-                                <LinearGradient
-                                    colors={[colors.accent + '22', 'transparent']}
-                                    style={StyleSheet.absoluteFill}
-                                    start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}
+                            <View style={{ marginHorizontal: -20 }}>
+                                <FlatList
+                                    ref={featuredScrollRef}
+                                    data={featured}
+                                    keyExtractor={(item) => item.id}
+                                    horizontal
+                                    pagingEnabled
+                                    showsHorizontalScrollIndicator={false}
+                                    onMomentumScrollEnd={handleFeaturedScroll}
+                                    decelerationRate="fast"
+                                    renderItem={({ item }) => (
+                                        <View style={{ width: SCREEN_WIDTH, paddingHorizontal: 20 }}>
+                                            <TouchableOpacity
+                                                activeOpacity={0.85}
+                                                style={[styles.featuredCard, { marginHorizontal: 0 }]}
+                                                onPress={() => setSharingQuote(item)}
+                                            >
+                                                <BlurView intensity={20} tint="dark" style={StyleSheet.absoluteFill} />
+                                                <LinearGradient
+                                                    colors={[colors.accent + '22', 'transparent']}
+                                                    style={StyleSheet.absoluteFill}
+                                                    start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}
+                                                />
+                                                <View style={styles.featuredBadge}>
+                                                    <Sparkles size={11} color={colors.accent} />
+                                                    <Text style={[styles.featuredBadgeText, { color: colors.accent }]}>Featured</Text>
+                                                </View>
+                                                <Text style={styles.featuredTitle} numberOfLines={1}>{item.title}</Text>
+                                                <Text style={styles.featuredBody} numberOfLines={3}>{item.body}</Text>
+                                                <Text style={styles.featuredAuthor}>{item.author} · {item.location}</Text>
+                                            </TouchableOpacity>
+                                        </View>
+                                    )}
                                 />
-                                <View style={styles.featuredBadge}>
-                                    <Sparkles size={11} color={colors.accent} />
-                                    <Text style={[styles.featuredBadgeText, { color: colors.accent }]}>Featured</Text>
+                                <View style={[styles.featuredDots, { alignSelf: 'center', marginTop: 8, marginBottom: 16 }]}>
+                                    {featured.map((_, i) => (
+                                        <View key={i} style={[styles.featuredDot, i === featuredIndex && { backgroundColor: colors.accent, width: 14 }]} />
+                                    ))}
                                 </View>
-                                <Text style={styles.featuredTitle} numberOfLines={1}>{featured[featuredIndex].title}</Text>
-                                <Text style={styles.featuredBody} numberOfLines={3}>{featured[featuredIndex].body}</Text>
-                                <View style={styles.featuredFooter}>
-                                    <Text style={styles.featuredAuthor}>{featured[featuredIndex].author} · {featured[featuredIndex].location}</Text>
-                                    <View style={styles.featuredDots}>
-                                        {featured.map((_, i) => (
-                                            <View key={i} style={[styles.featuredDot, i === featuredIndex && { backgroundColor: colors.accent, width: 14 }]} />
-                                        ))}
-                                    </View>
-                                </View>
-                            </TouchableOpacity>
+                            </View>
                         )}
 
                         <View style={styles.topicsContainer}>
@@ -294,16 +348,23 @@ export function TestimoniesTab() {
                 showsVerticalScrollIndicator={false}
             />
 
-            <TouchableOpacity style={[styles.fab, { shadowColor: colors.shadow }]} onPress={handleShareStory}>
+            <TouchableOpacity
+                style={[styles.fab, { shadowColor: colors.shadow }]}
+                onPress={() => { haptic.medium(); setShowSubmit(true); }}
+                accessibilityLabel="Share your Tahajjud story"
+                accessibilityRole="button"
+            >
                 <LinearGradient
-                    colors={colors.accentGradient} // Dynamic Gradient
+                    colors={colors.accentGradient}
                     style={StyleSheet.absoluteFill}
                     start={{ x: 0, y: 0 }}
                     end={{ x: 1, y: 1 }}
                 />
-                <Send color="#020617" size={20} strokeWidth={2.5} />
-                <Text style={styles.fabText}>Share Reflection</Text>
+                <PenLine color="#020617" size={20} strokeWidth={2.5} />
+                <Text style={styles.fabText}>Share Your Story</Text>
             </TouchableOpacity>
+
+            <SubmitTestimonyModal visible={showSubmit} onClose={() => setShowSubmit(false)} />
 
             <View collapsable={false} style={styles.captureBuffer}>
                 <QuoteShareCard ref={viewShotRef} testimony={sharingQuote} />
@@ -517,8 +578,8 @@ const styles = StyleSheet.create({
         borderColor: 'rgba(255, 255, 255, 0.06)',
     },
     reactionButtonActive: {
-        backgroundColor: 'rgba(248, 250, 252, 0.08)',
-        borderColor: 'rgba(248, 250, 252, 0.2)',
+        backgroundColor: 'rgba(239, 68, 68, 0.12)',
+        borderColor: 'rgba(239, 68, 68, 0.35)',
     },
     reactionCount: {
         marginLeft: 8,
@@ -527,7 +588,7 @@ const styles = StyleSheet.create({
         fontWeight: '800',
     },
     reactionCountActive: {
-        color: '#f8fafc',
+        color: '#ef4444',
     },
     fab: {
         position: 'absolute',

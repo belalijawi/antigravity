@@ -1,12 +1,17 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { View, Text, ScrollView, TextInput, TouchableOpacity, StyleSheet, FlatList, Alert, Modal, KeyboardAvoidingView, Platform, ScrollView as RNScrollView, ActivityIndicator, DeviceEventEmitter } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Search, Heart, Volume2, Square, Plus, X, Trash2, Mail, PenTool, Sprout, Lock, Moon, BookHeart } from 'lucide-react-native';
+import { Search, Heart, Volume2, Square, Plus, X, Trash2, Mail, PenTool, Sprout, Lock, Moon, BookHeart, PenLine } from 'lucide-react-native';
 import { TahajjudJournalHistory } from './TahajjudJournalHistory';
+import { TahajjudJournalModal } from './TahajjudJournalModal';
+import { DuaWallModal } from './DuaWall';
 import { TahajjudJournal, STATE_OPTIONS, JournalEntry } from '../utils/tahajjudJournal';
 import { duaDatabase, categories, Dua } from '../data/duas';
+import { fuzzyMatch, normalize, matchScore } from '../utils/fuzzy';
+import { relatedTerms } from '../utils/synonyms';
+import { requireBiometric } from '../utils/biometricGate';
 import { getBookmarkedDuas, toggleBookmark } from '../utils/bookmarks';
-import { getPersonalDuas, savePersonalDua, deletePersonalDua, PersonalDua } from '../utils/personalDuas';
+import { getPersonalDuas, savePersonalDua, deletePersonalDua, subscribePersonalDuas, PersonalDua } from '../utils/personalDuas';
 import { checkAchievements } from '../utils/achievements';
 import * as Speech from 'expo-speech';
 import * as LocalAuthentication from 'expo-local-authentication';
@@ -82,8 +87,8 @@ const DuaCard = React.memo(({ dua, isBookmarked, onToggleBookmark, isPlaying, ac
                             >
                                 <Heart
                                     size={20}
-                                    color={isBookmarked ? '#f8fafc' : '#94a3b8'}
-                                    fill={isBookmarked ? '#f8fafc' : 'none'}
+                                    color={isBookmarked ? '#ef4444' : '#94a3b8'}
+                                    fill={isBookmarked ? '#ef4444' : 'none'}
                                 />
                             </TouchableOpacity>
                         )}
@@ -178,7 +183,9 @@ const DuaCard = React.memo(({ dua, isBookmarked, onToggleBookmark, isPlaying, ac
 });
 
 
-const FREE_DUA_LIMIT = 3;
+// Letters are unlimited for everyone — premium differentiation lives in the
+// richer Night Journal (mood, rakats, history). Keeping write access free
+// ensures someone can write at 3am without ever hitting a paywall.
 
 export function DuasTab() {
     const { colors } = useTheme();
@@ -196,7 +203,35 @@ export function DuasTab() {
         const sub = DeviceEventEmitter.addListener('scrollToTop', (tab: string) => {
             if (tab === 'Duas') flatListRef.current?.scrollToOffset({ offset: 0, animated: true });
         });
-        return () => sub.remove();
+
+        const focusDuaById = (id: string) => {
+            const target = duaDatabase.find((d) => d.id === id);
+            if (target) {
+                setSelectedCategory('All');
+                setSearchQuery(target.title);
+            }
+        };
+
+        // Live events for already-mounted tab
+        const openDuaSub = DeviceEventEmitter.addListener('open:dua', (p: { id: string }) => {
+            if (p?.id) focusDuaById(p.id);
+        });
+        const openLetterSub = DeviceEventEmitter.addListener('open:letter', () => {
+            setActiveTab('personal');
+        });
+
+        // Flush pending request that arrived before this screen mounted
+        const { consumePendingOpen } = require('../App');
+        const pendingDua = consumePendingOpen('dua');
+        if (pendingDua) focusDuaById(pendingDua.id);
+        const pendingLetter = consumePendingOpen('letter');
+        if (pendingLetter) setActiveTab('personal');
+
+        return () => {
+            sub.remove();
+            openDuaSub.remove();
+            openLetterSub.remove();
+        };
     }, []);
 
     const clearWordTimer = useCallback(() => {
@@ -211,6 +246,8 @@ export function DuasTab() {
     const [isModalVisible, setIsModalVisible] = useState(false);
     const [journalEntries, setJournalEntries] = useState<JournalEntry[]>([]);
     const [showJournalHistory, setShowJournalHistory] = useState(false);
+    const [showJournalWrite, setShowJournalWrite] = useState(false);
+    const [showDuaWall, setShowDuaWall] = useState(false);
 
     // Form State
     const [newDuaTitle, setNewDuaTitle] = useState('');
@@ -229,6 +266,21 @@ export function DuasTab() {
             Speech.stop();
             clearWordTimer();
         };
+    }, []);
+
+    // Live journal updates for premium users so banner count refreshes instantly
+    useEffect(() => {
+        if (!isPremium) return;
+        TahajjudJournal.getAll().then(setJournalEntries).catch(() => {});
+        const unsub = TahajjudJournal.subscribe(setJournalEntries);
+        return () => unsub();
+    }, [isPremium]);
+
+    // Live personal-duas subscription — any save/update/delete from anywhere
+    // (including Firestore-driven changes in future) is reflected instantly.
+    useEffect(() => {
+        const unsub = subscribePersonalDuas(setPersonalDuas);
+        return () => unsub();
     }, []);
 
     const checkLockStatus = async () => {
@@ -256,9 +308,8 @@ export function DuasTab() {
     };
 
     const loadPersonalDuasData = async () => {
-        // 1. Load local data first for speed
-        const localDuas = await getPersonalDuas();
-        setPersonalDuas(localDuas);
+        // 1. Load local data first for speed (subscription will keep it in sync)
+        await getPersonalDuas(); // triggers migration + subscription will populate state
 
         // 2. If authenticated via Firebase, try to fetch fresh data from cloud
         const auth = getFirebaseAuth();
@@ -266,8 +317,9 @@ export function DuasTab() {
         if (firebaseUser) {
             const cloudDuas = await fetchCloudData(firebaseUser.uid);
             if (cloudDuas.length > 0) {
-                setPersonalDuas(cloudDuas);
+                // Persist via the same key + notify path so all subscribers update
                 await AsyncStorage.setItem('personal-duas', JSON.stringify(cloudDuas));
+                setPersonalDuas(cloudDuas);
             }
         }
     };
@@ -278,11 +330,8 @@ export function DuasTab() {
             return;
         }
 
-        // Free limit check
-        if (!isPremium && personalDuas.length >= FREE_DUA_LIMIT) {
-            openPaywall();
-            return;
-        }
+        // Letters are unlimited and free. Paywalling someone at 3am writing
+        // their fourth letter to Allah would be the worst possible moment.
 
         const date = new Date();
         const formattedDate = date.toLocaleDateString('en-US', {
@@ -303,19 +352,29 @@ export function DuasTab() {
         };
 
         await savePersonalDua(newDua);
-        const updatedDuas = [newDua, ...personalDuas];
-        setPersonalDuas(updatedDuas);
+        // Subscription via subscribePersonalDuas updates state authoritatively
         setIsModalVisible(false);
         resetForm();
 
-        // Check for achievements
-        const newlyUnlocked = await checkAchievements('dua', updatedDuas.length);
+        // Check for achievements (subscription has already fired by now)
+        const newlyUnlocked = await checkAchievements('dua', personalDuas.length + 1);
         if (newlyUnlocked) {
-            Alert.alert(
-                "Achievement Unlocked! 🏅",
-                `Congratulations! You earned the "${newlyUnlocked.title}" badge for your Tahajjud Letters.\n\n${newlyUnlocked.description}`,
-                [{ text: "MashAllah!" }]
-            );
+            if (!isPremium) {
+                Alert.alert(
+                    `🏅 ${newlyUnlocked.title}`,
+                    `${newlyUnlocked.description}\n\nUnlock Premium to see all your achievements, track your full history, and honour every night you've stood before Allah.`,
+                    [
+                        { text: 'MashAllah!', style: 'cancel' },
+                        { text: 'Unlock Premium ⭐', onPress: openPaywall },
+                    ]
+                );
+            } else {
+                Alert.alert(
+                    `🏅 ${newlyUnlocked.title}`,
+                    `MashAllah! ${newlyUnlocked.description}`,
+                    [{ text: 'MashAllah!' }]
+                );
+            }
         }
     };
 
@@ -350,12 +409,14 @@ export function DuasTab() {
             const voices = await Speech.getAvailableVoicesAsync();
 
             // Log all Arabic voices to help debugging (if we could see logs)
-            const arabicVoices = voices.filter(v => v.language.includes('ar'));
-            console.log('[Audio] Available Arabic voices:', arabicVoices.map(v => v.name));
+            const arabicVoices = voices.filter(v => v.language.toLowerCase().startsWith('ar'));
+            console.log('[Audio] Available Arabic voices:', arabicVoices.map(v => `${v.name} (${v.language})`));
 
-            // Priority list for better quality voices
-            // "Maged" is a high-quality male voice on iOS
-            // "Tarik" is another male voice
+            // Priority list for better quality voices.
+            // iOS: "Maged" / "Tarik" / "Majed" are high-quality Apple voices.
+            // Android: voice names vary by manufacturer ("ar-xa-x-arz-network",
+            // "ar-eg-x-arf-network", "Samsung ar-AE", etc.) — fall through to
+            // step 2 which picks any Arabic voice found.
             const preferredNames = ['Maged', 'Tarik', 'Majed'];
 
             let selectedVoice = null;
@@ -374,6 +435,8 @@ export function DuasTab() {
             if (selectedVoice) {
                 console.log('[Audio] Selected voice:', selectedVoice.name);
                 setVoiceIdentifier(selectedVoice.identifier);
+            } else {
+                console.log('[Audio] No Arabic voice available on this device');
             }
         } catch (e) {
             console.log('Error loading voices', e);
@@ -412,6 +475,9 @@ export function DuasTab() {
             const wordDurations = words.map(w => Math.max(220, (280 + w.length * 30) / 0.85));
 
             const options: Speech.SpeechOptions = {
+                // Always declare Arabic so Android's TTS engine picks a sane voice
+                // (or fails fast so we can show a helpful error to the user).
+                language: 'ar',
                 rate: 0.85,
                 pitch: 1.0,
                 onStart: () => {
@@ -434,12 +500,47 @@ export function DuasTab() {
                     console.log('Speech error:', e);
                     setPlayingDuaId(null);
                     clearWordTimer();
+                    // On Android, missing Arabic TTS data is the #1 cause of silent
+                    // playback. Surface a helpful message with install steps.
+                    if (Platform.OS === 'android') {
+                        Alert.alert(
+                            'Arabic Voice Not Installed',
+                            'Your phone is missing Arabic text-to-speech data.\n\n' +
+                            'To enable dua audio:\n' +
+                            '1. Settings → System → Languages & input\n' +
+                            '2. Tap "Text-to-speech output"\n' +
+                            '3. Tap the gear ⚙ next to Google\'s engine\n' +
+                            '4. Tap "Install voice data" → Arabic\n\n' +
+                            'After install, reopen Tahajjud+ and try again.',
+                            [{ text: 'OK' }]
+                        );
+                    }
                 }
             };
 
             if (voiceIdentifier) {
                 options.voice = voiceIdentifier;
-                options.language = 'ar';
+            }
+
+            // On Android specifically, if we have no Arabic voice loaded after
+            // initial scan, warn the user immediately rather than waiting for
+            // silent playback. iOS bundles Arabic voices so this only fires on
+            // Android devices missing the language pack.
+            if (Platform.OS === 'android' && !voiceIdentifier) {
+                Alert.alert(
+                    'Arabic Voice Not Installed',
+                    'Your phone is missing Arabic text-to-speech data.\n\n' +
+                    'To enable dua audio:\n' +
+                    '1. Settings → System → Languages & input\n' +
+                    '2. Tap "Text-to-speech output"\n' +
+                    '3. Tap the gear ⚙ next to Google\'s engine\n' +
+                    '4. Tap "Install voice data" → Arabic\n\n' +
+                    'After install, reopen Tahajjud+ and try again.',
+                    [{ text: 'OK' }]
+                );
+                setPlayingDuaId(null);
+                clearWordTimer();
+                return;
             }
 
             Speech.speak(dua.arabic, options);
@@ -453,87 +554,11 @@ export function DuasTab() {
     }, [playingDuaId, voiceIdentifier, clearWordTimer]);
 
     const filteredDuas = useMemo(() => {
-        // Synonym / related-topic map
-        const SYNONYMS: Record<string, string[]> = {
-            money: ['wealth', 'rizq', 'provision', 'income', 'finance', 'rich', 'poor', 'poverty', 'halal', 'earning'],
-            rich: ['wealth', 'rizq', 'provision', 'money', 'income'],
-            poor: ['poverty', 'wealth', 'rizq', 'money', 'need'],
-            job: ['work', 'rizq', 'provision', 'wealth', 'income', 'success', 'career'],
-            work: ['job', 'rizq', 'provision', 'success', 'career'],
-            stress: ['anxiety', 'worry', 'fear', 'peace', 'calm', 'depression', 'mental'],
-            anxiety: ['stress', 'worry', 'fear', 'peace', 'calm', 'depression'],
-            sad: ['grief', 'sorrow', 'depression', 'anxiety', 'loss', 'heartbreak'],
-            depression: ['anxiety', 'stress', 'sad', 'grief', 'peace', 'mental'],
-            worry: ['anxiety', 'stress', 'fear', 'peace', 'trust', 'tawakkul'],
-            fear: ['anxiety', 'worry', 'protection', 'peace', 'trust'],
-            sick: ['health', 'illness', 'healing', 'shifa', 'disease', 'cure'],
-            illness: ['sick', 'health', 'healing', 'shifa', 'disease', 'cure'],
-            heal: ['health', 'sick', 'illness', 'shifa', 'cure'],
-            health: ['sick', 'healing', 'shifa', 'illness', 'disease'],
-            shifa: ['health', 'healing', 'sick', 'illness'],
-            wife: ['marriage', 'spouse', 'family', 'nikah', 'husband'],
-            husband: ['marriage', 'spouse', 'family', 'nikah', 'wife'],
-            marriage: ['spouse', 'wife', 'husband', 'family', 'nikah', 'wedding'],
-            nikah: ['marriage', 'spouse', 'family'],
-            kids: ['children', 'family', 'child', 'baby', 'offspring'],
-            children: ['family', 'kids', 'child', 'offspring', 'baby'],
-            child: ['children', 'family', 'kids', 'offspring'],
-            family: ['children', 'wife', 'husband', 'parents', 'marriage'],
-            parents: ['family', 'mother', 'father', 'forgiveness'],
-            mum: ['parents', 'mother', 'family'],
-            dad: ['parents', 'father', 'family'],
-            mother: ['parents', 'family', 'mum'],
-            father: ['parents', 'family', 'dad'],
-            sleep: ['night', 'rest', 'bedtime', 'daily routine'],
-            eat: ['food', 'meal', 'daily routine', 'blessing'],
-            food: ['eat', 'meal', 'daily routine', 'provision', 'rizq'],
-            travel: ['journey', 'trip', 'vehicle', 'road'],
-            journey: ['travel', 'trip', 'vehicle'],
-            forgive: ['forgiveness', 'sin', 'repentance', 'tawbah', 'mercy'],
-            sin: ['forgiveness', 'repentance', 'tawbah', 'guilt', 'regret'],
-            repent: ['repentance', 'tawbah', 'forgiveness', 'sin'],
-            repentance: ['tawbah', 'forgiveness', 'sin', 'regret'],
-            tawbah: ['repentance', 'forgiveness', 'sin'],
-            mercy: ['forgiveness', 'rahma', 'kindness'],
-            guidance: ['hidayah', 'right path', 'guide', 'direction'],
-            hidayah: ['guidance', 'right path'],
-            exam: ['study', 'knowledge', 'education', 'success', 'school'],
-            study: ['knowledge', 'education', 'exam', 'success'],
-            school: ['education', 'knowledge', 'study', 'exam'],
-            education: ['knowledge', 'study', 'school', 'exam', 'success'],
-            protection: ['evil eye', 'shaytan', 'devil', 'harm', 'safety', 'ruqyah'],
-            'evil eye': ['protection', 'envy', 'hasad', 'harm'],
-            envy: ['evil eye', 'hasad', 'protection'],
-            hasad: ['evil eye', 'envy', 'protection'],
-            jannah: ['paradise', 'heaven', 'afterlife', 'hereafter'],
-            paradise: ['jannah', 'heaven', 'afterlife', 'hereafter'],
-            heaven: ['jannah', 'paradise', 'afterlife'],
-            ummah: ['muslim', 'community', 'palestinians', 'oppressed'],
-            palestine: ['ummah', 'oppressed', 'muslim', 'war'],
-            morning: ['morning & evening', 'daily', 'adhkar', 'wake up'],
-            evening: ['morning & evening', 'daily', 'adhkar', 'night'],
-            adhkar: ['morning & evening', 'daily', 'dhikr', 'remembrance'],
-            dhikr: ['adhkar', 'remembrance', 'morning & evening'],
-            prayer: ['salah', 'namaz', 'fajr', 'dhuhr', 'asr', 'maghrib', 'isha'],
-            salah: ['prayer', 'namaz', 'worship'],
-            namaz: ['salah', 'prayer', 'worship'],
-            ramadan: ['fasting', 'iftar', 'suhoor', 'laylatul qadr'],
-            fasting: ['ramadan', 'fast', 'iftar', 'suhoor'],
-            dua: ['supplication', 'prayer', 'asking allah'],
-            supplication: ['dua', 'prayer', 'asking'],
-        };
-
-        // Expand search query with synonyms
-        const getSearchTerms = (q: string): string[] => {
-            const terms = [q];
-            const synonymList = SYNONYMS[q];
-            if (synonymList) terms.push(...synonymList);
-            // Also check if q is a value in any synonym list
-            Object.entries(SYNONYMS).forEach(([key, vals]) => {
-                if (vals.includes(q) && !terms.includes(key)) terms.push(key);
-            });
-            return terms;
-        };
+        // Synonym / related-topic expansion is now centralized in utils/synonyms.
+        // Map the user's query to every related concept so "money" finds
+        // Wealth-category duas, "stress" finds Anxiety duas, "school" finds
+        // Knowledge duas, etc.
+        const getSearchTerms = (q: string): string[] => relatedTerms(q);
 
         const results = duaDatabase.filter(dua => {
             // Filter by bookmarked
@@ -543,29 +568,29 @@ export function DuasTab() {
                 if (dua.category !== selectedCategory) return false;
             }
 
-            // Filter by search
+            // Filter by search — fuzzy match across every searchable field,
+            // PLUS try each synonym of the query (e.g. "namaz" → "salah").
+            // No need for exact wording or correct spelling.
             if (searchQuery) {
-                const query = searchQuery.toLowerCase().trim();
-                const terms = getSearchTerms(query);
-                const haystack = [dua.title, dua.category, dua.transliteration, dua.translation].join(' ').toLowerCase();
-                return terms.some(term => haystack.includes(term));
+                const q = searchQuery.toLowerCase().trim();
+                const terms = getSearchTerms(q);
+                return terms.some(term =>
+                    fuzzyMatch(term, dua.title, dua.category, dua.transliteration, dua.translation)
+                );
             }
-
             return true;
         });
 
         if (!searchQuery) return results;
 
-        // Sort by relevance: direct title match first, then synonym matches
-        const q = searchQuery.toLowerCase().trim();
+        // Sort by relevance using the shared scoring function.
         return results.sort((a, b) => {
-            const score = (dua: typeof a) => {
-                if (dua.title.toLowerCase().startsWith(q)) return 0;
-                if (dua.title.toLowerCase().includes(q)) return 1;
-                if (dua.transliteration.toLowerCase().includes(q)) return 2;
-                if (dua.translation.toLowerCase().includes(q)) return 3;
-                return 4; // synonym match
-            };
+            const score = (dua: typeof a) => Math.min(
+                matchScore(searchQuery, dua.title),
+                matchScore(searchQuery, dua.transliteration) + 1,
+                matchScore(searchQuery, dua.translation) + 2,
+                matchScore(searchQuery, dua.category) + 3,
+            );
             return score(a) - score(b);
         });
     }, [selectedCategory, searchQuery, bookmarkedIds]);
@@ -645,6 +670,14 @@ export function DuasTab() {
                         renderItem={renderDuaItem}
                         keyExtractor={item => item.id}
                         contentContainerStyle={[styles.duasContent, { flexGrow: 1 }]}
+                        // Frees off-screen rows from memory on long dua list
+                        removeClippedSubviews={Platform.OS === 'android'}
+                        initialNumToRender={8}
+                        maxToRenderPerBatch={6}
+                        windowSize={5}
+                        // Tap list background to dismiss keyboard.
+                        keyboardShouldPersistTaps="handled"
+                        keyboardDismissMode="on-drag"
                         ListHeaderComponent={
                             <View>
                                 {/* Search Bar */}
@@ -656,6 +689,9 @@ export function DuasTab() {
                                         placeholderTextColor="#94a3b8"
                                         value={searchQuery}
                                         onChangeText={setSearchQuery}
+                                        // Cap font scaling so iOS "Larger Text" can't
+                                        // push descenders past the fixed row height.
+                                        maxFontSizeMultiplier={1.2}
                                     />
                                 </View>
 
@@ -688,19 +724,21 @@ export function DuasTab() {
                             </View>
                         }
                         ListEmptyComponent={renderEmptyState}
-                        initialNumToRender={5}
-                        maxToRenderPerBatch={10}
-                        windowSize={5}
                         showsVerticalScrollIndicator={false}
                     />
                 ) : (
                     <View style={{ flex: 1 }}>
-                        {/* Premium journal section */}
-                        {isPremium && (
+                        {/* Night Journal banner */}
+                        <View style={styles.journalBanner}>
+                            {/* Left: tap to open history */}
                             <TouchableOpacity
-                                onPress={() => setShowJournalHistory(true)}
-                                style={styles.journalBanner}
-                                activeOpacity={0.8}
+                                onPress={async () => {
+                                    if (!isPremium) { openPaywall(); return; }
+                                    const ok = await requireBiometric({ prompt: 'Unlock your night journal' });
+                                    if (ok) setShowJournalHistory(true);
+                                }}
+                                style={{ flex: 1, flexDirection: 'row', alignItems: 'center', gap: 12 }}
+                                activeOpacity={0.7}
                             >
                                 <View style={[styles.journalBannerIcon, { backgroundColor: colors.accent + '18', borderColor: colors.accent + '33' }]}>
                                     <Moon size={16} color={colors.accent} />
@@ -708,20 +746,54 @@ export function DuasTab() {
                                 <View style={{ flex: 1 }}>
                                     <Text style={styles.journalBannerTitle}>Night Journal</Text>
                                     <Text style={styles.journalBannerSub}>
-                                        {journalEntries.length > 0
-                                            ? `${journalEntries.length} night${journalEntries.length !== 1 ? 's' : ''} logged`
-                                            : 'Reflects saved after Tahajjud'}
+                                        {isPremium
+                                            ? (journalEntries.length > 0
+                                                ? `${journalEntries.length} night${journalEntries.length !== 1 ? 's' : ''} logged`
+                                                : 'Reflect after every Tahajjud')
+                                            : 'Write to Allah after every Tahajjud'}
                                     </Text>
                                 </View>
-                                <BookHeart size={16} color={colors.accent} />
                             </TouchableOpacity>
-                        )}
+
+                            {/* Right: Write button */}
+                            <TouchableOpacity
+                                onPress={async () => {
+                                    if (!isPremium) { openPaywall(); return; }
+                                    const ok = await requireBiometric({ prompt: 'Unlock your night journal' });
+                                    if (ok) setShowJournalWrite(true);
+                                }}
+                                style={[styles.journalWriteBtn, { backgroundColor: colors.accent, borderColor: colors.accent }]}
+                                activeOpacity={0.8}
+                            >
+                                <PenLine size={13} color="#fff" />
+                                <Text style={styles.journalWriteBtnText}>Write</Text>
+                            </TouchableOpacity>
+                        </View>
+
+                        {/* Dua Wall — anonymous community wall (TEMP free for testing) */}
+                        <TouchableOpacity
+                            onPress={() => setShowDuaWall(true)}
+                            style={[styles.journalBanner, { borderColor: colors.accent + '33' }]}
+                            activeOpacity={0.7}
+                        >
+                            <View style={[styles.journalBannerIcon, { backgroundColor: colors.accent + '18', borderColor: colors.accent + '33' }]}>
+                                <Text style={{ fontSize: 16 }}>🤲</Text>
+                            </View>
+                            <View style={{ flex: 1 }}>
+                                <Text style={styles.journalBannerTitle}>Dua Wall</Text>
+                                <Text style={styles.journalBannerSub}>
+                                    Read & support anonymous duas from the community
+                                </Text>
+                            </View>
+                        </TouchableOpacity>
                         <FlatList
                             style={{ flex: 1 }}
                             data={personalDuas}
                             renderItem={renderPersonalDuaItem}
                             keyExtractor={item => item.id}
                             contentContainerStyle={[styles.duasContent, { flexGrow: 1 }]}
+                            keyboardShouldPersistTaps="handled"
+                            keyboardDismissMode="on-drag"
                             ListEmptyComponent={() => (
                                 <View style={styles.emptyState}>
                                     <Text style={styles.emptyText}>Your heart's journey is a private conversation.</Text>
@@ -735,13 +807,6 @@ export function DuasTab() {
                             onPress={() => setIsModalVisible(true)}
                         >
                             <PenTool color="#020617" size={22} />
-                            {!isPremium && (
-                                <View style={styles.fabBadge}>
-                                    <Text style={styles.fabBadgeText}>
-                                        {personalDuas.length}/{FREE_DUA_LIMIT}
-                                    </Text>
-                                </View>
-                            )}
                         </TouchableOpacity>
                     </View>
                 )}
@@ -749,6 +814,20 @@ export function DuasTab() {
                 <TahajjudJournalHistory
                     visible={showJournalHistory}
                     onClose={() => setShowJournalHistory(false)}
+                />
+                <DuaWallModal
+                    visible={showDuaWall}
+                    onClose={() => setShowDuaWall(false)}
+                />
+                <TahajjudJournalModal
+                    visible={showJournalWrite}
+                    onClose={async () => {
+                        setShowJournalWrite(false);
+                        if (isPremium) {
+                            const entries = await TahajjudJournal.getAll();
+                            setJournalEntries(entries);
+                        }
+                    }}
                 />
 
                 {/* Add Dua Modal */}
@@ -785,6 +864,8 @@ export function DuasTab() {
                             contentContainerStyle={styles.letterPaperContent}
                             showsVerticalScrollIndicator={false}
                             keyboardShouldPersistTaps="handled"
+                            keyboardDismissMode="on-drag"
+                            automaticallyAdjustKeyboardInsets
                         >
                             <Text style={[styles.letterArabicBismillah, { color: colors.accent }]}>بِسْمِ اللَّهِ</Text>
 
@@ -873,7 +954,10 @@ const styles = StyleSheet.create({
         marginHorizontal: 20,
         marginBottom: 20,
         paddingHorizontal: 20,
-        height: 56,
+        // minHeight (not fixed height) so the row can grow if iOS Larger
+        // Text is enabled — prevents descender letters from being clipped.
+        minHeight: 56,
+        paddingVertical: 8,
         borderRadius: 16,
         borderWidth: 1,
         borderColor: 'rgba(255, 255, 255, 0.08)',
@@ -887,6 +971,7 @@ const styles = StyleSheet.create({
         flex: 1,
         color: '#ffffff',
         fontSize: 16,
+        lineHeight: 22, // room under the baseline so descenders aren't clipped
         fontWeight: '600',
     },
     categoriesContainer: {
@@ -924,11 +1009,12 @@ const styles = StyleSheet.create({
         paddingBottom: 180,
     },
     journalBanner: {
-        flexDirection: 'row', alignItems: 'center', gap: 12,
+        flexDirection: 'row', alignItems: 'center',
         marginHorizontal: 16, marginTop: 12, marginBottom: 4,
         padding: 14, borderRadius: 16, borderWidth: 1,
         borderColor: 'rgba(255,255,255,0.08)',
         backgroundColor: 'rgba(255,255,255,0.03)',
+        gap: 10,
     },
     journalBannerIcon: {
         width: 36, height: 36, borderRadius: 18,
@@ -936,6 +1022,12 @@ const styles = StyleSheet.create({
     },
     journalBannerTitle: { color: '#f1f5f9', fontSize: 14, fontWeight: '700' },
     journalBannerSub: { color: '#475569', fontSize: 12, marginTop: 1 },
+    journalWriteBtn: {
+        flexDirection: 'row', alignItems: 'center', gap: 5,
+        paddingHorizontal: 14, paddingVertical: 8,
+        borderRadius: 20, borderWidth: 1,
+    },
+    journalWriteBtnText: { color: '#fff', fontSize: 13, fontWeight: '700' },
     emptyState: {
         paddingVertical: 80,
         alignItems: 'center',
@@ -1020,7 +1112,9 @@ const styles = StyleSheet.create({
         color: '#ffffff',
         textAlign: 'right',
         lineHeight: 48,
-        fontFamily: Platform.OS === 'ios' ? 'Amiri' : 'System',
+        // AmiriQuran is bundled via useFonts() in App.tsx, so it's available on
+        // both platforms. Falls back to the system Arabic font if loading failed.
+        fontFamily: 'AmiriQuran',
     },
     transliterationContainer: {
         marginBottom: 16,

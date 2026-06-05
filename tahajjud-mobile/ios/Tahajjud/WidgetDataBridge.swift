@@ -6,7 +6,7 @@ import WidgetKit
 @objc(WidgetDataBridge)
 class WidgetDataBridge: NSObject {
 
-    private let suiteName = "group.com.tahajjudplus.app"
+    private let suiteName = "group.com.tahajjudplus"
     private let storageKey = "widget_data"
 
     /// Called from React Native with:

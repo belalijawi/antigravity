@@ -14,6 +14,8 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useTheme } from '../context/ThemeContext';
 import { updateWidget } from '../utils/widgetBridge';
 import { usePurchases } from '../context/PurchasesContext';
+import { localDateStr } from '../utils/localDate';
+import { mosqueTimeToDate } from '../utils/mosqueTimetable';
 
 export function NightCalculator({ onNightCalcReady, onPrayerTimesReady, refreshKey }: { onNightCalcReady?: (calc: NightCalculation) => void, onPrayerTimesReady?: (times: PrayerTimes) => void, refreshKey?: number } = {}) {
     const { colors } = useTheme();
@@ -34,6 +36,9 @@ export function NightCalculator({ onNightCalcReady, onPrayerTimesReady, refreshK
     const [editingBufferIdx, setEditingBufferIdx] = useState<number | null>(null);
     const [bufferInput, setBufferInput] = useState('');
     const [prayerReminderOffset, setPrayerReminderOffset] = useState(0);
+    // Track whether we've completed at least one successful load so subsequent
+    // silent re-fetches (offset/method/buffer changes) don't flash the spinner.
+    const hasLoadedRef = React.useRef(false);
 
     // Listen for offset changes from Settings
     useEffect(() => {
@@ -47,8 +52,20 @@ export function NightCalculator({ onNightCalcReady, onPrayerTimesReady, refreshK
         };
         loadOffset();
         const sub = DeviceEventEmitter.addListener('prayerReminderOffsetChanged', loadOffset);
-        return () => sub.remove();
-    }, []);
+        // When the user picks a new calc method in Settings, refresh times
+        // immediately — the main effect re-runs whenever selectedMethod changes.
+        const methodSub = DeviceEventEmitter.addListener('prayerMethodChanged', (id: number) => {
+            if (typeof id === 'number' && id !== selectedMethod) {
+                setSelectedMethod(id);
+                setLastScheduledKey(null);
+            }
+        });
+        // When the user imports/clears a mosque timetable, reload times immediately
+        const mosqueSub = DeviceEventEmitter.addListener('mosqueTimetableUpdated', () => {
+            setInternalRefresh(p => p + 1);
+        });
+        return () => { sub.remove(); methodSub.remove(); mosqueSub.remove(); };
+    }, [selectedMethod]);
     const [cityName, setCityName] = useState<string | null>(null);
 
     // Derived: are we currently in the last third?
@@ -175,9 +192,17 @@ export function NightCalculator({ onNightCalcReady, onPrayerTimesReady, refreshK
 
         start();
 
+        // Throttle foreground re-fetches — Android fires AppState 'active' on
+        // every focus change (keyboard, system bar, biometric prompt). Without
+        // this throttle, every brief refocus triggered a GPS call + prayer-times
+        // re-fetch + loading spinner flicker.
+        let lastFetchAt = 0;
         const subscription = AppState.addEventListener('change', (nextAppState: AppStateStatus) => {
             if (nextAppState === 'active') {
-                fetchLocation(); // Re-fetch on foreground in case user has moved
+                const now = Date.now();
+                if (now - lastFetchAt < 60_000) return; // skip if last fetch was <60s ago
+                lastFetchAt = now;
+                fetchLocation();
             }
         });
 
@@ -188,20 +213,29 @@ export function NightCalculator({ onNightCalcReady, onPrayerTimesReady, refreshK
     }, []);
 
     useEffect(() => {
-        AsyncStorage.getItem('tahajjud_buffers').then(val => {
-            if (val) {
-                setBuffers(JSON.parse(val));
-            } else {
-                // Migrate from old single-value key
-                AsyncStorage.getItem('tahajjud_buffer_minutes').then(old => {
+        (async () => {
+            try {
+                const val = await AsyncStorage.getItem('tahajjud_buffers');
+                if (val) {
+                    try {
+                        const parsed = JSON.parse(val);
+                        if (Array.isArray(parsed)) setBuffers(parsed);
+                    } catch { /* corrupted — keep default [15] */ }
+                } else {
+                    const old = await AsyncStorage.getItem('tahajjud_buffer_minutes').catch(() => null);
                     const saved = old ? parseInt(old, 10) : 15;
-                    setBuffers([saved]);
-                });
-            }
-        });
-        AsyncStorage.getItem('prayer_calculation_method').then(val => {
-            if (val) setSelectedMethod(parseInt(val, 10));
-        });
+                    setBuffers([isNaN(saved) ? 15 : saved]);
+                }
+            } catch { /* ignore storage error */ }
+
+            try {
+                const val = await AsyncStorage.getItem('prayer_calculation_method');
+                if (val) {
+                    const m = parseInt(val, 10);
+                    if (!isNaN(m)) setSelectedMethod(m);
+                }
+            } catch { /* ignore storage error */ }
+        })();
     }, []);
 
     const saveBuffers = async (next: number[]) => {
@@ -277,6 +311,21 @@ export function NightCalculator({ onNightCalcReady, onPrayerTimesReady, refreshK
 
     const applyNewLocation = async (lat: number, lng: number) => {
         const prevLoc = location;
+
+        // Round to ~111m precision (3 decimal places of lat/lng). Without this,
+        // every AppState foreground event (frequent on Android, fires on keyboard
+        // open / status bar focus) creates a fresh location object reference even
+        // when the coordinates are effectively identical → triggers prayer-times
+        // re-fetch → loading spinner flicker. Skip when location hasn't meaningfully moved.
+        if (prevLoc) {
+            const SAME_LOCATION_THRESHOLD_KM = 0.05; // 50 metres
+            const moved = distanceKm(prevLoc.lat, prevLoc.lng, lat, lng);
+            if (moved < SAME_LOCATION_THRESHOLD_KM) {
+                // Same spot — don't re-set state, don't re-geocode.
+                return;
+            }
+        }
+
         const movedFar = prevLoc
             ? distanceKm(prevLoc.lat, prevLoc.lng, lat, lng) > 30
             : false;
@@ -320,8 +369,9 @@ export function NightCalculator({ onNightCalcReady, onPrayerTimesReady, refreshK
 
     useEffect(() => {
         if (!location) return;
+        let cancelled = false;
         async function fetchData() {
-            setLoading(true);
+            if (!hasLoadedRef.current) setLoading(true);
             try {
                 const today = new Date();
                 const todayTimes = await getPrayerTimes(location!.lat, location!.lng, today, selectedMethod);
@@ -346,8 +396,63 @@ export function NightCalculator({ onNightCalcReady, onPrayerTimesReady, refreshK
                     activeTimes = todayTimes;
                 }
 
+                // Override with mosque timetable if available for today.
+                // Load the full timetable once to avoid 3 separate AsyncStorage reads.
+                // Pass the correct calendar date to mosqueTimeToDate so adjacent-day
+                // times (yesterday's Maghrib, tomorrow's Fajr) are on the right date.
+                const { getMosqueTimetable: loadMosqueTimetable } = await import('../utils/mosqueTimetable');
+                const mosqueTimetable = await loadMosqueTimetable();
+                const todayKey = localDateStr(today);
+                const mosqueTimes = mosqueTimetable?.times[todayKey] ?? null;
+
+                if (mosqueTimes) {
+                    activeTimes = {
+                        ...activeTimes,
+                        fajr:    mosqueTimeToDate(mosqueTimes.fajr,    today),
+                        dhuhr:   mosqueTimeToDate(mosqueTimes.dhuhr,   today),
+                        asr:     mosqueTimeToDate(mosqueTimes.asr,     today),
+                        maghrib: mosqueTimeToDate(mosqueTimes.maghrib, today),
+                        isha:    mosqueTimeToDate(mosqueTimes.isha,    today),
+                    };
+
+                    if (today < todayTimes.fajr) {
+                        // Before Fajr: nightEnd = today's mosque Fajr (correct date ✓)
+                        nightEnd = mosqueTimeToDate(mosqueTimes.fajr, today);
+                        // nightStart = yesterday's mosque Maghrib ON YESTERDAY'S DATE
+                        const yesterday = new Date(today);
+                        yesterday.setDate(yesterday.getDate() - 1);
+                        const yMosque = mosqueTimetable?.times[localDateStr(yesterday)] ?? null;
+                        if (yMosque) nightStart = mosqueTimeToDate(yMosque.maghrib, yesterday);
+                    } else {
+                        // After Fajr: nightStart = tonight's mosque Maghrib (correct date ✓)
+                        nightStart = mosqueTimeToDate(mosqueTimes.maghrib, today);
+                        // nightEnd = tomorrow's mosque Fajr ON TOMORROW'S DATE
+                        const tomorrow = new Date(today);
+                        tomorrow.setDate(tomorrow.getDate() + 1);
+                        const tMosque = mosqueTimetable?.times[localDateStr(tomorrow)] ?? null;
+                        if (tMosque) nightEnd = mosqueTimeToDate(tMosque.fajr, tomorrow);
+                    }
+                }
+
+                if (cancelled) return;
+                hasLoadedRef.current = true;
                 setPrayerTimes(activeTimes);
                 onPrayerTimesReady?.(activeTimes);
+                // Cache today's prayer times so any screen (e.g. Tracker) can
+                // gate "you can't log a prayer that hasn't happened yet" logic
+                // without holding its own copy of location / calc method.
+                try {
+                    await AsyncStorage.setItem('prayer_times_today_v1', JSON.stringify({
+                        date: localDateStr(new Date()),
+                        fajr: activeTimes.fajr.toISOString(),
+                        sunrise: activeTimes.sunrise.toISOString(),
+                        dhuhr: activeTimes.dhuhr.toISOString(),
+                        asr: activeTimes.asr.toISOString(),
+                        maghrib: activeTimes.maghrib.toISOString(),
+                        isha: activeTimes.isha.toISOString(),
+                    }));
+                    DeviceEventEmitter.emit('prayerTimesUpdated');
+                } catch { /* ignore */ }
                 const calc = calculateLastThird(nightStart, nightEnd);
                 setNightCalc(calc);
                 onNightCalcReady?.(calc);
@@ -379,15 +484,28 @@ export function NightCalculator({ onNightCalcReady, onPrayerTimesReady, refreshK
                         prefetchFutureNights(location!.lat, location!.lng, selectedMethod, buffers, isTahajjudEnabled, isEnabled);
                     }
                 }
-            } catch (err) {
+            } catch (err: any) {
+                if (cancelled) return;
                 console.error(err);
-                setErrorMsg("Failed to load prayer times");
+                const msg = err?.message ?? String(err);
+                if (msg.includes('Network request failed') || msg.includes('aborted') || err?.name === 'AbortError') {
+                    setErrorMsg("Can't reach prayer-times server. Check your internet and try again.");
+                } else {
+                    setErrorMsg("Failed to load prayer times");
+                }
             } finally {
-                setLoading(false);
+                if (!cancelled) setLoading(false);
             }
         }
         fetchData();
-    }, [location, refreshKey, selectedMethod, buffers, internalRefresh, prayerReminderOffset]);
+        return () => { cancelled = true; };
+        // Depend on primitive lat/lng values rather than the location object —
+        // otherwise any new object reference (even same coordinates) re-triggers
+        // the entire prayer-times fetch and causes the loading flicker loop on
+        // Android. Same logic for buffers: serialize to string so a same-content
+        // array doesn't re-trigger when AsyncStorage rehydrates it on cold start.
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [location?.lat, location?.lng, refreshKey, selectedMethod, JSON.stringify(buffers), internalRefresh, prayerReminderOffset]);
 
     useEffect(() => {
         checkNotificationStatus();
@@ -398,8 +516,10 @@ export function NightCalculator({ onNightCalcReady, onPrayerTimesReady, refreshK
         setNotificationEnabled(enabled === 'true');
     };
 
+    const [isTogglingNotif, setIsTogglingNotif] = React.useState(false);
     const handleToggleNotification = async () => {
-        if (!nightCalc) return;
+        if (!nightCalc || isTogglingNotif) return;
+        setIsTogglingNotif(true);
         if (notificationEnabled) {
             await cancelNotification('tahajjud');
             await AsyncStorage.setItem(NOTIFICATION_ENABLED_KEY, 'false');
@@ -410,6 +530,7 @@ export function NightCalculator({ onNightCalcReady, onPrayerTimesReady, refreshK
             const hasPermission = await requestNotificationPermissions();
             if (!hasPermission) {
                 Alert.alert('Permission Required', 'Please enable notifications in settings.');
+                setIsTogglingNotif(false);
                 return;
             }
             await AsyncStorage.setItem(NOTIFICATION_ENABLED_KEY, 'true');
@@ -429,6 +550,7 @@ export function NightCalculator({ onNightCalcReady, onPrayerTimesReady, refreshK
                 .join('\n');
             Alert.alert('Reminder Set! 🌙', `Reminders scheduled:\n${reminderLines}`);
         }
+        setIsTogglingNotif(false);
     };
 
     if (loading) return (
@@ -441,6 +563,12 @@ export function NightCalculator({ onNightCalcReady, onPrayerTimesReady, refreshK
     if (errorMsg && !prayerTimes) return (
         <View style={styles.centerContainer}>
             <Text style={styles.errorText}>{errorMsg}</Text>
+            <TouchableOpacity
+                onPress={() => { setErrorMsg(null); setInternalRefresh(p => p + 1); }}
+                style={{ marginTop: 12, paddingHorizontal: 20, paddingVertical: 8, borderRadius: 20, borderWidth: 1, borderColor: 'rgba(255,255,255,0.2)' }}
+            >
+                <Text style={{ color: '#94a3b8', fontSize: 13 }}>Try again</Text>
+            </TouchableOpacity>
         </View>
     );
 
@@ -498,6 +626,7 @@ export function NightCalculator({ onNightCalcReady, onPrayerTimesReady, refreshK
                     <TouchableOpacity
                         style={[styles.alarmButton, notificationEnabled && styles.alarmButtonActive]}
                         onPress={handleToggleNotification}
+                        disabled={isTogglingNotif}
                     >
                         <BlurView intensity={20} tint="dark" style={StyleSheet.absoluteFill} />
                         {notificationEnabled ? <Bell size={16} color="#fff" fill="#fff" /> : <BellOff size={16} color="#94a3b8" />}

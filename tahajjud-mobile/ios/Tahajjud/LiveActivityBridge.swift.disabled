@@ -1,0 +1,82 @@
+// LiveActivityBridge — JS-callable native module for starting/ending the
+// Tahajjud Live Activity. Requires iOS 16.1+ and the TahajjudWidget extension
+// to be embedded with the matching ActivityAttributes definition.
+
+import Foundation
+import ActivityKit
+import React
+
+@objc(LiveActivityBridge)
+class LiveActivityBridge: NSObject {
+
+    @objc
+    static func requiresMainQueueSetup() -> Bool { return false }
+
+    /// Start a new Tahajjud Live Activity. Pass the timestamps as Unix seconds.
+    @objc
+    func startActivity(
+        _ lastThirdStartUnix: NSNumber,
+        fajrUnix: NSNumber,
+        resolver resolve: @escaping RCTPromiseResolveBlock,
+        rejecter reject: @escaping RCTPromiseRejectBlock
+    ) {
+        if #available(iOS 16.1, *) {
+            // ActivityKit must run on the main actor
+            Task { @MainActor in
+                do {
+                    let lastThird = Date(timeIntervalSince1970: lastThirdStartUnix.doubleValue)
+                    let fajr = Date(timeIntervalSince1970: fajrUnix.doubleValue)
+                    let now = Date()
+                    // Stage is derived inside the SwiftUI view from current Date
+                    // so labels update as the night progresses.
+
+                    let newState = TahajjudActivityAttributes.ContentState(
+                        lastThirdStart: lastThird,
+                        fajrTime: fajr
+                    )
+
+                    // If an activity for this same window is already running, update it instead
+                    // of creating a duplicate. Match by lastThirdStart timestamp.
+                    if let existing = Activity<TahajjudActivityAttributes>.activities.first(where: {
+                        Int($0.contentState.lastThirdStart.timeIntervalSince1970) == Int(lastThird.timeIntervalSince1970)
+                    }) {
+                        await existing.update(using: newState)
+                        resolve(existing.id)
+                        return
+                    }
+
+                    // No duplicate found — request a fresh activity.
+                    let attributes = TahajjudActivityAttributes(startedAt: now)
+                    let activity = try Activity<TahajjudActivityAttributes>.request(
+                        attributes: attributes,
+                        contentState: newState,
+                        pushType: nil
+                    )
+                    resolve(activity.id)
+                } catch {
+                    reject("activity_error", error.localizedDescription, error)
+                }
+            }
+        } else {
+            reject("unavailable", "Live Activities require iOS 16.1+", nil)
+        }
+    }
+
+    /// End all active Tahajjud activities (called when user logs Tahajjud or Fajr arrives).
+    @objc
+    func endAllActivities(
+        _ resolve: @escaping RCTPromiseResolveBlock,
+        rejecter reject: @escaping RCTPromiseRejectBlock
+    ) {
+        if #available(iOS 16.1, *) {
+            Task { @MainActor in
+                for activity in Activity<TahajjudActivityAttributes>.activities {
+                    await activity.end(dismissalPolicy: .immediate)
+                }
+                resolve(nil)
+            }
+        } else {
+            resolve(nil)
+        }
+    }
+}

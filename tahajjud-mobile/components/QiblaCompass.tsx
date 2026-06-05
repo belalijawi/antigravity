@@ -27,6 +27,7 @@ export function QiblaCompass() {
     const offTargetCountRef = useRef(0);
     const lastHeadingRef = useRef<number | null>(null);
     const lastTargetRotationRef = useRef<number>(0);
+    const lastRoseRotationRef = useRef<number>(0);
     const headingSubscriptionRef = useRef<Location.LocationSubscription | null>(null);
     const [accuracy, setAccuracy] = useState<number | null>(null);
 
@@ -56,10 +57,15 @@ export function QiblaCompass() {
                 friction: 8,
             }).start();
 
-            // Rose target (relative to phone)
+            // Rose target (relative to phone) — accumulate via shortest-path
+            // delta so crossing the 0/360° boundary doesn't trigger a full
+            // backflip (the "quick 360" bug).
             const roseTarget = -magnetometerHeading;
+            const roseDiff = ((roseTarget - lastRoseRotationRef.current + 180) % 360 + 360) % 360 - 180;
+            const finalRoseTarget = lastRoseRotationRef.current + roseDiff;
+            lastRoseRotationRef.current = finalRoseTarget;
             Animated.spring(roseAnim, {
-                toValue: roseTarget,
+                toValue: finalRoseTarget,
                 useNativeDriver: true,
                 tension: 50,
                 friction: 8,
@@ -68,10 +74,35 @@ export function QiblaCompass() {
             // Lock Logic
             const diff = ((needleTarget + 180) % 360 + 360) % 360 - 180;
             const absDiff = Math.abs(diff);
-            const isAligned = absDiff < 5; // 5 degree tolerance for easier locking
+            // Hysteresis: lock at ≤ 5° (tight aim), unlock at > 8° (slightly
+            // looser so the label doesn't flicker if the phone wobbles by 1°
+            // while the user is holding it on target).
+            const isAligned = absDiff <= 5;
+            const stillLocked = absDiff <= 8;
+
+            const showOffTargetGuidance = () => {
+                if (diff > 0) {
+                    setGuidance(absDiff > 25 ? 'Rotate Right ↻' : 'Slightly Right →');
+                } else {
+                    setGuidance(absDiff > 25 ? 'Rotate Left ↺' : '← Slightly Left');
+                }
+            };
 
             if (isLocked) {
-                setGuidance('🕋 Facing Kaaba');
+                if (stillLocked) {
+                    setGuidance('🕋 Facing Kaaba');
+                } else {
+                    // User moved away while locked — unlock immediately and
+                    // start guiding them back. No grace period: the previous
+                    // implementation kept saying "Facing Kaaba" indefinitely.
+                    setIsLocked(false);
+                    offTargetCountRef.current = 0;
+                    if (lockTimerRef.current) {
+                        clearTimeout(lockTimerRef.current);
+                        lockTimerRef.current = null;
+                    }
+                    showOffTargetGuidance();
+                }
             } else if (isAligned) {
                 offTargetCountRef.current = 0; // Reset jitter counter
                 setGuidance('Hold Steady...');
@@ -88,20 +119,14 @@ export function QiblaCompass() {
                 }
             } else {
                 // Not aligned, but check if it's just a momentary jitter
+                // before we abandon the "Hold Steady" countdown.
                 offTargetCountRef.current += 1;
-
                 if (offTargetCountRef.current > 5) { // ~500ms grace period
                     if (lockTimerRef.current) {
                         clearTimeout(lockTimerRef.current);
                         lockTimerRef.current = null;
                     }
-
-                    setIsLocked(false);
-                    if (diff > 0) {
-                        setGuidance(absDiff > 25 ? 'Rotate Right ↻' : 'Slightly Right →');
-                    } else {
-                        setGuidance(absDiff > 25 ? 'Rotate Left ↺' : '← Slightly Left');
-                    }
+                    showOffTargetGuidance();
                 }
             }
         }
@@ -121,29 +146,46 @@ export function QiblaCompass() {
                 return;
             }
 
-            // Get current location with high accuracy
-            const location = await Location.getCurrentPositionAsync({
-                accuracy: Location.Accuracy.High,
-            });
+            // ── Fast-path: use the OS's last-known position if available ──
+            // The Qibla bearing only changes by ~1° per 100 km, so we don't
+            // need a fresh GPS fix — a stale-by-a-few-minutes position is
+            // perfectly fine. This usually returns in <100ms and lets us
+            // unblock the UI immediately.
+            let coords: { latitude: number; longitude: number } | null = null;
+            try {
+                const last = await Location.getLastKnownPositionAsync({
+                    maxAge: 10 * 60 * 1000,        // accept up to 10 min old
+                    requiredAccuracy: 5000,         // 5 km is more than enough for Qibla
+                });
+                if (last) coords = last.coords;
+            } catch { /* ignore — fall through to fresh fix */ }
 
-            // Calculate Qibla direction
-            const { bearing, distance: dist } = calculateQibla(
-                location.coords.latitude,
-                location.coords.longitude
-            );
-
-            // Reverse geocode to show city
-            const reverse = await Location.reverseGeocodeAsync({
-                latitude: location.coords.latitude,
-                longitude: location.coords.longitude,
-            });
-            if (reverse[0]) {
-                setCityName(`${reverse[0].city || reverse[0].region}, ${reverse[0].country}`);
+            // ── Fallback: get a fresh position at Balanced accuracy ──
+            // Balanced = WiFi / cell-tower based (~10–100m). Way faster than
+            // High (which forces a GPS satellite fix and can take 10–30s
+            // indoors on a cold start). 100m accuracy is irrelevant for Qibla.
+            if (!coords) {
+                const location = await Location.getCurrentPositionAsync({
+                    accuracy: Location.Accuracy.Balanced,
+                });
+                coords = location.coords;
             }
 
-            setCoords({ lat: location.coords.latitude, lon: location.coords.longitude });
+            // Calculate Qibla direction — instant once we have coords
+            const { bearing, distance: dist } = calculateQibla(coords.latitude, coords.longitude);
+            setCoords({ lat: coords.latitude, lon: coords.longitude });
             setQiblaDirection(bearing);
             setDistance(dist);
+
+            // Reverse-geocode for the city label in the background — don't
+            // block compass setup waiting for it.
+            Location.reverseGeocodeAsync({ latitude: coords.latitude, longitude: coords.longitude })
+                .then(reverse => {
+                    if (reverse[0]) {
+                        setCityName(`${reverse[0].city || reverse[0].region}, ${reverse[0].country}`);
+                    }
+                })
+                .catch(() => { /* city label is decorative */ });
 
             // Subscribe to True North heading
             headingSubscriptionRef.current = await Location.watchHeadingAsync((data) => {

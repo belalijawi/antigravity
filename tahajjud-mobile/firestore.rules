@@ -1,0 +1,147 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ─── Admin allowlist ───────────────────────────────────────────
+    // Paste your Firebase Auth UID(s) here. Find yours at:
+    //   Firebase Console → Authentication → Users tab → "User UID" column
+    function isAdmin() {
+      return request.auth != null
+        && request.auth.uid in [
+          'C811qHcpRSX723ssIkl18wjtoCB3', // belalijawi@yahoo.com (Apple Sign-In)
+        ];
+    }
+
+    // ─── User-private data ─────────────────────────────────────────
+    // Journal, letters, settings — only the owner can read or write.
+    match /users/{uid}/{document=**} {
+      allow read, write: if request.auth != null && request.auth.uid == uid;
+    }
+
+    // ─── Cross-readable push tokens ────────────────────────────────
+    // Stored in a dedicated collection so accountability partners can
+    // fetch each other's Expo push tokens without exposing the private
+    // contents of users/{uid}/* (journal, letters).
+    //
+    // Token format: ExponentPushToken[xxx] — no PII, useless without
+    // matching APNs credentials. Any signed-in user can read; only the
+    // owner can write/update.
+    match /push_tokens/{uid} {
+      allow read: if request.auth != null;
+      allow write: if request.auth != null && request.auth.uid == uid;
+    }
+
+    // ─── Community testimonies (live, read-only to users) ──────────
+    // Created server-side when admin approves a submission. Users can
+    // only read — never write directly to this collection.
+    match /community/{docId} {
+      allow read:   if request.auth != null;
+      allow create, update, delete: if isAdmin();
+    }
+
+    // ─── Testimony submissions queue (pending review) ──────────────
+    match /community-submissions/{subId} {
+      // Any signed-in user can submit a story — must mark themselves as the
+      // submitter and start in 'pending' state.
+      allow create: if request.auth != null
+        && request.resource.data.submitterId == request.auth.uid
+        && request.resource.data.status == 'pending'
+        && request.resource.data.title is string
+        && request.resource.data.body is string
+        && request.resource.data.body.size() >= 50
+        && request.resource.data.body.size() <= 2000;
+
+      // Submitter can read their own pending submission. Admin can read all.
+      allow read: if isAdmin()
+        || (request.auth != null && resource.data.submitterId == request.auth.uid);
+
+      // Only admin can update / delete (approve = delete + create in community).
+      allow update, delete: if isAdmin();
+    }
+
+    // ─── Public dua wall (anonymous community feed) ────────────────
+    match /public-duas/{duaId} {
+      allow read: if request.auth != null;
+
+      allow create: if request.auth != null
+        && request.resource.data.authorId == request.auth.uid
+        && request.resource.data.hidden == false
+        && request.resource.data.ameenCount == 0
+        && request.resource.data.reportCount == 0
+        && request.resource.data.text is string
+        && request.resource.data.text.size() >= 5
+        && request.resource.data.text.size() <= 280;
+
+      // Regular users can only bump ameenCount, prayCount, or reportCount.
+      // Admins can change anything (including hidden flag for moderation).
+      // The auto-hide Cloud Function runs with service-account credentials,
+      // so it bypasses these rules entirely.
+      allow update: if (request.auth != null
+          && request.resource.data.diff(resource.data).affectedKeys()
+              .hasOnly(['ameenCount', 'prayCount', 'reportCount']))
+        || isAdmin();
+
+      allow delete: if isAdmin();
+    }
+
+    // ─── Ameen markers (idempotency) ────────────────────────────────
+    match /ameens/{ameenId} {
+      allow read: if request.auth != null && resource != null
+        && resource.data.userId == request.auth.uid;
+      allow create: if request.auth != null
+        && request.resource.data.userId == request.auth.uid;
+      allow update, delete: if false;
+    }
+
+    // ─── "Praying for you" markers (idempotency) ───────────────────
+    // Same pattern as ameens — one marker doc per (user, dua) so users
+    // can't double-increment the prayCount by re-tapping.
+    match /prays/{prayId} {
+      allow read: if request.auth != null && resource != null
+        && resource.data.userId == request.auth.uid;
+      allow create: if request.auth != null
+        && request.resource.data.userId == request.auth.uid;
+      allow update, delete: if false;
+    }
+
+    // ─── Report markers ─────────────────────────────────────────────
+    match /reports/{reportId} {
+      allow read: if request.auth != null && resource != null
+        && resource.data.userId == request.auth.uid;
+      allow create: if request.auth != null
+        && request.resource.data.userId == request.auth.uid;
+      allow update, delete: if false;
+    }
+
+    // ─── Accountability partner: code directory ────────────────────
+    // Each code maps { userId, name }. Anyone authenticated can look up
+    // a code to connect; only the owner can claim/update their own code.
+    match /partner_codes/{code} {
+      allow read: if request.auth != null;
+      allow create, update: if request.auth != null
+        && request.resource.data.userId == request.auth.uid;
+      allow delete: if false;
+    }
+
+    // ─── Accountability partner: bidirectional partner lists ───────
+    // partnerships/{uid} stores that user's list of connected partners.
+    // When user A connects user B, BOTH docs need to update (A adds B
+    // to its list, A also writes to B's list). So writes are permitted
+    // for any authenticated user — the data is non-sensitive (just
+    // names + codes already shared willingly).
+    match /partnerships/{uid} {
+      allow read, write: if request.auth != null;
+    }
+
+    // ─── Accountability partner: nightly Tahajjud logs ─────────────
+    // Each doc is `${userId}_${YYYY-MM-DD}`. Partners read each other's
+    // logs to see "Prayed tonight" status; only owner can write theirs.
+    match /tahajjud_logs/{logId} {
+      allow read: if request.auth != null;
+      allow create, update: if request.auth != null
+        && request.resource.data.userId == request.auth.uid;
+      allow delete: if false;
+    }
+  }
+}

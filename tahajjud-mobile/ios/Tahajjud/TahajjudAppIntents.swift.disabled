@@ -1,0 +1,119 @@
+// Tahajjud+ App Intents
+//
+// Exposes Siri & Shortcuts actions: "Log Fajr", "Log Tahajjud", "Start Quran".
+// Requires iOS 16+. Each intent writes a small flag to the shared App Group
+// (group.com.tahajjudplus) which the JS layer picks up on next launch.
+//
+// This pattern lets users say "Hey Siri, log Fajr" without unlocking the app.
+// Full state reconciliation happens when the user next opens the app —
+// the writes here just mark intent.
+
+import AppIntents
+import SwiftUI
+import Foundation
+
+private let APP_GROUP = "group.com.tahajjudplus"
+private let PENDING_LOGS_KEY = "pending-prayer-logs"
+private let PENDING_AUDIO_KEY = "pending-audio-cmd"
+
+private func appendPendingLog(_ prayer: String) {
+    guard let defaults = UserDefaults(suiteName: APP_GROUP) else { return }
+    var existing = defaults.stringArray(forKey: PENDING_LOGS_KEY) ?? []
+    let entry = "\(prayer)|\(ISO8601DateFormatter().string(from: Date()))"
+    existing.append(entry)
+    defaults.set(existing, forKey: PENDING_LOGS_KEY)
+}
+
+private func setPendingAudio(_ cmd: String) {
+    guard let defaults = UserDefaults(suiteName: APP_GROUP) else { return }
+    defaults.set(cmd, forKey: PENDING_AUDIO_KEY)
+}
+
+@available(iOS 16.0, *)
+struct LogFajrIntent: AppIntent {
+    static var title: LocalizedStringResource = "Log Fajr"
+    static var description = IntentDescription("Logs Fajr in Tahajjud+ for today.")
+    static var openAppWhenRun: Bool = false
+
+    func perform() async throws -> some IntentResult {
+        appendPendingLog("fajr")
+        return .result(dialog: "Fajr logged. May Allah accept it.")
+    }
+}
+
+@available(iOS 16.0, *)
+struct LogTahajjudIntent: AppIntent {
+    static var title: LocalizedStringResource = "Log Tahajjud"
+    static var description = IntentDescription("Logs Tahajjud in Tahajjud+ for today.")
+    static var openAppWhenRun: Bool = false
+
+    func perform() async throws -> some IntentResult {
+        appendPendingLog("tahajjud")
+        return .result(dialog: "Tahajjud logged. MashaAllah.")
+    }
+}
+
+@available(iOS 16.0, *)
+struct LogIshaIntent: AppIntent {
+    static var title: LocalizedStringResource = "Log Isha"
+    static var description = IntentDescription("Logs Isha in Tahajjud+ for today.")
+    static var openAppWhenRun: Bool = false
+
+    func perform() async throws -> some IntentResult {
+        appendPendingLog("isha")
+        return .result(dialog: "Isha logged.")
+    }
+}
+
+@available(iOS 16.0, *)
+struct StartQuranIntent: AppIntent {
+    static var title: LocalizedStringResource = "Play Quran"
+    static var description = IntentDescription("Resumes the most recent Quran audio in Tahajjud+.")
+    static var openAppWhenRun: Bool = true
+
+    func perform() async throws -> some IntentResult {
+        setPendingAudio("play_last")
+        return .result()
+    }
+}
+
+@available(iOS 16.0, *)
+struct TahajjudShortcuts: AppShortcutsProvider {
+    static var appShortcuts: [AppShortcut] {
+        AppShortcut(
+            intent: LogTahajjudIntent(),
+            phrases: [
+                "Log Tahajjud in \(.applicationName)",
+                "Mark Tahajjud done in \(.applicationName)",
+            ],
+            shortTitle: "Log Tahajjud",
+            systemImageName: "moon.stars.fill"
+        )
+        AppShortcut(
+            intent: LogFajrIntent(),
+            phrases: [
+                "Log Fajr in \(.applicationName)",
+                "Mark Fajr done in \(.applicationName)",
+            ],
+            shortTitle: "Log Fajr",
+            systemImageName: "sun.max.fill"
+        )
+        AppShortcut(
+            intent: LogIshaIntent(),
+            phrases: [
+                "Log Isha in \(.applicationName)",
+            ],
+            shortTitle: "Log Isha",
+            systemImageName: "moon.fill"
+        )
+        AppShortcut(
+            intent: StartQuranIntent(),
+            phrases: [
+                "Play Quran in \(.applicationName)",
+                "Resume Quran in \(.applicationName)",
+            ],
+            shortTitle: "Play Quran",
+            systemImageName: "play.fill"
+        )
+    }
+}

@@ -1,0 +1,71 @@
+// PendingIntentsBridge — drains the shared App Group queue of prayer logs
+// that Siri/Shortcuts wrote while the app was closed.
+//
+// Returns the entries to JS as an array of "prayer|isoTimestamp" strings.
+
+import Foundation
+import React
+
+@objc(PendingIntentsBridge)
+class PendingIntentsBridge: NSObject {
+
+    private let APP_GROUP = "group.com.tahajjudplus"
+    private let PENDING_LOGS_KEY = "pending-prayer-logs"
+    private let PENDING_AUDIO_KEY = "pending-audio-cmd"
+
+    @objc
+    static func requiresMainQueueSetup() -> Bool { return false }
+
+    /// Returns pending entries WITHOUT clearing them. JS calls `ackPendingLogs`
+    /// after merging successfully so we don't lose data on a JS-side error.
+    @objc
+    func consumePendingLogs(
+        _ resolve: @escaping RCTPromiseResolveBlock,
+        rejecter reject: @escaping RCTPromiseRejectBlock
+    ) {
+        guard let defaults = UserDefaults(suiteName: APP_GROUP) else {
+            resolve([])
+            return
+        }
+        let entries = defaults.stringArray(forKey: PENDING_LOGS_KEY) ?? []
+        resolve(entries)
+    }
+
+    /// Called by JS after entries have been successfully merged into local state.
+    /// Removes the specific entries we just consumed; new ones written by Siri
+    /// while we were processing are preserved.
+    @objc
+    func ackPendingLogs(
+        _ ackedEntries: [String],
+        resolver resolve: @escaping RCTPromiseResolveBlock,
+        rejecter reject: @escaping RCTPromiseRejectBlock
+    ) {
+        guard let defaults = UserDefaults(suiteName: APP_GROUP) else {
+            resolve(nil)
+            return
+        }
+        let current = defaults.stringArray(forKey: PENDING_LOGS_KEY) ?? []
+        let acked = Set(ackedEntries)
+        let remaining = current.filter { !acked.contains($0) }
+        if remaining.isEmpty {
+            defaults.removeObject(forKey: PENDING_LOGS_KEY)
+        } else {
+            defaults.set(remaining, forKey: PENDING_LOGS_KEY)
+        }
+        resolve(nil)
+    }
+
+    @objc
+    func consumePendingAudioCommand(
+        _ resolve: @escaping RCTPromiseResolveBlock,
+        rejecter reject: @escaping RCTPromiseRejectBlock
+    ) {
+        guard let defaults = UserDefaults(suiteName: APP_GROUP) else {
+            resolve(NSNull())
+            return
+        }
+        let cmd = defaults.string(forKey: PENDING_AUDIO_KEY)
+        defaults.removeObject(forKey: PENDING_AUDIO_KEY)
+        resolve(cmd ?? NSNull())
+    }
+}

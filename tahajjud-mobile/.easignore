@@ -1,0 +1,91 @@
+# Files NOT uploaded to EAS Build.
+#
+# ⚠️  When .easignore exists, EAS uses ONLY this file — it does NOT also read
+#     .gitignore. So this list must be a SUPERSET of .gitignore for the EAS
+#     archive to be small.
+#
+# Everything here is either generated in EAS's cloud env, only used for
+# tooling/dashboards, or unrelated to the mobile build.
+
+# ───── Dependencies (EAS runs `npm/yarn install` in the cloud) ─────────
+# 990 MB locally — never needs to be uploaded.
+node_modules/
+
+# ───── CocoaPods + iOS build artifacts ─────────────────────────────────
+# EAS runs `pod install` itself in the cloud; we don't need to ship 935 MB
+# of Pods/. Same for any local Xcode build output.
+ios/Pods/
+ios/build/
+ios/DerivedData/
+ios/*.xcworkspace/xcuserdata/
+ios/*.xcodeproj/xcuserdata/
+ios/*.xcodeproj/project.xcworkspace/xcuserdata/
+
+# ───── Android build artifacts ─────────────────────────────────────────
+android/.gradle/
+android/build/
+android/app/build/
+android/.idea/
+
+# ───── App Store / marketing assets (NOT shipped with the app) ─────────
+# These screenshots are only used in App Store Connect for the store listing.
+# They're 17 MB and never reach end-user devices.
+assets/screenshots/
+
+# ───── Cloud Functions (deployed separately via `firebase deploy`) ─────
+functions/node_modules/
+functions/.runtimeconfig.json
+
+# ───── Backup folders kept in repo for history ─────────────────────────
+components_v1_backup/
+
+# ───── Cached/local development files ──────────────────────────────────
+.expo/
+.expo-shared/
+.metro-health-check*
+.idea/
+.vscode/
+.DS_Store
+**/.DS_Store
+
+# ───── Disabled native source files (not in pbxproj) ───────────────────
+**/*.disabled
+**/*.bak
+
+# ───── Watch app source (target not yet added to Xcode) ────────────────
+# Reduces noise; remove this line when adding the watch target.
+ios/TahajjudWatch/
+
+# ───── Secrets — never upload p8 keys (EAS uses ascApiKey configured separately) ─
+.secrets/
+
+# ───── Git internals ───────────────────────────────────────────────────
+.git/
+
+# ───── Misc tooling output ─────────────────────────────────────────────
+coverage/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# ───── Documentation that doesn't affect the build ─────────────────────
+APPLE_REVIEW.md
+TESTING.md
+
+# ───── Build/dist outputs ──────────────────────────────────────────────
+dist/
+web-build/
+
+# ───── Local env / secrets ─────────────────────────────────────────────
+.env*
+*.jks
+*.p8
+*.p12
+*.key
+*.mobileprovision
+*.orig.*
+*.zip
+
+# ───── Worktree metadata (this repo is checked out via git worktree) ───
+.claude/

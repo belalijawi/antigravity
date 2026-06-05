@@ -33,10 +33,14 @@ export const QuranWordService = {
             const perPage = 50;
 
             while (true) {
+                // 12s timeout per page so a single slow request doesn't hang
+                // the whole pagination loop on a long surah.
+                const controller = new AbortController();
+                const tid = setTimeout(() => controller.abort(), 12000);
                 const res = await fetch(
                     `${QDC_BASE}/verses/by_chapter/${surahNumber}?words=true&word_fields=text_uthmani,transliteration_text,translation_text&page=${page}&per_page=${perPage}`,
-                    { headers: { 'Accept': 'application/json' } }
-                );
+                    { headers: { 'Accept': 'application/json' }, signal: controller.signal }
+                ).finally(() => clearTimeout(tid));
                 if (!res.ok) break;
                 const data = await res.json();
                 const verses: any[] = data.verses ?? [];

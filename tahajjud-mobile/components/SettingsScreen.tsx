@@ -1,9 +1,39 @@
-import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Alert, Switch, Platform, Linking, Modal, ActivityIndicator, TextInput } from 'react-native';
+import React, { useState, useEffect, useRef } from 'react';
+import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Alert, Switch, Platform, Linking, Modal, ActivityIndicator, TextInput, DeviceEventEmitter } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
-import { X, ChevronRight, User, Cloud, Shield, Bell, LogOut, Mail, Globe, Lock, MessageSquare, Palette, Moon, Trash2, Star } from 'lucide-react-native';
+import { X, ChevronRight, User, Cloud, Shield, Bell, LogOut, Mail, Globe, Lock, MessageSquare, Palette, Moon, Trash2, Star, Mic, Check, BookOpen, FileText } from 'lucide-react-native';
+import { RECITERS, getCurrentReciterId, setCurrentReciter, subscribeReciter } from '../utils/reciters';
+import { SleepIntelligence } from '../services/SleepIntelligence';
+import { methodForCountry, detectCountryFromGps, getDetectedCountry } from '../utils/recommendPrayerMethod';
+import { LOCALES, getLocale, setLocale, type Locale } from '../utils/i18n';
+
+// ISO country code → short human-readable region label for the helper line.
+// Just covers the common Muslim-majority countries plus a few of the bigger
+// non-majority ones; falls back to the raw code for anything else.
+const REGION_NAMES: Record<string, string> = {
+    US: 'the US', CA: 'Canada', MX: 'Mexico',
+    SA: 'Saudi Arabia', AE: 'the UAE', QA: 'Qatar', KW: 'Kuwait', BH: 'Bahrain', OM: 'Oman', YE: 'Yemen',
+    PK: 'Pakistan', IN: 'India', BD: 'Bangladesh', AF: 'Afghanistan', LK: 'Sri Lanka', NP: 'Nepal',
+    TR: 'Turkey', CY: 'Cyprus',
+    GB: 'the UK', FR: 'France', DE: 'Germany', ES: 'Spain', IT: 'Italy', NL: 'the Netherlands',
+    EG: 'Egypt', MA: 'Morocco', DZ: 'Algeria', TN: 'Tunisia', SD: 'Sudan',
+    ID: 'Indonesia', MY: 'Malaysia', SG: 'Singapore', PH: 'the Philippines',
+    AU: 'Australia', NZ: 'New Zealand',
+    NG: 'Nigeria', SN: 'Senegal', ML: 'Mali',
+    IR: 'Iran', IQ: 'Iraq', SY: 'Syria', LB: 'Lebanon', JO: 'Jordan', PS: 'Palestine',
+    AZ: 'Azerbaijan', UZ: 'Uzbekistan', KZ: 'Kazakhstan',
+};
+function regionName(code: string | null): string {
+    if (!code) return 'your area';
+    return REGION_NAMES[code.toUpperCase()] ?? 'your area';
+}
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as LocalAuthentication from 'expo-local-authentication';
+import { MosqueImportModal } from './MosqueImportModal';
+import { MosqueEditModal } from './MosqueEditModal';
+import { getMosqueTimetable, MosqueTimetable } from '../utils/mosqueTimetable';
+import { localDateStr as localDate } from '../utils/localDate';
+import { openAppStoreReview } from '../utils/weeklyReview';
 import { GoogleAuthProvider, OAuthProvider, signInWithCredential } from 'firebase/auth';
 
 // Native modules — not available in Expo Go, so we load them safely
@@ -13,13 +43,19 @@ let statusCodes: any = {};
 try { AppleAuthentication = require('expo-apple-authentication'); } catch (_) { }
 try { const gs = require('@react-native-google-signin/google-signin'); GoogleSignin = gs.GoogleSignin; statusCodes = gs.statusCodes; } catch (_) { }
 import { syncLocalToCloud, deleteCloudData } from '../utils/syncService';
-import { getFirebaseAuth } from '../utils/firebase';
+import { getFirebaseAuth, resetToAnonymous } from '../utils/firebase';
 import { BlurView } from 'expo-blur';
 import { LinearGradient } from 'expo-linear-gradient';
 import Animated, { FadeInDown, FadeInUp } from 'react-native-reanimated';
 import { useTheme, ThemeType, PREMIUM_THEMES, THEME_LABELS } from '../context/ThemeContext';
 import { usePurchases } from '../context/PurchasesContext';
 import { PrivacyPolicy } from './PrivacyPolicy';
+import { SourcesMethodology } from './SourcesMethodology';
+import { WidgetPromo } from './WidgetPromo';
+import { TestimonyModerationModal } from './TestimonyModerationModal';
+import { DuaWallModerationModal } from './DuaWallModerationModal';
+import { isCurrentUserAdmin } from '../utils/admins';
+import { APP_URLS } from '../utils/urls';
 import Paywall from './Paywall';
 import { haptic } from '../utils/haptic';
 import { tabletContentStyle } from '../utils/layout';
@@ -38,20 +74,102 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ onClose }) => {
     const [isBiometricEnabled, setIsBiometricEnabled] = useState(false);
     const [user, setUser] = useState<any>(null);
     const [showPrivacy, setShowPrivacy] = useState(false);
+    const [showSources, setShowSources] = useState(false);
+    const [showModeration, setShowModeration] = useState(false);
+    const [showDuaWallModeration, setShowDuaWallModeration] = useState(false);
+    const [showWidgetGuide, setShowWidgetGuide] = useState(false);
+    const [currentLocale, setCurrentLocale] = useState<Locale>(getLocale());
+    // isAdmin must react to auth-state changes — calling once on render
+    // returns false if Firebase hasn't restored the session yet (1–2 sec on
+    // cold start), which permanently hides the admin section.
+    const [isAdmin, setIsAdmin] = useState<boolean>(() => isCurrentUserAdmin());
+    useEffect(() => {
+        const auth = getFirebaseAuth();
+        if (!auth) return;
+        const unsub = auth.onAuthStateChanged(() => {
+            setIsAdmin(isCurrentUserAdmin());
+        });
+        // Also recompute immediately in case the user is already signed in
+        // but our initial read happened before mount finished resolving.
+        setIsAdmin(isCurrentUserAdmin());
+        return () => unsub();
+    }, []);
     const [prayerMethod, setPrayerMethod] = useState<number>(2);
+    // ISO country code (e.g. 'US', 'PK', 'TR') — used to surface a
+    // "Recommended" badge on the calculation method most commonly used there.
+    const [detectedCountry, setDetectedCountry] = useState<string | null>(null);
+    const recommendedMethodId = methodForCountry(detectedCountry);
+    useEffect(() => {
+        // Try the cached country first (instant), then refresh from GPS in background.
+        getDetectedCountry().then(c => { if (c) setDetectedCountry(c); });
+        detectCountryFromGps().then(c => { if (c) setDetectedCountry(c); }).catch(() => {});
+    }, []);
+    const [reciterId, setReciterId] = useState<string>(getCurrentReciterId());
+
+    useEffect(() => {
+        const unsub = subscribeReciter(setReciterId);
+        return () => unsub();
+    }, []);
+
+    const [sleepIntelEnabled, setSleepIntelEnabledState] = useState<boolean>(false);
+    useEffect(() => {
+        SleepIntelligence.getEnabled().then(setSleepIntelEnabledState).catch(() => {});
+    }, []);
+    const toggleSleepIntel = async () => {
+        const next = !sleepIntelEnabled;
+
+        // ALWAYS flip the toggle immediately — feature uses a 6.5h default
+        // even without HealthKit, so it should never get "stuck" if the
+        // permission flow hangs or errors.
+        await SleepIntelligence.setEnabled(next);
+        setSleepIntelEnabledState(next);
+
+        if (next && SleepIntelligence.isHealthKitAvailable()) {
+            // Fire HealthKit permission request in background. If it fails
+            // or user denies, we just fall back to the 6.5h default — no
+            // need to block the toggle UI on it.
+            SleepIntelligence.requestHealthPermission()
+                .then((granted) => {
+                    if (!granted) {
+                        Alert.alert(
+                            'Using default sleep length',
+                            'Apple Health access wasn\'t granted, so bedtime suggestions will use a 6.5h default. You can enable Health access later in iOS Settings → Privacy → Health → Tahajjud+.'
+                        );
+                    }
+                })
+                .catch(() => { /* ignore — fall back to default */ });
+        }
+    };
+
+    // Quick-jump nav: track each section's measured Y position, scroll on pill tap
+    const scrollRef = useRef<ScrollView>(null);
+    const sectionY = useRef<Record<string, number>>({}).current;
+    const setSectionY = (key: string) => (e: any) => {
+        sectionY[key] = e.nativeEvent.layout.y;
+    };
+    const jumpTo = (key: string) => {
+        const y = sectionY[key];
+        if (y !== undefined && scrollRef.current) {
+            scrollRef.current.scrollTo({ y: Math.max(0, y - 12), animated: true });
+        }
+    };
     const [isSigningIn, setIsSigningIn] = useState(false);
     const [showNameModal, setShowNameModal] = useState(false);
     const [nameInput, setNameInput] = useState('');
+    const [showMosqueImport, setShowMosqueImport] = useState(false);
+    const [showMosqueEdit, setShowMosqueEdit] = useState(false);
+    const [mosqueTimetable, setMosqueTimetable] = useState<MosqueTimetable | null>(null);
     const [allPrayersEnabled, setAllPrayersEnabled] = useState(false);
     const [prayerReminderOffset, setPrayerReminderOffset] = useState(0);
     const [showReminderModal, setShowReminderModal] = useState(false);
 
     const prayerMethods = [
-        { id: 2, name: 'ISNA', sub: 'North America (15°)' },
-        { id: 3, name: 'MWL', sub: 'Europe, Far East (17°)' },
-        { id: 4, name: 'Umm al-Qura', sub: 'Makkah, Saudi Arabia' },
-        { id: 1, name: 'Karachi', sub: 'South Asia (18°)' },
-        { id: 13, name: 'Diyanet', sub: 'Turkey' },
+        { id: 2,  name: 'ISNA',         sub: 'US, Canada, Mexico — most North American masjids' },
+        { id: 3,  name: 'MWL',          sub: 'Muslim World League — Europe, Africa, Far East' },
+        { id: 4,  name: 'Umm al-Qura',  sub: 'Saudi Arabia, Gulf states' },
+        { id: 1,  name: 'Karachi',      sub: 'Pakistan, India, Bangladesh, South Asia' },
+        { id: 13, name: 'Diyanet',      sub: 'Turkey, Northern Cyprus' },
+        { id: 15, name: 'Moonsighting', sub: 'UK, Ireland, Nordic — handles high-latitude summers' },
     ];
 
     useEffect(() => {
@@ -80,10 +198,19 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ onClose }) => {
             }
         };
 
-        let unmount: any;
-        check().then(u => unmount = u);
+        let unmount: (() => void) | undefined;
+        let active = true;
+        check().then(u => {
+            if (!active) {
+                // Component already unmounted — unsubscribe immediately
+                if (u) u();
+            } else {
+                unmount = u;
+            }
+        });
 
         return () => {
+            active = false;
             if (unmount) unmount();
         };
     }, []);
@@ -98,13 +225,18 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ onClose }) => {
         setAllPrayersEnabled(allPrayers === 'true');
         const offset = await AsyncStorage.getItem('prayer_reminder_offset');
         setPrayerReminderOffset(offset ? parseInt(offset, 10) : 0);
+
+        getMosqueTimetable().then(setMosqueTimetable).catch(() => {});
     };
 
     const updatePrayerMethod = async (id: number) => {
         haptic.light();
         setPrayerMethod(id);
         await AsyncStorage.setItem('prayer_calculation_method', id.toString());
-        Alert.alert("Method Updated", "Prayer times will refresh upon returning to the home screen.");
+        // Notify NightCalculator (and anyone else listening) so prayer times
+        // recompute immediately with the new method — no need to navigate away.
+        DeviceEventEmitter.emit('prayerMethodChanged', id);
+        Alert.alert('Method Updated', 'Prayer times have been recalculated with the new method.');
     };
 
     const handleEditName = () => {
@@ -133,7 +265,25 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ onClose }) => {
                 webClientId: '434827238021-ntc25erm80s4nhkkbj2bv7g18v80l48h.apps.googleusercontent.com',
                 scopes: ['profile', 'email'],
             });
-            // Note: hasPlayServices() is Android-only — do NOT call it on iOS as it crashes
+            // Android: verify Google Play Services is installed + up-to-date BEFORE
+            // signIn. Huawei/Xiaomi/other Chinese-market devices may lack it. Without
+            // this check, signIn fails with a confusing generic error instead of
+            // surfacing Google's "update Play Services" dialog.
+            // iOS: hasPlayServices() crashes — never call it there.
+            if (Platform.OS === 'android') {
+                try {
+                    await GoogleSignin.hasPlayServices({ showPlayServicesUpdateDialog: true });
+                } catch (playErr: any) {
+                    setIsSigningIn(false);
+                    Alert.alert(
+                        'Google Play Services Required',
+                        'Your device needs Google Play Services to sign in with Google. Please update or install it from the Play Store and try again.',
+                        [{ text: 'OK' }]
+                    );
+                    console.log('Play Services check failed:', playErr?.message);
+                    return;
+                }
+            }
             const signInResult = await GoogleSignin.signIn();
             const idToken = signInResult.data?.idToken;
             if (!idToken) throw new Error('No ID token from Google');
@@ -256,6 +406,13 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ onClose }) => {
             if (auth) {
                 await auth.signOut();
             }
+            // Immediately re-establish anonymous auth so the app remains in a
+            // known signed-in state. Without this, any code that reads
+            // currentUser.uid (Firestore writes, partner card, journal sync)
+            // would crash on null. The user-facing experience: they signed out
+            // of the Apple/Google account, cloud sync paused — but the app
+            // keeps working anonymously.
+            try { await resetToAnonymous(); } catch { /* offline — fine */ }
             setUser(null);
             setIsSyncEnabled(false);
             Alert.alert("Signed Out", "Cloud sync paused.");
@@ -327,6 +484,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ onClose }) => {
                                             onPress: async () => {
                                                 const authInst = getFirebaseAuth();
                                                 await authInst?.signOut();
+                                                try { await resetToAnonymous(); } catch { /* offline */ }
                                                 setUser(null);
                                                 onClose();
                                             }
@@ -349,7 +507,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ onClose }) => {
                                     [
                                         {
                                             text: "Email Support",
-                                            onPress: () => Linking.openURL('mailto:tahajjud.letters@gmail.com?subject=Cloud%20Deletion%20Request')
+                                            onPress: () => Linking.openURL(`${APP_URLS.email}?subject=Cloud%20Deletion%20Request`)
                                         },
                                         { text: "OK", onPress: onClose }
                                     ]
@@ -388,7 +546,37 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ onClose }) => {
                 </View>
             </View>
 
+            {/* Quick-jump pills — scroll-to a section in one tap */}
             <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={settingsJumpStyles.row}
+                style={settingsJumpStyles.bar}
+            >
+                {[
+                    { key: 'appearance', label: 'Appearance' },
+                    { key: 'prayer', label: 'Prayer' },
+                    { key: 'reciter', label: 'Reciter' },
+                    { key: 'sleep', label: 'Sleep' },
+                    { key: 'profile', label: 'Profile' },
+                    { key: 'sync', label: 'Sync' },
+                    { key: 'notifications', label: 'Notifications' },
+                    { key: 'guardian', label: 'Guardian' },
+                    { key: 'support', label: 'Support' },
+                ].map(p => (
+                    <TouchableOpacity
+                        key={p.key}
+                        onPress={() => jumpTo(p.key)}
+                        style={[settingsJumpStyles.pill, { borderColor: colors.accent + '33' }]}
+                        activeOpacity={0.75}
+                    >
+                        <Text style={[settingsJumpStyles.pillText, { color: colors.accent }]}>{p.label}</Text>
+                    </TouchableOpacity>
+                ))}
+            </ScrollView>
+
+            <ScrollView
+                ref={scrollRef}
                 style={styles.content}
                 showsVerticalScrollIndicator={false}
                 contentContainerStyle={[styles.scrollContent, tabletContentStyle()]}
@@ -412,7 +600,40 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ onClose }) => {
                         </TouchableOpacity>
                     </Animated.View>
                 )}
-                <Animated.View entering={FadeInDown.delay(100).duration(800)} style={styles.section}>
+                {isPremium && (
+                    <Animated.View entering={FadeInDown.delay(75).duration(600)} style={styles.section}>
+                        <Text style={[styles.sectionHeader, { color: colors.secondaryText }]}>Subscription</Text>
+                        <View style={styles.card}>
+                            <BlurView intensity={Math.round(20 * blurIntensity)} tint="dark" style={[StyleSheet.absoluteFill, { backgroundColor: cardBg }]} />
+                            <TouchableOpacity
+                                style={styles.cardItem}
+                                onPress={() => {
+                                    haptic.light();
+                                    // iOS: deep link into the App Store subscription manager.
+                                    // Android: open Google Play subscriptions page (web URL works
+                                    // and Play Store app intercepts it automatically).
+                                    const url = Platform.OS === 'ios'
+                                        ? 'itms-apps://apps.apple.com/account/subscriptions'
+                                        : 'https://play.google.com/store/account/subscriptions?package=com.tahajjudplus.app';
+                                    Linking.openURL(url).catch(() => {});
+                                }}
+                            >
+                                <View style={[styles.cardIconContainer, { backgroundColor: colors.accent + '18', borderColor: colors.accent + '33' }]}>
+                                    <Star size={20} color={colors.accent} strokeWidth={2.5} />
+                                </View>
+                                <View style={styles.cardTextContainer}>
+                                    <Text style={[styles.cardLabel, { color: colors.primaryText }]}>Manage Subscription</Text>
+                                    <Text style={[styles.cardSub, { color: colors.secondaryText }]}>
+                                        {Platform.OS === 'ios' ? 'Cancel or update in App Store' : 'Cancel or update in Google Play'}
+                                    </Text>
+                                </View>
+                                <ChevronRight size={18} color="#475569" />
+                            </TouchableOpacity>
+                        </View>
+                    </Animated.View>
+                )}
+
+                <Animated.View onLayout={setSectionY('appearance')} entering={FadeInDown.delay(100).duration(800)} style={styles.section}>
                     <Text style={[styles.sectionHeader, { color: colors.secondaryText }]}>Appearance</Text>
                     <View style={styles.card}>
                         <BlurView intensity={Math.round(20 * blurIntensity)} tint="dark" style={[StyleSheet.absoluteFill, { backgroundColor: cardBg }]} />
@@ -500,7 +721,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ onClose }) => {
                     </View>
                 </Animated.View>
 
-                <Animated.View entering={FadeInDown.delay(150).duration(800)} style={styles.section}>
+                <Animated.View onLayout={setSectionY('prayer')} entering={FadeInDown.delay(150).duration(800)} style={styles.section}>
                     <Text style={[styles.sectionHeader, { color: colors.secondaryText }]}>Prayer Times</Text>
                     <View style={styles.card}>
                         <BlurView intensity={Math.round(20 * blurIntensity)} tint="dark" style={[StyleSheet.absoluteFill, { backgroundColor: cardBg }]} />
@@ -516,31 +737,233 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ onClose }) => {
                             </View>
                         </View>
 
+                        {/* Helper line — tells the user how to choose without
+                            forcing them to know the technical jargon. */}
+                        <Text style={[styles.helperText, { color: colors.secondaryText }]}>
+                            {detectedCountry
+                                ? `Pick whatever your local masjid uses. We've highlighted the one most masjids in ${regionName(detectedCountry)} follow.`
+                                : 'Pick whatever your local masjid uses. If unsure, ask your imam — they\'ll know.'}
+                        </Text>
+
                         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.methodSelector}>
-                            {prayerMethods.map((m) => (
+                            {prayerMethods.map((m) => {
+                                const isSelected = prayerMethod === m.id;
+                                const isRecommended = recommendedMethodId === m.id;
+                                return (
+                                    <TouchableOpacity
+                                        key={m.id}
+                                        onPress={() => updatePrayerMethod(m.id)}
+                                        style={[
+                                            styles.methodPill,
+                                            isSelected && { backgroundColor: colors.accent, borderColor: colors.accent },
+                                            !isSelected && isRecommended && { borderColor: colors.accent + '88', borderWidth: 1.5 },
+                                        ]}
+                                    >
+                                        {isRecommended && !isSelected && (
+                                            <View style={[styles.methodBadge, { backgroundColor: colors.accent }]}>
+                                                <Text style={styles.methodBadgeText}>★ RECOMMENDED</Text>
+                                            </View>
+                                        )}
+                                        <Text style={[
+                                            styles.methodName,
+                                            { color: isSelected ? '#0f172a' : colors.primaryText }
+                                        ]}>{m.name}</Text>
+                                        <Text style={[
+                                            styles.methodSub,
+                                            { color: isSelected ? 'rgba(15, 23, 42, 0.7)' : colors.secondaryText }
+                                        ]}>{m.sub}</Text>
+                                    </TouchableOpacity>
+                                );
+                            })}
+                        </ScrollView>
+
+                        {/* Mosque timetable import — premium only */}
+                        <View style={[styles.cardItem, { borderTopWidth: 1, borderTopColor: 'rgba(255,255,255,0.06)', flexWrap: 'wrap', gap: 8 }]}>
+                            <View style={[styles.cardTextContainer, { flex: 1 }]}>
+                                <Text style={[styles.cardLabel, { color: colors.primaryText }]}>
+                                    Mosque Timetable{!isPremium ? ' ⭐' : ''}
+                                </Text>
+                                <Text style={[styles.cardSub, { color: (() => {
+                                        if (!isPremium) return colors.secondaryText;
+                                        if (!mosqueTimetable) return colors.secondaryText;
+                                        return mosqueTimetable.times[localDate(new Date())] ? colors.secondaryText : '#f59e0b';
+                                    })() }]}>
+                                    {!isPremium
+                                        ? 'Import your mosque\'s monthly timetable — Premium'
+                                        : mosqueTimetable
+                                            ? mosqueTimetable.times[localDate(new Date())]
+                                                ? `${mosqueTimetable.mosqueName ?? 'Imported'} · active today`
+                                                : `⚠️ Expired — import ${new Date().toLocaleString('en-GB', { month: 'long' })}'s timetable`
+                                            : 'Import your mosque\'s monthly timetable'}
+                                </Text>
+                            </View>
+                            <View style={{ flexDirection: 'row', gap: 8 }}>
+                                {isPremium && mosqueTimetable && (
+                                    <TouchableOpacity
+                                        onPress={() => setShowMosqueEdit(true)}
+                                        style={{ paddingHorizontal: 14, paddingVertical: 7, borderRadius: 20, borderWidth: 1, borderColor: 'rgba(255,255,255,0.15)', backgroundColor: 'rgba(255,255,255,0.05)' }}
+                                    >
+                                        <Text style={{ color: colors.primaryText, fontSize: 13, fontWeight: '700' }}>Edit</Text>
+                                    </TouchableOpacity>
+                                )}
                                 <TouchableOpacity
-                                    key={m.id}
-                                    onPress={() => updatePrayerMethod(m.id)}
+                                    onPress={() => isPremium ? setShowMosqueImport(true) : openPaywall()}
+                                    style={{ paddingHorizontal: 14, paddingVertical: 7, borderRadius: 20, borderWidth: 1, borderColor: colors.accent + '55', backgroundColor: colors.accent + '15' }}
+                                >
+                                    <Text style={{ color: colors.accent, fontSize: 13, fontWeight: '700' }}>
+                                        {isPremium ? (mosqueTimetable ? 'Update' : 'Import') : 'Unlock'}
+                                    </Text>
+                                </TouchableOpacity>
+                            </View>
+                        </View>
+                    </View>
+                </Animated.View>
+
+                {/* ── Quran Reciter ── */}
+                <Animated.View onLayout={setSectionY('reciter')} entering={FadeInDown.delay(175).duration(800)} style={styles.section}>
+                    <Text style={[styles.sectionHeader, { color: colors.secondaryText }]}>Quran Reciter</Text>
+                    <View style={styles.card}>
+                        <BlurView intensity={Math.round(20 * blurIntensity)} tint="dark" style={[StyleSheet.absoluteFill, { backgroundColor: cardBg }]} />
+                        <View style={styles.cardItem}>
+                            <View style={styles.cardIconContainer}>
+                                <Mic size={20} color={colors.primaryText} strokeWidth={2.5} />
+                            </View>
+                            <View style={styles.cardTextContainer}>
+                                <Text style={[styles.cardLabel, { color: colors.primaryText }]}>Audio Reciter</Text>
+                                <Text style={[styles.cardSub, { color: colors.secondaryText }]}>
+                                    {RECITERS.find(r => r.id === reciterId)?.name ?? 'Default'}
+                                </Text>
+                            </View>
+                        </View>
+
+                        {RECITERS.map((r) => {
+                            const selected = reciterId === r.id;
+                            // Free users get Alafasy (the universal default).
+                            // All other reciters are premium.
+                            const isLocked = r.id !== 'ar.alafasy' && !isPremium;
+                            return (
+                                <TouchableOpacity
+                                    key={r.id}
+                                    onPress={() => isLocked ? openPaywall() : setCurrentReciter(r.id)}
+                                    activeOpacity={0.75}
                                     style={[
-                                        styles.methodPill,
-                                        prayerMethod === m.id && { backgroundColor: colors.accent, borderColor: colors.accent }
+                                        reciterStyles.row,
+                                        { borderColor: selected ? colors.accent + '88' : 'rgba(255,255,255,0.06)',
+                                          backgroundColor: selected ? colors.accent + '12' : 'transparent',
+                                          opacity: isLocked ? 0.55 : 1 },
                                     ]}
                                 >
-                                    <Text style={[
-                                        styles.methodName,
-                                        { color: prayerMethod === m.id ? '#0f172a' : colors.primaryText }
-                                    ]}>{m.name}</Text>
-                                    <Text style={[
-                                        styles.methodSub,
-                                        { color: prayerMethod === m.id ? 'rgba(15, 23, 42, 0.7)' : colors.secondaryText }
-                                    ]}>{m.sub}</Text>
+                                    <View style={{ flex: 1 }}>
+                                        <Text style={[reciterStyles.name, { color: colors.primaryText }]}>
+                                            {r.name}
+                                        </Text>
+                                        <Text style={[reciterStyles.desc, { color: colors.secondaryText }]} numberOfLines={1}>
+                                            {r.description}
+                                        </Text>
+                                    </View>
+                                    {isLocked ? (
+                                        <View style={[reciterStyles.checkWrap, { backgroundColor: 'rgba(255,255,255,0.08)' }]}>
+                                            <Lock size={11} color="#94a3b8" />
+                                        </View>
+                                    ) : selected && (
+                                        <View style={[reciterStyles.checkWrap, { backgroundColor: colors.accent }]}>
+                                            <Check size={12} color="#0f172a" strokeWidth={3} />
+                                        </View>
+                                    )}
                                 </TouchableOpacity>
-                            ))}
+                            );
+                        })}
+                    </View>
+                </Animated.View>
+
+                {/* ── Sleep Intelligence ── */}
+                <Animated.View onLayout={setSectionY('sleep')} entering={FadeInDown.delay(187).duration(800)} style={styles.section}>
+                    <Text style={[styles.sectionHeader, { color: colors.secondaryText }]}>Sleep Intelligence</Text>
+                    <View style={styles.card}>
+                        <BlurView intensity={Math.round(20 * blurIntensity)} tint="dark" style={[StyleSheet.absoluteFill, { backgroundColor: cardBg }]} />
+                        <View style={styles.cardItem}>
+                            <View style={styles.cardIconContainer}>
+                                <Moon size={20} color="#f8fafc" strokeWidth={2.5} />
+                            </View>
+                            <View style={styles.cardTextContainer}>
+                                <Text style={[styles.cardLabel, { color: colors.primaryText }]}>Bedtime suggestions</Text>
+                                <Text style={[styles.cardSub, { color: colors.secondaryText }]}>
+                                    {sleepIntelEnabled
+                                        ? (SleepIntelligence.isHealthKitAvailable() ? 'Using Apple Health' : 'Using default 6.5h')
+                                        : 'Suggest a bedtime that lands you in the last third'}
+                                </Text>
+                            </View>
+                            <Switch
+                                value={sleepIntelEnabled}
+                                onValueChange={toggleSleepIntel}
+                                trackColor={{ false: '#0f172a', true: colors.accent }}
+                                thumbColor="#f8fafc"
+                            />
+                        </View>
+                    </View>
+                </Animated.View>
+
+                {/* ── Language picker (English / Arabic / Urdu) ── */}
+                <Animated.View entering={FadeInDown.delay(190).duration(800)} style={styles.section}>
+                    <Text style={[styles.sectionHeader, { color: colors.secondaryText }]}>Language</Text>
+                    <View style={styles.card}>
+                        <BlurView intensity={Math.round(20 * blurIntensity)} tint="dark" style={[StyleSheet.absoluteFill, { backgroundColor: cardBg }]} />
+                        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.methodSelector}>
+                            {LOCALES.map(loc => {
+                                const isSelected = currentLocale === loc.code;
+                                return (
+                                    <TouchableOpacity
+                                        key={loc.code}
+                                        onPress={async () => {
+                                            haptic.light();
+                                            setCurrentLocale(loc.code);
+                                            await setLocale(loc.code);
+                                            Alert.alert(
+                                                'Language updated',
+                                                'Restart the app to apply right-to-left layout for Arabic / Urdu.',
+                                            );
+                                        }}
+                                        style={[
+                                            styles.methodPill,
+                                            isSelected && { backgroundColor: colors.accent, borderColor: colors.accent },
+                                        ]}
+                                    >
+                                        <Text style={[styles.methodName, { color: isSelected ? '#0f172a' : colors.primaryText }]}>
+                                            {loc.native}
+                                        </Text>
+                                        <Text style={[styles.methodSub, { color: isSelected ? 'rgba(15, 23, 42, 0.7)' : colors.secondaryText }]}>
+                                            {loc.label}
+                                        </Text>
+                                    </TouchableOpacity>
+                                );
+                            })}
                         </ScrollView>
                     </View>
                 </Animated.View>
 
-                <Animated.View entering={FadeInDown.delay(200).duration(800)} style={styles.section}>
+                {/* ── Home Screen Widget (iOS only) ── */}
+                {Platform.OS === 'ios' && (
+                    <Animated.View entering={FadeInDown.delay(193).duration(800)} style={styles.section}>
+                        <Text style={[styles.sectionHeader, { color: colors.secondaryText }]}>Home Screen</Text>
+                        <View style={styles.card}>
+                            <BlurView intensity={Math.round(20 * blurIntensity)} tint="dark" style={[StyleSheet.absoluteFill, { backgroundColor: cardBg }]} />
+                            <TouchableOpacity style={styles.cardItem} onPress={() => setShowWidgetGuide(true)}>
+                                <View style={styles.cardIconContainer}>
+                                    <Star size={20} color="#f8fafc" strokeWidth={2.5} />
+                                </View>
+                                <View style={styles.cardTextContainer}>
+                                    <Text style={[styles.cardLabel, { color: colors.primaryText }]}>Add Home Screen Widget</Text>
+                                    <Text style={[styles.cardSub, { color: colors.secondaryText }]}>
+                                        See your Tahajjud time & next prayer at a glance — no need to open the app
+                                    </Text>
+                                </View>
+                                <ChevronRight size={18} color="#475569" />
+                            </TouchableOpacity>
+                        </View>
+                    </Animated.View>
+                )}
+
+                <Animated.View onLayout={setSectionY('profile')} entering={FadeInDown.delay(200).duration(800)} style={styles.section}>
                     <Text style={[styles.sectionHeader, { color: colors.secondaryText }]}>Profile</Text>
                     <View style={styles.card}>
                         <BlurView intensity={Math.round(20 * blurIntensity)} tint="dark" style={[StyleSheet.absoluteFill, { backgroundColor: cardBg }]} />
@@ -557,7 +980,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ onClose }) => {
                     </View>
                 </Animated.View>
 
-                <Animated.View entering={FadeInDown.delay(200).duration(800)} style={styles.section}>
+                <Animated.View onLayout={setSectionY('sync')} entering={FadeInDown.delay(200).duration(800)} style={styles.section}>
                     <Text style={styles.sectionHeader}>Sync & Cloud</Text>
                     {user ? (
                         <View style={styles.crystallineCard}>
@@ -591,21 +1014,24 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ onClose }) => {
                                         {isSigningIn ? <ActivityIndicator size="small" color="#0f172a" /> : <Globe size={18} color="#0f172a" />}
                                         <Text style={styles.googleText}>Google</Text>
                                     </TouchableOpacity>
-                                    <TouchableOpacity
-                                        style={[styles.authPill, styles.applePill, isSigningIn && { opacity: 0.6 }]}
-                                        onPress={() => handleSocialLogin('apple')}
-                                        disabled={isSigningIn}
-                                    >
-                                        {isSigningIn ? <ActivityIndicator size="small" color="#ffffff" /> : <Shield size={18} color="#ffffff" />}
-                                        <Text style={styles.appleText}>Apple</Text>
-                                    </TouchableOpacity>
+                                    {/* Apple Sign-In is iOS-only — Android users see Google + Anonymous instead. */}
+                                    {Platform.OS === 'ios' && (
+                                        <TouchableOpacity
+                                            style={[styles.authPill, styles.applePill, isSigningIn && { opacity: 0.6 }]}
+                                            onPress={() => handleSocialLogin('apple')}
+                                            disabled={isSigningIn}
+                                        >
+                                            {isSigningIn ? <ActivityIndicator size="small" color="#ffffff" /> : <Shield size={18} color="#ffffff" />}
+                                            <Text style={styles.appleText}>Apple</Text>
+                                        </TouchableOpacity>
+                                    )}
                                 </View>
                             </View>
                         </View>
                     )}
                 </Animated.View>
 
-                <Animated.View entering={FadeInDown.delay(300).duration(800)} style={styles.section}>
+                <Animated.View onLayout={setSectionY('notifications')} entering={FadeInDown.delay(300).duration(800)} style={styles.section}>
                     <Text style={[styles.sectionHeader, { color: colors.secondaryText }]}>Notifications</Text>
                     <View style={styles.card}>
                         <BlurView intensity={Math.round(20 * blurIntensity)} tint="dark" style={[StyleSheet.absoluteFill, { backgroundColor: cardBg }]} />
@@ -646,7 +1072,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ onClose }) => {
                     </View>
                 </Animated.View>
 
-                <Animated.View entering={FadeInDown.delay(300).duration(800)} style={styles.section}>
+                <Animated.View onLayout={setSectionY('guardian')} entering={FadeInDown.delay(300).duration(800)} style={styles.section}>
                     <Text style={styles.sectionHeader}>Guardian Settings</Text>
                     <View style={styles.card}>
                         <BlurView intensity={Math.round(20 * blurIntensity)} tint="dark" style={[StyleSheet.absoluteFill, { backgroundColor: cardBg }]} />
@@ -668,46 +1094,164 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ onClose }) => {
                         <TouchableOpacity
                             style={styles.cardItem}
                             onPress={() => setShowPrivacy(true)}
+                            accessibilityRole="button"
+                            accessibilityLabel="View Privacy Policy"
                         >
                             <View style={styles.cardIconContainer}>
                                 <Shield size={20} color="#f8fafc" strokeWidth={2.5} />
                             </View>
                             <View style={styles.cardTextContainer}>
-                                <Text style={styles.cardLabel}>Privacy Trust</Text>
-                                <Text style={styles.cardSub}>Data commitment</Text>
+                                <Text style={styles.cardLabel}>Privacy Policy</Text>
+                                <Text style={styles.cardSub}>What we collect and what we don't</Text>
                             </View>
                             <ChevronRight size={18} color="#475569" />
                         </TouchableOpacity>
+                        <TouchableOpacity
+                            style={styles.cardItem}
+                            onPress={() => setShowSources(true)}
+                        >
+                            <View style={styles.cardIconContainer}>
+                                <BookOpen size={20} color="#f8fafc" strokeWidth={2.5} />
+                            </View>
+                            <View style={styles.cardTextContainer}>
+                                <Text style={styles.cardLabel}>Sources & Methodology</Text>
+                                <Text style={styles.cardSub}>Translators, reciters, citations</Text>
+                            </View>
+                            <ChevronRight size={18} color="#475569" />
+                        </TouchableOpacity>
+
+                        {isAdmin && (
+                            <TouchableOpacity
+                                style={styles.cardItem}
+                                onPress={() => setShowModeration(true)}
+                            >
+                                <View style={[styles.cardIconContainer, { backgroundColor: colors.accent + '22' }]}>
+                                    <Check size={20} color={colors.accent} strokeWidth={2.5} />
+                                </View>
+                                <View style={styles.cardTextContainer}>
+                                    <Text style={styles.cardLabel}>Moderate Testimonies</Text>
+                                    <Text style={styles.cardSub}>Review pending stories from users</Text>
+                                </View>
+                                <ChevronRight size={18} color="#475569" />
+                            </TouchableOpacity>
+                        )}
+                        {isAdmin && (
+                            <TouchableOpacity
+                                style={styles.cardItem}
+                                onPress={() => setShowDuaWallModeration(true)}
+                                accessibilityRole="button"
+                                accessibilityLabel="Moderate Dua Wall"
+                            >
+                                <View style={[styles.cardIconContainer, { backgroundColor: colors.accent + '22' }]}>
+                                    <Shield size={20} color={colors.accent} strokeWidth={2.5} />
+                                </View>
+                                <View style={styles.cardTextContainer}>
+                                    <Text style={styles.cardLabel}>Moderate Dua Wall</Text>
+                                    <Text style={styles.cardSub}>Hide or delete flagged posts</Text>
+                                </View>
+                                <ChevronRight size={18} color="#475569" />
+                            </TouchableOpacity>
+                        )}
                     </View>
                 </Animated.View>
 
-                <Animated.View entering={FadeInDown.delay(400).duration(800)} style={styles.section}>
+                <Animated.View onLayout={setSectionY('support')} entering={FadeInDown.delay(400).duration(800)} style={styles.section}>
                     <Text style={styles.sectionHeader}>Support & Community</Text>
                     <View style={styles.card}>
                         <BlurView intensity={Math.round(20 * blurIntensity)} tint="dark" style={[StyleSheet.absoluteFill, { backgroundColor: cardBg }]} />
+
                         <TouchableOpacity
                             style={styles.cardItem}
-                            onPress={() => Linking.openURL('https://tahajjud-2d7bf.web.app/support.html')}
+                            onPress={() => Linking.openURL(APP_URLS.support)}
+                            accessibilityRole="button"
+                            accessibilityLabel="Open support center"
                         >
                             <View style={styles.cardIconContainer}>
                                 <Globe size={20} color="#f8fafc" strokeWidth={2.5} />
                             </View>
                             <View style={styles.cardTextContainer}>
-                                <Text style={styles.cardLabel}>Official Support</Text>
-                                <Text style={styles.cardSub}>Visit our support center</Text>
+                                <Text style={styles.cardLabel}>Help & FAQ</Text>
+                                <Text style={styles.cardSub}>Common questions, troubleshooting</Text>
                             </View>
                             <ChevronRight size={18} color="#475569" />
                         </TouchableOpacity>
+
                         <TouchableOpacity
                             style={styles.cardItem}
-                            onPress={() => Linking.openURL('mailto:tahajjud.letters@gmail.com')}
+                            onPress={() => Linking.openURL(APP_URLS.email)}
+                            accessibilityRole="button"
+                            accessibilityLabel="Email support"
                         >
                             <View style={styles.cardIconContainer}>
                                 <Mail size={20} color="#f8fafc" strokeWidth={2.5} />
                             </View>
                             <View style={styles.cardTextContainer}>
-                                <Text style={styles.cardLabel}>Direct Email</Text>
+                                <Text style={styles.cardLabel}>Email us</Text>
                                 <Text style={styles.cardSub}>tahajjud.letters@gmail.com</Text>
+                            </View>
+                            <ChevronRight size={18} color="#475569" />
+                        </TouchableOpacity>
+
+                        <TouchableOpacity
+                            style={styles.cardItem}
+                            onPress={openAppStoreReview}
+                            accessibilityRole="button"
+                            accessibilityLabel="Rate Tahajjud+ on the App Store"
+                        >
+                            <View style={[styles.cardIconContainer, { backgroundColor: '#f59e0b22' }]}>
+                                <Star size={20} color="#f59e0b" strokeWidth={2.5} fill="#f59e0b" />
+                            </View>
+                            <View style={styles.cardTextContainer}>
+                                <Text style={styles.cardLabel}>Rate the App</Text>
+                                <Text style={styles.cardSub}>Enjoying Tahajjud+? Leave a review ⭐</Text>
+                            </View>
+                            <ChevronRight size={18} color="#475569" />
+                        </TouchableOpacity>
+
+                        <TouchableOpacity
+                            style={styles.cardItem}
+                            onPress={() => Linking.openURL(APP_URLS.privacy)}
+                            accessibilityRole="button"
+                            accessibilityLabel="Open Privacy Policy on the web"
+                        >
+                            <View style={styles.cardIconContainer}>
+                                <Shield size={20} color="#f8fafc" strokeWidth={2.5} />
+                            </View>
+                            <View style={styles.cardTextContainer}>
+                                <Text style={styles.cardLabel}>Privacy Policy</Text>
+                                <Text style={styles.cardSub}>Read the full policy on our website</Text>
+                            </View>
+                            <ChevronRight size={18} color="#475569" />
+                        </TouchableOpacity>
+
+                        <TouchableOpacity
+                            style={styles.cardItem}
+                            onPress={() => Linking.openURL(APP_URLS.terms)}
+                            accessibilityRole="button"
+                            accessibilityLabel="Open Terms of Use"
+                        >
+                            <View style={styles.cardIconContainer}>
+                                <FileText size={20} color="#f8fafc" strokeWidth={2.5} />
+                            </View>
+                            <View style={styles.cardTextContainer}>
+                                <Text style={styles.cardLabel}>Terms of Use</Text>
+                                <Text style={styles.cardSub}>Subscription & usage terms</Text>
+                            </View>
+                            <ChevronRight size={18} color="#475569" />
+                        </TouchableOpacity>
+
+                        <TouchableOpacity
+                            style={styles.cardItem}
+                            onPress={() => Linking.openURL(APP_URLS.home)}
+                            accessibilityRole="button"
+                            accessibilityLabel="Visit Tahajjud+ website"
+                        >
+                            <View style={styles.cardIconContainer}>
+                                <Globe size={20} color="#f8fafc" strokeWidth={2.5} />
+                            </View>
+                            <View style={styles.cardTextContainer}>
+                                <Text style={styles.cardLabel}>Website</Text>
+                                <Text style={styles.cardSub}>tahajjud-2d7bf.web.app</Text>
                             </View>
                             <ChevronRight size={18} color="#475569" />
                         </TouchableOpacity>
@@ -782,6 +1326,39 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ onClose }) => {
                 <PrivacyPolicy onClose={() => setShowPrivacy(false)} />
             </Modal>
 
+            {/* Sources & Methodology Modal */}
+            <Modal
+                animationType="slide"
+                transparent={false}
+                visible={showSources}
+                onRequestClose={() => setShowSources(false)}
+            >
+                <SourcesMethodology onClose={() => setShowSources(false)} />
+            </Modal>
+
+            {/* Testimony Moderation Modal (admin only) */}
+            <TestimonyModerationModal
+                visible={showModeration}
+                onClose={() => setShowModeration(false)}
+            />
+
+            {/* Dua Wall Moderation Modal (admin only) */}
+            <DuaWallModerationModal
+                visible={showDuaWallModeration}
+                onClose={() => setShowDuaWallModeration(false)}
+            />
+
+            {/* Home-screen widget setup guide — invoked from "Add Home Screen
+                Widget" row. Same WidgetPromo card the user first sees after
+                logging their first Tahajjud, but reachable any time. */}
+            {showWidgetGuide && (
+                <Modal visible transparent animationType="fade" onRequestClose={() => setShowWidgetGuide(false)}>
+                    <View style={styles.widgetModalBackdrop}>
+                        <WidgetPromo onDismiss={() => setShowWidgetGuide(false)} />
+                    </View>
+                </Modal>
+            )}
+
             {/* Remind Before Prayer Modal */}
             <Modal
                 animationType="fade"
@@ -817,7 +1394,12 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ onClose }) => {
                             ))}
                         </View>
                         <TouchableOpacity
-                            style={[styles.nameModalBtn, { backgroundColor: colors.accent, width: '100%' }]}
+                            // Override `flex: 1` from nameModalBtn — this is a
+                            // standalone full-width button, not a half-width
+                            // row child. Without the override the button
+                            // stretches vertically and the "Done" label gets
+                            // lost in a tall blue rectangle.
+                            style={[styles.nameModalBtn, { flex: 0, backgroundColor: colors.accent, width: '100%', justifyContent: 'center' }]}
                             onPress={() => setShowReminderModal(false)}
                         >
                             <Text style={[styles.nameModalBtnText, { color: '#0f172a' }]}>Done</Text>
@@ -880,6 +1462,24 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ onClose }) => {
             >
                 <Paywall onClose={() => setLocalPaywallVisible(false)} />
             </Modal>
+
+            {/* Mosque Timetable Import */}
+            <MosqueImportModal
+                visible={showMosqueImport}
+                onClose={() => {
+                    setShowMosqueImport(false);
+                    getMosqueTimetable().then(setMosqueTimetable).catch(() => {});
+                }}
+            />
+
+            {/* Mosque Timetable Edit */}
+            <MosqueEditModal
+                visible={showMosqueEdit}
+                onClose={() => {
+                    setShowMosqueEdit(false);
+                    getMosqueTimetable().then(setMosqueTimetable).catch(() => {});
+                }}
+            />
         </View >
     );
 };
@@ -1193,12 +1793,27 @@ const styles = StyleSheet.create({
         gap: 10,
     },
     methodPill: {
-        paddingVertical: 12,
+        paddingVertical: 14,
         paddingHorizontal: 16,
         borderRadius: 16,
         borderWidth: 1,
         borderColor: 'rgba(255, 255, 255, 0.1)',
-        minWidth: 140,
+        minWidth: 160,
+        position: 'relative',
+    },
+    methodBadge: {
+        position: 'absolute',
+        top: -6,
+        right: 8,
+        paddingHorizontal: 6,
+        paddingVertical: 2,
+        borderRadius: 8,
+    },
+    methodBadgeText: {
+        color: '#0f172a',
+        fontSize: 8,
+        fontWeight: '900',
+        letterSpacing: 0.5,
     },
     methodName: {
         fontSize: 14,
@@ -1206,8 +1821,22 @@ const styles = StyleSheet.create({
         marginBottom: 2,
     },
     methodSub: {
-        fontSize: 10,
+        fontSize: 11,
         fontWeight: '600',
+        lineHeight: 14,
+    },
+    helperText: {
+        fontSize: 12,
+        fontStyle: 'italic',
+        lineHeight: 17,
+        marginTop: -4,
+        marginBottom: 12,
+        paddingHorizontal: 4,
+    },
+    widgetModalBackdrop: {
+        flex: 1,
+        backgroundColor: 'rgba(0,0,0,0.55)',
+        justifyContent: 'flex-end',
     },
     // Android name-edit modal
     nameModalOverlay: {
@@ -1263,5 +1892,44 @@ const styles = StyleSheet.create({
     nameModalBtnText: {
         fontSize: 15,
         fontWeight: '800',
+    },
+});
+
+const settingsJumpStyles = StyleSheet.create({
+    bar: {
+        flexGrow: 0,
+        paddingTop: 4,
+        paddingBottom: 8,
+        borderBottomWidth: 1,
+        borderBottomColor: 'rgba(255,255,255,0.04)',
+    },
+    row: { paddingHorizontal: 16, gap: 8 },
+    pill: {
+        paddingHorizontal: 12,
+        paddingVertical: 6,
+        borderRadius: 14,
+        borderWidth: 1,
+        backgroundColor: 'rgba(255,255,255,0.03)',
+    },
+    pillText: { fontSize: 12, fontWeight: '700' },
+});
+
+const reciterStyles = StyleSheet.create({
+    row: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        paddingHorizontal: 14,
+        paddingVertical: 12,
+        marginHorizontal: 12,
+        marginBottom: 8,
+        borderRadius: 14,
+        borderWidth: 1,
+        gap: 12,
+    },
+    name: { fontSize: 14, fontWeight: '700' },
+    desc: { fontSize: 12, marginTop: 2 },
+    checkWrap: {
+        width: 22, height: 22, borderRadius: 11,
+        alignItems: 'center', justifyContent: 'center',
     },
 });

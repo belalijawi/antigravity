@@ -1,0 +1,17 @@
+#import <React/RCTBridgeModule.h>
+
+@interface RCT_EXTERN_MODULE(LiveActivityBridge, NSObject)
+
+RCT_EXTERN_METHOD(
+  startActivity:(nonnull NSNumber *)lastThirdStartUnix
+  fajrUnix:(nonnull NSNumber *)fajrUnix
+  resolver:(RCTPromiseResolveBlock)resolve
+  rejecter:(RCTPromiseRejectBlock)reject
+)
+
+RCT_EXTERN_METHOD(
+  endAllActivities:(RCTPromiseResolveBlock)resolve
+  rejecter:(RCTPromiseRejectBlock)reject
+)
+
+@end

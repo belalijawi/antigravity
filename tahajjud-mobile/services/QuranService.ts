@@ -1,4 +1,7 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import {
+    isBundledTranslation, getBundledSurahText, getBundledEditionMeta,
+} from './BundledTranslations';
 
 export interface SurahMeta {
     number: number;
@@ -78,6 +81,21 @@ function buildSurahDetailFromLocal(surahData: any, edition: string, useArabic: b
 
 const BASE_URL = 'https://api.alquran.cloud/v1';
 
+/**
+ * fetch() with a hard timeout. RN's fetch has no default timeout — on slow or
+ * dead networks (common on cellular data) requests could hang forever and
+ * leave the user staring at a spinner. 10s is generous for the Quran APIs.
+ */
+async function fetchWithTimeout(url: string, ms = 10000): Promise<Response> {
+    const controller = new AbortController();
+    const id = setTimeout(() => controller.abort(), ms);
+    try {
+        return await fetch(url, { signal: controller.signal });
+    } finally {
+        clearTimeout(id);
+    }
+}
+
 export const QuranService = {
     // Get list of all 114 Surahs — served from local Tanzil dataset
     async getSurahList(): Promise<SurahMeta[]> {
@@ -99,6 +117,40 @@ export const QuranService = {
             return buildSurahDetailFromLocal(surahData, edition, true);
         }
 
+        // ✅ Bundled translations — Urdu, Indonesian, Turkish, Bengali, French
+        // Load instantly from local data, no network round-trip
+        if (isBundledTranslation(edition)) {
+            const ayahTexts = getBundledSurahText(edition, number);
+            // Without surah metadata we can't show a header — bail to network fallback below
+            const surahData = LOCAL_QURAN_DATA[number - 1];
+            if (!ayahTexts || !surahData) {
+                // Fall through to the API path so we don't render an empty/unusable surah
+            } else {
+                const meta = getBundledEditionMeta(edition);
+                return {
+                    number,
+                    name: surahData.name,
+                    englishName: surahData.transliteration,
+                    englishNameTranslation: surahData.translation,
+                    revelationType: surahData.type
+                        ? surahData.type.charAt(0).toUpperCase() + surahData.type.slice(1)
+                        : '',
+                    numberOfAyahs: ayahTexts.length,
+                    ayahs: ayahTexts.map((text, idx) => ({
+                        number: idx + 1,
+                        text,
+                        numberInSurah: idx + 1,
+                    })),
+                    edition: {
+                        identifier: edition,
+                        language: meta?.language ?? '',
+                        name: meta?.name ?? edition,
+                        englishName: meta?.englishName ?? edition,
+                    },
+                };
+            }
+        }
+
         const translationCacheKey = `quran_translation_v1_${number}_${edition}`;
 
         // Check translation cache first
@@ -110,7 +162,7 @@ export const QuranService = {
         // The Clear Quran (Khattab) via secondary API
         if (edition === 'en.khattab') {
             try {
-                const response = await fetch(`https://quranapi.pages.dev/api/${number}.json`);
+                const response = await fetchWithTimeout(`https://quranapi.pages.dev/api/${number}.json`);
                 const data = await response.json();
                 const result = {
                     number: data.surahNo,
@@ -141,7 +193,7 @@ export const QuranService = {
 
         // All other translations — fetched from alquran.cloud API
         try {
-            const response = await fetch(`${BASE_URL}/surah/${number}/${edition}`);
+            const response = await fetchWithTimeout(`${BASE_URL}/surah/${number}/${edition}`);
             const data = await response.json();
             if (data.code === 200) {
                 await AsyncStorage.setItem(translationCacheKey, JSON.stringify(data.data));
@@ -157,7 +209,7 @@ export const QuranService = {
     // Get list of available editions (translations/audio)
     async getAvailableEditions(format: string = 'text'): Promise<Edition[]> {
         try {
-            const response = await fetch(`${BASE_URL}/edition?format=${format}`);
+            const response = await fetchWithTimeout(`${BASE_URL}/edition?format=${format}`);
             const data = await response.json();
             if (data.code === 200) {
                 // Filter to only include translations or audio reciters
@@ -174,21 +226,38 @@ export const QuranService = {
 
     // Get audio recitation for a surah — cached in AsyncStorage
     async getAudioRecitation(number: number, reciter: string = 'ar.alafasy'): Promise<Ayah[]> {
-        const cacheKey = `quran_audio_v1_${number}_${reciter}`;
+        // ⚠️  Audio source overrides — bumped cache key so previously-cached
+        // low-quality URLs are skipped after this fix ships.
+        const cacheKey = `quran_audio_v2_${number}_${reciter}`;
         try {
             const cached = await AsyncStorage.getItem(cacheKey);
             if (cached) return JSON.parse(cached);
         } catch { /* ignore */ }
 
         try {
-            const response = await fetch(`${BASE_URL}/surah/${number}/${reciter}`);
+            const response = await fetchWithTimeout(`${BASE_URL}/surah/${number}/${reciter}`);
             const data = await response.json();
             if (data.code === 200) {
                 const result = data.data.ayahs.map((ayah: any) => ({
                     number: ayah.number,
-                    text: ayah.audio,
-                    numberInSurah: ayah.numberInSurah
+                    text: ayah.audio as string,
+                    numberInSurah: ayah.numberInSurah,
                 }));
+
+                // ── Maher Al-Mueaqly audio fix ────────────────────────────
+                // islamic.network serves Maher at 22kHz / 64kbps, which sounds
+                // muffled and (per user reports) glitchy compared to other
+                // reciters who serve at 44kHz. everyayah.com hosts the SAME
+                // recording at 44.1kHz, so we redirect Maher URLs to that
+                // source. Other reciters are left untouched.
+                if (reciter === 'ar.mahermuaiqly') {
+                    for (const ayah of result) {
+                        const sp = String(number).padStart(3, '0');
+                        const ap = String(ayah.numberInSurah).padStart(3, '0');
+                        ayah.text = `https://everyayah.com/data/Maher_AlMuaiqly_64kbps/${sp}${ap}.mp3`;
+                    }
+                }
+
                 await AsyncStorage.setItem(cacheKey, JSON.stringify(result));
                 return result;
             }

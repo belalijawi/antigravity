@@ -1,23 +1,30 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import {
     Modal, View, Text, TouchableOpacity, StyleSheet,
-    FlatList, Platform,
+    FlatList, Platform, Alert,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { BlurView } from 'expo-blur';
-import { X, BookHeart, Moon, ChevronDown, ChevronUp, Trash2 } from 'lucide-react-native';
+import { X, BookHeart, Moon, ChevronDown, ChevronUp, Trash2, Heart, PenLine } from 'lucide-react-native';
 import { useTheme } from '../context/ThemeContext';
 import { TahajjudJournal, JournalEntry, STATE_OPTIONS } from '../utils/tahajjudJournal';
+import { TahajjudJournalModal } from './TahajjudJournalModal';
 import { haptic } from '../utils/haptic';
-import { format, parseISO } from 'date-fns';
+import { format, parseISO, subDays } from 'date-fns';
 import Animated, { FadeInDown } from 'react-native-reanimated';
+import { localDateStr } from '../utils/localDate';
 
 interface Props {
     visible: boolean;
     onClose: () => void;
 }
 
-function EntryCard({ entry, colors, onDelete }: { entry: JournalEntry; colors: any; onDelete: (id: string) => void }) {
+function EntryCard({ entry, colors, onDelete, onToggleAnswered }: {
+    entry: JournalEntry;
+    colors: any;
+    onDelete: (id: string) => void;
+    onToggleAnswered: (id: string, val: boolean) => void;
+}) {
     const [expanded, setExpanded] = useState(false);
     const stateOption = STATE_OPTIONS.find(s => s.key === entry.state);
     const hasDua = entry.duaText.trim().length > 0;
@@ -63,6 +70,23 @@ function EntryCard({ entry, colors, onDelete }: { entry: JournalEntry; colors: a
                             <>
                                 <Text style={styles.duaLabel}>Ya Allah, tonight I…</Text>
                                 <Text style={styles.duaText}>{entry.duaText}</Text>
+                                <TouchableOpacity
+                                    onPress={() => { haptic.light(); onToggleAnswered(entry.id, !entry.duaAnswered); }}
+                                    style={[
+                                        styles.answeredBtn,
+                                        entry.duaAnswered && { backgroundColor: '#22c55e14', borderColor: '#22c55e44' },
+                                        !entry.duaAnswered && { borderColor: 'rgba(255,255,255,0.08)' },
+                                    ]}
+                                >
+                                    <Heart
+                                        size={13}
+                                        color={entry.duaAnswered ? '#22c55e' : '#334155'}
+                                        fill={entry.duaAnswered ? '#22c55e' : 'transparent'}
+                                    />
+                                    <Text style={[styles.answeredText, { color: entry.duaAnswered ? '#22c55e' : '#334155' }]}>
+                                        {entry.duaAnswered ? 'Dua answered ✓' : 'Mark dua as answered'}
+                                    </Text>
+                                </TouchableOpacity>
                             </>
                         ) : (
                             <Text style={styles.noDua}>No dua written this night</Text>
@@ -85,6 +109,11 @@ export function TahajjudJournalHistory({ visible, onClose }: Props) {
     const { colors } = useTheme();
     const [entries, setEntries] = useState<JournalEntry[]>([]);
     const [loading, setLoading] = useState(true);
+    const [showAddJournal, setShowAddJournal] = useState(false);
+
+    const todayStr = localDateStr(new Date());
+    const hasToday = entries.some(e => e.date === todayStr);
+    const todayEntry = entries.find(e => e.date === todayStr);
 
     const load = useCallback(async () => {
         setLoading(true);
@@ -97,15 +126,43 @@ export function TahajjudJournalHistory({ visible, onClose }: Props) {
         if (visible) load();
     }, [visible, load]);
 
-    const handleDelete = async (id: string) => {
-        await TahajjudJournal.delete(id);
-        setEntries(prev => prev.filter(e => e.id !== id));
-        haptic.light();
+    // Live subscription — refresh the list the moment any entry is saved/deleted
+    useEffect(() => {
+        const unsub = TahajjudJournal.subscribe(setEntries);
+        return () => unsub();
+    }, []);
+
+    const handleDelete = (id: string) => {
+        // Journal entries can be very personal — never delete without confirming.
+        Alert.alert(
+            'Delete this entry?',
+            'This will permanently remove the journal entry and your dua from that night. This cannot be undone.',
+            [
+                { text: 'Cancel', style: 'cancel' },
+                {
+                    text: 'Delete',
+                    style: 'destructive',
+                    onPress: async () => {
+                        haptic.medium();
+                        await TahajjudJournal.delete(id);
+                        setEntries(prev => prev.filter(e => e.id !== id));
+                    },
+                },
+            ],
+            { cancelable: true },
+        );
+    };
+
+    const handleToggleAnswered = async (id: string, val: boolean) => {
+        await TahajjudJournal.markAnswered(id, val);
+        setEntries(prev => prev.map(e => e.id === id ? { ...e, duaAnswered: val } : e));
+        if (val) haptic.success();
     };
 
     // Stats
     const totalNights = entries.length;
     const totalRakats = entries.reduce((sum, e) => sum + e.rakats, 0);
+    const answeredDuas = entries.filter(e => e.duaAnswered).length;
     const mostCommonState = (() => {
         if (!entries.length) return null;
         const counts: Record<string, number> = {};
@@ -127,7 +184,16 @@ export function TahajjudJournalHistory({ visible, onClose }: Props) {
                         <Moon size={15} color={colors.accent} />
                         <Text style={[styles.headerTitle, { color: colors.accent }]}>NIGHT JOURNAL</Text>
                     </View>
-                    <View style={{ width: 34 }} />
+                    <TouchableOpacity
+                        onPress={() => { haptic.light(); setShowAddJournal(true); }}
+                        style={[styles.writeBtn, { backgroundColor: hasToday ? colors.accent + '22' : colors.accent, borderColor: colors.accent }]}
+                        hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                    >
+                        <PenLine size={14} color={hasToday ? colors.accent : '#fff'} />
+                        <Text style={[styles.writeBtnText, { color: hasToday ? colors.accent : '#fff' }]}>
+                            {hasToday ? 'Edit' : 'Write'}
+                        </Text>
+                    </TouchableOpacity>
                 </View>
 
                 {/* Stats bar */}
@@ -141,12 +207,52 @@ export function TahajjudJournalHistory({ visible, onClose }: Props) {
                             <Text style={[styles.statNum, { color: colors.accent }]}>{totalRakats}</Text>
                             <Text style={styles.statLabel}>rakats total</Text>
                         </View>
-                        {mostCommonState && (
+                        {answeredDuas > 0 && (
+                            <View style={[styles.statBox, { borderColor: 'rgba(34,197,94,0.2)', backgroundColor: 'rgba(34,197,94,0.05)' }]}>
+                                <Text style={[styles.statNum, { color: '#22c55e' }]}>{answeredDuas}</Text>
+                                <Text style={styles.statLabel}>duas answered</Text>
+                            </View>
+                        )}
+                        {!answeredDuas && mostCommonState && (
                             <View style={[styles.statBox, { borderColor: 'rgba(255,255,255,0.07)' }]}>
                                 <Text style={styles.statEmoji}>{mostCommonState.emoji}</Text>
                                 <Text style={styles.statLabel}>usually {mostCommonState.label.toLowerCase()}</Text>
                             </View>
                         )}
+                    </View>
+                )}
+
+                {/* 7-day grid */}
+                {!loading && entries.length > 0 && (
+                    <View style={[styles.weekGrid, { borderColor: 'rgba(255,255,255,0.06)' }]}>
+                        <Text style={[styles.weekTitle, { color: colors.secondaryText }]}>LAST 7 NIGHTS</Text>
+                        <View style={styles.weekRow}>
+                            {Array.from({ length: 7 }).map((_, i) => {
+                                const d = subDays(new Date(), 6 - i);
+                                const ds = localDateStr(d);
+                                const entry = entries.find(e => e.date === ds);
+                                const isToday = ds === todayStr;
+                                return (
+                                    <View key={i} style={styles.weekCell}>
+                                        <View style={[
+                                            styles.weekCircle,
+                                            entry
+                                                ? { backgroundColor: colors.accent + '22', borderColor: colors.accent + '55' }
+                                                : { backgroundColor: 'rgba(255,255,255,0.03)', borderColor: 'rgba(255,255,255,0.06)' },
+                                            isToday && !entry && { borderColor: colors.accent + '30' },
+                                        ]}>
+                                            {entry
+                                                ? <Moon size={11} color={colors.accent} />
+                                                : <View style={[styles.weekEmpty, { backgroundColor: isToday ? colors.accent + '30' : 'rgba(255,255,255,0.08)' }]} />
+                                            }
+                                        </View>
+                                        <Text style={[styles.weekDayLabel, { color: isToday ? colors.accent : '#334155' }]}>
+                                            {format(d, 'EEE').slice(0, 2)}
+                                        </Text>
+                                    </View>
+                                );
+                            })}
+                        </View>
                     </View>
                 )}
 
@@ -168,11 +274,18 @@ export function TahajjudJournalHistory({ visible, onClose }: Props) {
                         contentContainerStyle={styles.list}
                         showsVerticalScrollIndicator={false}
                         renderItem={({ item }) => (
-                            <EntryCard entry={item} colors={colors} onDelete={handleDelete} />
+                            <EntryCard entry={item} colors={colors} onDelete={handleDelete} onToggleAnswered={handleToggleAnswered} />
                         )}
                     />
                 )}
             </LinearGradient>
+
+            {/* Add / edit tonight's entry */}
+            <TahajjudJournalModal
+                visible={showAddJournal}
+                initialEntry={todayEntry}
+                onClose={() => { setShowAddJournal(false); load(); }}
+            />
         </Modal>
     );
 }
@@ -190,6 +303,12 @@ const styles = StyleSheet.create({
     },
     headerCenter: { flexDirection: 'row', alignItems: 'center', gap: 6 },
     headerTitle: { fontSize: 11, fontWeight: '800', letterSpacing: 1.5 },
+    writeBtn: {
+        flexDirection: 'row', alignItems: 'center', gap: 5,
+        paddingHorizontal: 12, paddingVertical: 7,
+        borderRadius: 20, borderWidth: 1,
+    },
+    writeBtnText: { fontSize: 12, fontWeight: '700' },
 
     statsRow: {
         flexDirection: 'row', gap: 10, paddingHorizontal: 20, paddingVertical: 16,
@@ -229,11 +348,34 @@ const styles = StyleSheet.create({
     duaLabel: { color: '#334155', fontSize: 12, fontStyle: 'italic' },
     duaText: { color: '#94a3b8', fontSize: 15, lineHeight: 24 },
     noDua: { color: '#334155', fontSize: 13, fontStyle: 'italic' },
+    answeredBtn: {
+        flexDirection: 'row', alignItems: 'center', gap: 6,
+        alignSelf: 'flex-start', paddingVertical: 7, paddingHorizontal: 12,
+        borderRadius: 20, borderWidth: 1,
+        marginTop: 2,
+    },
+    answeredText: { fontSize: 12, fontWeight: '600' },
     deleteBtn: {
         flexDirection: 'row', alignItems: 'center', gap: 6,
         paddingTop: 8, alignSelf: 'flex-start',
     },
     deleteText: { color: '#475569', fontSize: 12 },
+
+    weekGrid: {
+        marginHorizontal: 20, marginBottom: 4,
+        borderRadius: 18, borderWidth: 1,
+        backgroundColor: 'rgba(255,255,255,0.02)',
+        paddingHorizontal: 16, paddingVertical: 14, gap: 12,
+    },
+    weekTitle: { fontSize: 10, fontWeight: '800', letterSpacing: 1.4 },
+    weekRow: { flexDirection: 'row', justifyContent: 'space-between' },
+    weekCell: { alignItems: 'center', gap: 6, flex: 1 },
+    weekCircle: {
+        width: 34, height: 34, borderRadius: 17, borderWidth: 1,
+        alignItems: 'center', justifyContent: 'center',
+    },
+    weekEmpty: { width: 6, height: 6, borderRadius: 3 },
+    weekDayLabel: { fontSize: 10, fontWeight: '700' },
 
     empty: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 10, padding: 40 },
     emptyEmoji: { fontSize: 48 },

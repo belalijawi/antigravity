@@ -1,179 +1,216 @@
 <!DOCTYPE html>
 <html lang="en">
-
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Privacy Policy - Tahajjud+</title>
+    <title>Privacy Policy · Tahajjud+</title>
+    <meta name="theme-color" content="#020617">
+
     <style>
+        :root {
+            --bg: #020617; --bg-2: #06091e; --accent: #22d3ee;
+            --text: #f1f5f9; --text-2: #94a3b8; --text-3: #64748b;
+            --border: rgba(255,255,255,0.08);
+        }
+        * { box-sizing: border-box; }
         body {
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-            line-height: 1.6;
-            color: #1a1a1a;
-            margin: 0;
-            padding: 40px 20px;
-            background-color: #f9fafb;
-            text-align: center;
+            font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto, sans-serif;
+            background: radial-gradient(ellipse at top, #0a1228 0%, var(--bg) 60%);
+            color: var(--text);
+            margin: 0; min-height: 100vh; line-height: 1.7;
+            -webkit-font-smoothing: antialiased;
         }
-
-        .container {
-            background-color: #ffffff;
-            padding: 40px;
-            border-radius: 12px;
-            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.05);
-            margin: 0 auto;
-            text-align: left;
-            width: 100%;
-            max-width: 800px;
-            box-sizing: border-box;
-            display: block;
+        a { color: var(--accent); }
+        .container { max-width: 760px; margin: 0 auto; padding: 24px; }
+        nav {
+            display: flex; justify-content: space-between; align-items: center;
+            padding: 16px 0 32px; margin-bottom: 32px;
+            border-bottom: 1px solid var(--border);
         }
-
-        h1 {
-            color: #0f172a;
-            margin-bottom: 10px;
-            border-bottom: 2px solid #e2e8f0;
-            padding-bottom: 20px;
-        }
-
-        h2 {
-            color: #334155;
-            margin-top: 30px;
-            font-size: 1.5rem;
-        }
-
-        h3 {
-            color: #475569;
-            margin-top: 20px;
-            font-size: 1.2rem;
-        }
-
-        p,
-        ul {
-            color: #4b5563;
-            margin-bottom: 16px;
-        }
-
-        ul {
-            padding-left: 20px;
-        }
-
-        .date {
-            color: #64748b;
-            font-style: italic;
-            margin-bottom: 30px;
-            display: block;
-        }
-
-        .contact-section {
-            text-align: center;
-            margin-top: 40px;
-            width: 100%;
-            display: block;
-        }
-
-        .contact-box {
-            background-color: #f1f5f9;
-            padding: 30px;
-            border-radius: 8px;
-            margin: 20px auto !important;
-            width: 90%;
-            max-width: 500px;
-            box-sizing: border-box;
-            text-align: center;
-            display: block;
-        }
-
-        a {
-            color: #2563eb;
+        nav .logo {
+            display: flex; align-items: center; gap: 10px;
+            font-weight: 800; color: var(--text);
             text-decoration: none;
         }
-
-        a:hover {
-            text-decoration: underline;
+        nav .logo-icon {
+            width: 36px; height: 36px;
+            border-radius: 9px;
+            overflow: hidden;
+            box-shadow: 0 2px 10px rgba(34,211,238,0.25);
+        }
+        .logo-icon img { width: 100%; height: 100%; display: block; object-fit: cover; }
+        nav a.back { color: var(--text-2); font-size: 14px; }
+        h1 {
+            font-size: 36px; font-weight: 900; margin: 12px 0 8px;
+            letter-spacing: -1px;
+        }
+        .updated {
+            color: var(--text-3); font-size: 13px; font-weight: 600;
+            margin-bottom: 40px;
+        }
+        h2 {
+            font-size: 22px; font-weight: 800; margin: 40px 0 12px;
+            color: var(--text);
+        }
+        h3 {
+            font-size: 16px; font-weight: 800; margin: 24px 0 8px;
+            color: var(--accent);
+        }
+        p { color: var(--text-2); margin: 0 0 14px; font-size: 15px; }
+        ul { color: var(--text-2); padding-left: 22px; margin: 0 0 14px; }
+        ul li { margin-bottom: 6px; font-size: 15px; }
+        strong { color: var(--text); font-weight: 700; }
+        .callout {
+            background: rgba(34, 211, 238, 0.06);
+            border: 1px solid rgba(34, 211, 238, 0.2);
+            border-radius: 14px;
+            padding: 20px 22px;
+            margin: 24px 0;
+        }
+        .callout p { color: var(--text); margin: 0; font-size: 15px; font-weight: 500; }
+        footer {
+            margin-top: 80px;
+            padding-top: 32px;
+            border-top: 1px solid var(--border);
+            color: var(--text-3);
+            font-size: 12px;
+            text-align: center;
         }
     </style>
 </head>
-
 <body>
-    <div class="container">
-        <h1>Privacy Policy</h1>
-        <span class="date">Last Updated: February 13, 2026</span>
+<div class="container">
 
-        <p>Your privacy is important to us. This Privacy Policy explains how <strong>Tahajjud+</strong> ("we," "us," or
-            "our") collects, uses, and protects your information when you use our mobile application.</p>
+    <nav>
+        <a href="/" class="logo">
+            <div class="logo-icon"><img src="/icon.png" alt="" /></div>
+            <span>Tahajjud+</span>
+        </a>
+        <a href="/" class="back">← Back</a>
+    </nav>
 
-        <h2>1. Information We Collect</h2>
+    <h1>Privacy Policy</h1>
+    <div class="updated">Last updated: May 17, 2026</div>
 
-        <h3>a. Location Information</h3>
-        <p>We request access to your device's precise or approximate location. This data is used <strong>solely to
-                calculate accurate local prayer times and determine the Qibla direction</strong> relative to your
-            position. This calculation is performed on your device or via ephemeral requests to prayer time services. We
-            do not store your location history.</p>
-
-        <h3>b. Account Information</h3>
-        <p>If you choose to create an account using Google Sign-In or Apple Sign-In, we collect your
-            <strong>Name</strong> and <strong>Email Address</strong>. This information is used to:
-        </p>
-        <ul>
-            <li>Authenticate your identity.</li>
-            <li>Synchronize your App data (such as prayer logs, streak history, and personal duas) across your devices
-                via Firebase Cloud Sync.</li>
-        </ul>
-
-        <h3>c. Device and Usage Data</h3>
-        <p>We may use third-party services like <strong>Google Firebase</strong> to collect anonymous usage statistics
-            and crash reports. This helps us identify stability issues and improve the app experience. This data does
-            not personally identify you.</p>
-
-        <h2>2. Use of Your Information</h2>
-        <p>We use the information we collect for the following purposes:</p>
-        <ul>
-            <li><strong>App Functionality:</strong> To provide core features (Prayer Times, Qibla, Cloud Sync).</li>
-            <li><strong>Account Management:</strong> To maintain your user account and secure your data.</li>
-            <li><strong>Authentication:</strong> To verify your identity when you log in.</li>
-            <li><strong>Notifications:</strong> To send you prayer reminders and alerts (if opted in).</li>
-        </ul>
-
-        <h2>3. Data Sharing and Third Parties</h2>
-        <p>We do not sell your personal data. We share data only with trusted third-party service providers necessary
-            for app functionality. These third parties include:</p>
-        <ul>
-            <li><strong>Google Play Services:</strong> Used for core Android functionality and app distribution.</li>
-            <li><strong>Google Firebase:</strong> Used for secure authentication, database storage, crash reporting, and
-                analytics.</li>
-            <li><strong>Apple:</strong> Used for Apple Sign-In and iCloud synchronization features.</li>
-        </ul>
-
-        <h2 id="deletion">4. Data Retention and Deletion</h2>
-        <p>We retain your personal data (Name, Email, Sync Data) as long as you maintain an active account. You have
-            full control over your data.</p>
-
-        <h3>Requesting Data Deletion</h3>
-        <p>You have the right to request the deletion of your account and all associated data. To do so, you may:</p>
-        <ul>
-            <li><strong>In-App:</strong> Use the "Delete Account" option within the app settings (Settings > Account >
-                Delete Account).</li>
-            <li><strong>Email:</strong> Contact us directly at <a
-                    href="mailto:tahajjud.letters@gmail.com">tahajjud.letters@gmail.com</a> with
-                the subject line "Account Deletion Request".</li>
-        </ul>
-        <p>Upon receiving your request, we will permanently delete your account and personal data from our servers
-            within 30 days. This includes all synced prayer logs, streak history, and personal duas.</p>
-
-        <h2>5. Children's Privacy</h2>
-        <p>Our app does not knowingly collect personal information from children under the age of 13. If needed, please
-            contact us to remove such information.</p>
-
-        <div class="contact-section">
-            <h2>6. Contact Us</h2>
-            <div class="contact-box">
-                <p>If you have any questions or concerns about this Privacy Policy, please contact us at:</p>
-                <p><strong>Email:</strong> <a href="mailto:tahajjud.letters@gmail.com">tahajjud.letters@gmail.com</a>
-                </p>
-            </div>
-        </div>
+    <div class="callout">
+        <p>Most of what you do in Tahajjud+ stays on your device. The few things that don't are listed below, explicitly.</p>
     </div>
-</body>
 
+    <h2>1. What stays on your device</h2>
+    <p>These are stored only in local app storage on your phone and are <strong>never sent to any server</strong> unless you explicitly enable cloud sync:</p>
+    <ul>
+        <li>Prayer log history (which prayers you've completed, when)</li>
+        <li>Tahajjud streak and weekly-freeze usage</li>
+        <li>Achievements / badges unlocked</li>
+        <li>Memorization (Hifz) progress</li>
+        <li>Dhikr counter sessions</li>
+        <li>Theme, reciter, language, and other settings</li>
+        <li>Offline-downloaded Quran audio files</li>
+        <li>Cached Quran text and translations</li>
+        <li>Bedtime suggestions and biphasic sleep configuration</li>
+        <li>Letters to Allah (private writings)</li>
+    </ul>
+
+    <h2>2. Cloud sync (opt-in only)</h2>
+    <p>If you choose to sign in with Apple ID or Google, the following sync to <strong>Google Firestore</strong> across your devices:</p>
+    <ul>
+        <li>Tahajjud journal entries (mood, rakats, written reflections)</li>
+        <li>Accountability partner code(s) and prayer-logged-tonight status, shared only with the partners you connect with</li>
+        <li>Your Expo push notification token, so partners can send you a wake-up notification (required for the accountability "Wake" feature)</li>
+    </ul>
+    <p>Only you can read your private entries. Firestore security rules enforce this at the server level — even our team cannot read what you write. Sign out at any time to stop syncing.</p>
+    <p>Letters to Allah are <strong>not</strong> synced to the cloud by default — they remain on your device.</p>
+
+    <h3>Sign-in identifiers</h3>
+    <p>If you sign in with Apple, we receive an opaque Apple user identifier and (only if you choose to share it) your name. With Google sign-in we receive your email address and display name. We use these only to authenticate you across devices — they are never shown to anyone else and never used for marketing.</p>
+
+    <h2>3. Community features (what you choose to publish)</h2>
+    <p>Some features are intentionally public when you opt in:</p>
+
+    <h3>Dua Wall</h3>
+    <p>If you tap "Publish" on the Dua Wall, your dua text appears anonymously to other users. We store your Firebase user ID server-side to enforce rate limits and respond to reports — but it is <strong>never displayed alongside the dua</strong>.</p>
+    <p>When you tap <strong>Ameen</strong> or <strong>Pray for</strong> on a community dua, we record an idempotency marker (your user ID + the dua ID) in Firestore so the count can't be inflated. This marker is not shown to anyone.</p>
+    <p>If you tap <strong>Report</strong> on a dua, we store the report (your user ID + the dua ID + auto-hide threshold) so moderators can review. Reporters are never disclosed to the author.</p>
+
+    <h3>Testimony submissions</h3>
+    <p>Stories you submit through "Share Your Story" go to a moderation queue. If approved, they appear in the community feed under whatever author name you entered ("Anonymous", a first name, etc.) — never your account information.</p>
+
+    <h2>4. Biometric authentication (Face ID / Touch ID)</h2>
+    <p>You can optionally protect your private writings (Letters to Allah, the Night Journal) with biometric authentication. When enabled, iOS prompts you for Face ID or Touch ID before opening these screens.</p>
+    <p>The biometric match happens entirely inside iOS's Secure Enclave. <strong>We never receive your fingerprint or face data</strong> — we only receive a boolean "yes/no" from the operating system.</p>
+
+    <h2>5. Push notifications</h2>
+    <p>Tahajjud+ uses push notifications for:</p>
+    <ul>
+        <li><strong>Prayer reminders</strong> — scheduled locally on your device. iOS handles delivery without any server.</li>
+        <li><strong>Tahajjud wake-up reminders</strong> — also scheduled locally.</li>
+        <li><strong>Accountability partner wake-ups</strong> — when a partner taps "Wake," we send a push from <a href="https://expo.dev" target="_blank">Expo's push service</a> to your device using the token saved in Firestore. The message content (e.g. "[Partner name] is calling you to Tahajjud") is the only data transmitted. We do not see the message; Expo briefly relays it to Apple's APNs.</li>
+    </ul>
+    <p>You can disable any notification in iOS Settings → Tahajjud+ → Notifications.</p>
+
+    <h2>6. Apple Health (sleep data)</h2>
+    <p>If you enable <strong>Bedtime Intelligence</strong> in Settings, we read your past 14 days of sleep duration from Apple Health to suggest an optimal bedtime for Tahajjud.</p>
+    <p>This data is processed <strong>entirely on your device</strong>. Your raw sleep timestamps are never transmitted to our servers, to any analytics service, or to anyone. Computation happens in the app; the result (a suggested bedtime) is shown only to you.</p>
+
+    <h2>7. Location (prayer times only)</h2>
+    <p>We request location access to calculate accurate prayer times and Qibla direction for your area. Your coordinates are processed on your device. We do <strong>not</strong> transmit your location to our servers.</p>
+    <p>You can disable location at any time in iOS Settings → Tahajjud+ → Location. The app will then ask you to set a manual location.</p>
+
+    <h2>8. Crash reporting (Sentry)</h2>
+    <p>When the app crashes, we send anonymized crash details to <a href="https://sentry.io" target="_blank">Sentry</a> so we can fix the bug. This includes:</p>
+    <ul>
+        <li>Stack trace</li>
+        <li>iOS / Android version</li>
+        <li>App version</li>
+        <li>Screen you were on (e.g. "Quran Reader")</li>
+    </ul>
+    <p>We <strong>explicitly do NOT send</strong>: the content of your journal entries, letters, dua text, or any spiritual content. Our code filters these out before transmission. We also do not send your name, email, or location.</p>
+
+    <h2>9. Anonymous usage analytics (PostHog)</h2>
+    <p>We track anonymous events like "app launched", "tab switched", "paywall viewed" via <a href="https://posthog.com" target="_blank">PostHog</a> so we know which features get used. This helps us improve the app.</p>
+    <p>We <strong>explicitly do NOT track</strong>: which verses you read, what you write in your journal, what duas you publish, your name, email, location, or any other content. We use only an anonymous random identifier — never something tied to your identity.</p>
+
+    <h2>10. Payments and subscriptions</h2>
+    <p>Premium subscriptions are processed by Apple's App Store. We <strong>never see your credit card or Apple ID password</strong>. We use <a href="https://www.revenuecat.com" target="_blank">RevenueCat</a> as middleware to verify your subscription status — RevenueCat sees anonymized purchase receipts.</p>
+    <p>Manage or cancel subscriptions in iOS Settings → Apple ID → Subscriptions.</p>
+
+    <h2>11. Quran content sources</h2>
+    <p>Quran translations and audio recitations are fetched from public APIs:</p>
+    <ul>
+        <li><strong>alquran.cloud</strong> — text, Tanzil-verified (30+ translations)</li>
+        <li><strong>Islamic Network CDN</strong> — audio recitations (Alafasy, Sudais, Maher Al-Mueaqly, Ash-Shuraym, Abdul Basit, Minshawi, Husary)</li>
+        <li><strong>Quran Data Center / Quran.com</strong> — word-by-word timing data</li>
+    </ul>
+    <p>These APIs receive HTTP requests for surah numbers. They do not receive any of your personal data.</p>
+
+    <h2>12. Your rights</h2>
+
+    <h3>Delete local data</h3>
+    <p>Uninstall the app, or in iOS Settings → Tahajjud+ → "Delete App."</p>
+
+    <h3>Delete cloud data</h3>
+    <p>Settings → Sync & Cloud → "Delete My Account" permanently deletes all your Firestore data and signs you out. We process within 30 days.</p>
+
+    <h3>Opt out of analytics or crash reporting</h3>
+    <p>Email us at <a href="mailto:tahajjud.letters@gmail.com">tahajjud.letters@gmail.com</a> — we'll add your anonymous ID to a deny-list. An in-app toggle is on the roadmap.</p>
+
+    <h3>Request a copy of your data</h3>
+    <p>Email us with the email tied to your account. We respond within 30 days.</p>
+
+    <h2>13. Children's privacy</h2>
+    <p>Tahajjud+ does not knowingly collect personal information from children under the age of 13. If you believe a child has provided us with personal data, please contact us and we will delete it.</p>
+
+    <h2>14. Changes to this policy</h2>
+    <p>We update this policy when we change what we collect. <strong>Major changes are announced in-app</strong> with a banner you must acknowledge before continuing. Minor wording changes are posted here with a new "Last updated" date.</p>
+
+    <h2>15. Contact</h2>
+    <p>Questions, requests, or concerns:<br>
+        <a href="mailto:tahajjud.letters@gmail.com">tahajjud.letters@gmail.com</a>
+    </p>
+
+    <footer>
+        © 2026 Tahajjud+ · <a href="/">Home</a> · <a href="/terms">Terms of Use</a> · <a href="/support">Support</a>
+    </footer>
+</div>
+</body>
 </html>

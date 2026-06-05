@@ -4,9 +4,11 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { BlurView } from 'expo-blur';
 import { ChevronLeft, ChevronRight, Lock } from 'lucide-react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { DeviceEventEmitter } from 'react-native';
 import { useTheme } from '../context/ThemeContext';
 import { usePurchases } from '../context/PurchasesContext';
 import type { PrayerKey } from './Tracker';
+import { localDateStr } from '../utils/localDate';
 
 const DAYS = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
 const MONTHS = [
@@ -38,7 +40,9 @@ function prayerCountColor(count: number): string {
 }
 
 function YearHeatmap({ dateMap, colors }: { dateMap: DateMap; colors: any }) {
-    // Build 52 weeks ending today
+    // Build 52 weeks ending today. Time flows left-to-right: oldest week
+    // is on the far left, the CURRENT week sits on the far right — matches
+    // GitHub / Apple Health / Strava heatmap conventions.
     const today = new Date();
     const weeks: Date[][] = [];
     // Start from the Sunday 51 weeks ago
@@ -68,7 +72,13 @@ function YearHeatmap({ dateMap, colors }: { dateMap: DateMap; colors: any }) {
     });
 
     return (
-        <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+        <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            // Open scrolled to the far right so the user sees TODAY first,
+            // not the start of the year.
+            contentOffset={{ x: weeks.length * (CELL + GAP), y: 0 }}
+        >
             <View>
                 {/* Month labels */}
                 <View style={{ flexDirection: 'row', marginBottom: 4 }}>
@@ -92,8 +102,8 @@ function YearHeatmap({ dateMap, colors }: { dateMap: DateMap; colors: any }) {
                         {weeks.map((week, wi) => {
                             const day = week[dayOfWeek];
                             if (!day) return <View key={wi} style={{ width: CELL + GAP }} />;
-                            const dateStr = day.toISOString().split('T')[0];
-                            const isToday = dateStr === today.toISOString().split('T')[0];
+                            const dateStr = localDateStr(day);
+                            const isToday = dateStr === localDateStr(today);
                             const count = dateMap[dateStr]?.size ?? 0;
                             return (
                                 <View
@@ -152,7 +162,7 @@ export function HistoryCalendar() {
             for (const key of PRAYER_KEYS) {
                 const dates: string[] = parsed[key] ?? [];
                 for (const iso of dates) {
-                    const d = iso.split('T')[0];
+                    const d = localDateStr(iso);
                     if (!map[d]) map[d] = new Set();
                     map[d].add(key);
                 }
@@ -163,8 +173,13 @@ export function HistoryCalendar() {
 
     useEffect(() => { loadHistory(); }, [loadHistory]);
 
+    // Reload whenever a prayer is logged from any screen (Tracker or Night Mode)
+    useEffect(() => {
+        const sub = DeviceEventEmitter.addListener('prayerLogged', loadHistory);
+        return () => sub.remove();
+    }, [loadHistory]);
+
     const prevMonth = () => {
-        if (!isPremium) { openPaywall(); return; }
         if (viewMonth === 0) { setViewYear(y => y - 1); setViewMonth(11); }
         else setViewMonth(m => m - 1);
     };
@@ -177,7 +192,7 @@ export function HistoryCalendar() {
     const isNextDisabled = viewYear === today.getFullYear() && viewMonth === today.getMonth();
     const daysInMonth = getDaysInMonth(viewYear, viewMonth);
     const firstDay    = getFirstDayOfWeek(viewYear, viewMonth);
-    const todayStr    = today.toISOString().split('T')[0];
+    const todayStr    = localDateStr(today);
     const monthPrefix = `${viewYear}-${String(viewMonth + 1).padStart(2, '0')}-`;
 
     // Average completion % this month (exclude future days)
@@ -199,19 +214,22 @@ export function HistoryCalendar() {
     ];
     while (cells.length % 7 !== 0) cells.push(null);
 
-    // Build last-7-days array for week view
-    const last7: Date[] = Array.from({ length: 7 }, (_, i) => {
+    // Free users see last 5 days; premium sees full 7
+    const daysToShow = isPremium ? 7 : 5;
+    const last7: Date[] = Array.from({ length: daysToShow }, (_, i) => {
         const d = new Date(today);
-        d.setDate(today.getDate() - (6 - i));
+        d.setDate(today.getDate() - (daysToShow - 1 - i));
         return d;
     });
 
     // Week completion %
     const weekLogged = last7.reduce((sum, d) => {
-        const ds = d.toISOString().split('T')[0];
+        const ds = localDateStr(d);
         return sum + (dateMap[ds]?.size ?? 0);
     }, 0);
-    const weekPct = Math.round((weekLogged / (7 * 6)) * 100);
+    const weekPct = Math.round((weekLogged / (daysToShow * 6)) * 100);
+
+
 
     return (
         <View style={styles.container}>
@@ -280,7 +298,7 @@ export function HistoryCalendar() {
                     <>
                         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.weekGrid}>
                             {last7.map((date, i) => {
-                                const ds = date.toISOString().split('T')[0];
+                                const ds = localDateStr(date);
                                 const prayers = dateMap[ds] ?? new Set<PrayerKey>();
                                 const count = prayers.size;
                                 const isToday = ds === todayStr;
@@ -332,8 +350,10 @@ export function HistoryCalendar() {
                         {/* Day detail */}
                         {selectedDate && (() => {
                             const prayers = dateMap[selectedDate] ?? new Set<PrayerKey>();
-                            const [y, m, d] = selectedDate.split('-');
-                            const label = `${parseInt(d)} ${MONTHS[parseInt(m) - 1]}`;
+                            const parts = selectedDate.split('-');
+                            const label = parts.length === 3
+                                ? `${parseInt(parts[2])} ${MONTHS[parseInt(parts[1]) - 1] ?? ''}`
+                                : selectedDate;
                             return (
                                 <View style={styles.detailPanel}>
                                     <Text style={[styles.detailDate, { color: colors.accent }]}>{label}</Text>
@@ -377,16 +397,12 @@ export function HistoryCalendar() {
                             </Text>
                         </View>
 
-                        {/* Upgrade nudge */}
-                        <TouchableOpacity style={styles.upgradeBanner} onPress={openPaywall} activeOpacity={0.7}>
-                            <Lock size={11} color="#f59e0b" />
-                            <Text style={styles.upgradeBannerText}>Upgrade for full month & year history</Text>
-                        </TouchableOpacity>
                     </>
                 )}
 
                 {/* ── Month View (premium) ── */}
                 {viewMode === 'month' && (
+                    <View style={{ minHeight: 300 }}>
                     <>
                         <View style={styles.weekRow}>
                             {DAYS.map((d, i) => (
@@ -446,8 +462,10 @@ export function HistoryCalendar() {
 
                         {selectedDate && (() => {
                             const prayers  = dateMap[selectedDate] ?? new Set<PrayerKey>();
-                            const [y, m, d] = selectedDate.split('-');
-                            const label = `${parseInt(d)} ${MONTHS[parseInt(m) - 1]}`;
+                            const parts = selectedDate.split('-');
+                            const label = parts.length === 3
+                                ? `${parseInt(parts[2])} ${MONTHS[parseInt(parts[1]) - 1] ?? ''}`
+                                : selectedDate;
                             return (
                                 <View style={styles.detailPanel}>
                                     <Text style={[styles.detailDate, { color: colors.accent }]}>{label}</Text>
@@ -489,11 +507,40 @@ export function HistoryCalendar() {
                             </Text>
                         </View>
                     </>
+                    {!isPremium && (
+                        <View style={styles.lockedOverlay}>
+                            <BlurView intensity={18} tint="dark" style={StyleSheet.absoluteFill} />
+                            <View style={styles.lockedContent}>
+                                <Lock size={22} color="#f59e0b" />
+                                <Text style={styles.lockedTitle}>Your month is right there</Text>
+                                <Text style={styles.lockedSub}>Every prayer, every day. Unlock to see and track your full history.</Text>
+                                <TouchableOpacity style={[styles.lockedBtn, { backgroundColor: colors.accent }]} onPress={openPaywall}>
+                                    <Text style={styles.lockedBtnText}>Unlock — 7 days free</Text>
+                                </TouchableOpacity>
+                            </View>
+                        </View>
+                    )}
+                    </View>
                 )}
 
                 {/* ── Year View (premium) ── */}
                 {viewMode === 'year' && (
-                    <YearHeatmap dateMap={dateMap} colors={colors} />
+                    <View style={{ minHeight: 300 }}>
+                        <YearHeatmap dateMap={dateMap} colors={colors} />
+                        {!isPremium && (
+                            <View style={styles.lockedOverlay}>
+                                <BlurView intensity={18} tint="dark" style={StyleSheet.absoluteFill} />
+                                <View style={styles.lockedContent}>
+                                    <Lock size={22} color="#f59e0b" />
+                                    <Text style={styles.lockedTitle}>Your full year is waiting</Text>
+                                    <Text style={styles.lockedSub}>Every night of Tahajjud you've prayed — all in one view.</Text>
+                                    <TouchableOpacity style={[styles.lockedBtn, { backgroundColor: colors.accent }]} onPress={openPaywall}>
+                                        <Text style={styles.lockedBtnText}>Unlock — 7 days free</Text>
+                                    </TouchableOpacity>
+                                </View>
+                            </View>
+                        )}
+                    </View>
                 )}
             </View>
         </View>
@@ -709,20 +756,25 @@ const styles = StyleSheet.create({
         fontSize: 12,
         fontWeight: '700',
     },
-    upgradeBanner: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        justifyContent: 'center',
-        gap: 6,
-        paddingVertical: 8,
-        backgroundColor: 'rgba(245,158,11,0.08)',
-        borderRadius: 10,
-        borderWidth: 1,
-        borderColor: 'rgba(245,158,11,0.2)',
+    lockedOverlay: {
+        position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
+        borderRadius: 20, overflow: 'hidden',
+        alignItems: 'center', justifyContent: 'center',
     },
-    upgradeBannerText: {
-        fontSize: 11,
-        fontWeight: '700',
-        color: '#f59e0b',
+    lockedContent: {
+        alignItems: 'center', gap: 10, paddingHorizontal: 32,
+    },
+    lockedTitle: {
+        color: '#f1f5f9', fontSize: 18, fontWeight: '800', textAlign: 'center',
+    },
+    lockedSub: {
+        color: '#94a3b8', fontSize: 13, textAlign: 'center', lineHeight: 19,
+    },
+    lockedBtn: {
+        marginTop: 4, paddingHorizontal: 24, paddingVertical: 11,
+        borderRadius: 22,
+    },
+    lockedBtnText: {
+        color: '#fff', fontSize: 14, fontWeight: '800',
     },
 });

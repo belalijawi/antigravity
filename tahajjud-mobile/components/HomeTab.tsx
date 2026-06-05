@@ -1,13 +1,23 @@
 import React, { useEffect, useState, useRef } from 'react';
-import { View, ScrollView, StyleSheet, Text, TouchableOpacity, Modal, DeviceEventEmitter } from 'react-native';
+import { View, ScrollView, StyleSheet, Text, TouchableOpacity, Modal, DeviceEventEmitter, Platform } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { SlidersHorizontal } from 'lucide-react-native';
+import { SlidersHorizontal, Search } from 'lucide-react-native';
+import { t } from '../utils/i18n';
+import { GlobalSearch } from './GlobalSearch';
 import { NightCalculator } from './NightCalculator';
 import { TasbeehCard } from './TasbeehCard';
 import { HadithCard } from './HadithCard';
 import { DuaNetwork } from './DuaNetwork';
 import { AccountabilityPartnerCard } from './AccountabilityPartnerCard';
+import { VerseOfTheDay } from './VerseOfTheDay';
+import { NightHomeScreen, isInTahajjudWindow } from './NightHomeScreen';
+import { TahajjudChallengeCard } from './TahajjudChallengeCard';
+import { BedtimeCard } from './BedtimeCard';
+import { ChallengesCard } from './ChallengesCard';
+import { FridayKahfCard } from './FridayKahfCard';
+import { EidCard } from './EidCard';
+import { LiveActivity } from '../utils/liveActivity';
 import { SettingsScreen } from './SettingsScreen';
 import { LinearGradient } from 'expo-linear-gradient';
 import { BlurView } from 'expo-blur';
@@ -17,34 +27,131 @@ import Animated, {
     withRepeat, withSequence, withTiming,
     cancelAnimation,
 } from 'react-native-reanimated';
+
+// Reanimated cascade entrance animations look polished on iOS but were adding
+// ~800ms of staggered layout work on Android — making the home tab feel
+// sluggish on cold start. Disable entering animations on Android entirely;
+// cards appear instantly which feels faster and less janky.
+const fadeIn = (delay: number) =>
+    Platform.OS === 'android' ? undefined : FadeInDown.delay(delay).duration(800);
+const fadeInUp = (delay: number) =>
+    Platform.OS === 'android' ? undefined : FadeInUp.delay(delay).duration(800);
 import { useTheme } from '../context/ThemeContext';
 import { tabletContentStyle } from '../utils/layout';
 import { NightCalculation, PrayerTimes } from '../lib/prayer-times';
 import { format } from 'date-fns';
 import { PrayerCountdown } from './PrayerCountdown';
+import { localDateStr } from '../utils/localDate';
+import { usePurchases } from '../context/PurchasesContext';
 
 
 export function HomeTab() {
     const { colors, userName, cardBg, cardBorder, blurIntensity } = useTheme();
     const scrollRef = useRef<ScrollView>(null);
+    const { openPaywall } = usePurchases();
     const [isSettingsVisible, setIsSettingsVisible] = useState(false);
+    const [showSearch, setShowSearch] = useState(false);
 
     useEffect(() => {
-        const sub = DeviceEventEmitter.addListener('scrollToTop', (tab: string) => {
+        const scrollSub = DeviceEventEmitter.addListener('scrollToTop', (tab: string) => {
             if (tab === 'Home') scrollRef.current?.scrollTo({ y: 0, animated: true });
         });
-        return () => sub.remove();
-    }, []);
+        const paywallSub = DeviceEventEmitter.addListener('openPaywall', () => {
+            openPaywall();
+        });
+        return () => { scrollSub.remove(); paywallSub.remove(); };
+    }, [openPaywall]);
     const [nightCalc, setNightCalc] = useState<NightCalculation | null>(null);
     const [prayerTimes, setPrayerTimes] = useState<PrayerTimes | null>(null);
     const [currentTime, setCurrentTime] = useState(new Date());
     const [refreshKey, setRefreshKey] = useState(0);
+    const [nightModeSkipped, setNightModeSkipped] = useState(false);
+    // True only if the user opened the app WHILE already in the last third
+    // of the night. We don't want the Tahajjud screen to auto-pop in the
+    // middle of a normal session if the time naturally crosses into the
+    // last third — only on a fresh app open during that window.
+    const [openedDuringLastThird, setOpenedDuringLastThird] = useState(false);
+    useEffect(() => {
+        if (nightCalc && isInTahajjudWindow(nightCalc, new Date())) {
+            setOpenedDuringLastThird(true);
+        }
+    }, [nightCalc]);
+
+    // Restore "skipped night mode" flag — keyed by date so it resets next Tahajjud
+    useEffect(() => {
+        const today = localDateStr(new Date());
+        AsyncStorage.getItem(`night-mode-skipped-${today}`).then(v => {
+            if (v === 'true') setNightModeSkipped(true);
+        }).catch(() => {});
+    }, []);
+
+    const skipNightMode = async () => {
+        const today = localDateStr(new Date());
+        await AsyncStorage.setItem(`night-mode-skipped-${today}`, 'true');
+        setNightModeSkipped(true);
+    };
+
+    const handlePrayedTahajjudFromNightMode = async () => {
+        // Append today to tracker history; Tracker recomputes streak on its
+        // own next mount. We persist directly here so it works without that tab being open.
+        let alreadyLogged = false;
+        try {
+            const raw = await AsyncStorage.getItem('prayer-tracker-v2');
+            const history = raw ? JSON.parse(raw) : { fajr: [], dhuhr: [], asr: [], maghrib: [], isha: [], tahajjud: [] };
+            const today = localDateStr(new Date());
+            alreadyLogged = (history.tahajjud || []).some((d: string) => localDateStr(d) === today);
+            if (!alreadyLogged) {
+                history.tahajjud = [...(history.tahajjud || []), new Date().toISOString()];
+                await AsyncStorage.setItem('prayer-tracker-v2', JSON.stringify(history));
+            }
+        } catch { /* never block the user */ }
+
+        if (!alreadyLogged) {
+            // Notify accountability partner (same as Tracker does)
+            const { AccountabilityPartner } = await import('../utils/accountabilityPartner');
+            AccountabilityPartner.logTahajjudForPartner().catch(() => {});
+
+            // Tally toward the 40-night challenge (idempotent for today)
+            const { TahajjudChallenge } = await import('../utils/tahajjudChallenge');
+            await TahajjudChallenge.recordTahajjudToday().catch(() => null);
+
+            // Track analytics
+            const { track } = await import('../utils/analytics');
+            track('prayer_logged', { prayer: 'tahajjud', source: 'night_mode' });
+
+            // Emit so HistoryCalendar and PrayerAnalytics refresh
+            const { DeviceEventEmitter } = await import('react-native');
+            DeviceEventEmitter.emit('prayerLogged');
+        }
+
+        await skipNightMode();
+    };
 
     // Tick every minute so the badge updates without reloading
     useEffect(() => {
         const timer = setInterval(() => setCurrentTime(new Date()), 60000);
         return () => clearInterval(timer);
     }, []);
+
+    // Live Activity: start ONCE when the Tahajjud window opens, end when it closes.
+    // We track which (lastThirdStart, fajr) pair has an activity already so the
+    // minute-tick re-render doesn't spawn a new activity every minute.
+    const liveActivityStartedFor = useRef<string | null>(null);
+    useEffect(() => {
+        if (!nightCalc) return;
+        const key = `${nightCalc.lastThirdStart.getTime()}_${nightCalc.nightEnd.getTime()}`;
+        const inWindow = currentTime >= nightCalc.lastThirdStart && currentTime < nightCalc.nightEnd;
+
+        if (inWindow && liveActivityStartedFor.current !== key) {
+            LiveActivity.start(nightCalc.lastThirdStart, nightCalc.nightEnd).catch(() => {});
+            liveActivityStartedFor.current = key;
+        } else if (!inWindow && currentTime >= nightCalc.nightEnd && liveActivityStartedFor.current === key) {
+            LiveActivity.endAll().catch(() => {});
+            liveActivityStartedFor.current = null;
+        }
+    }, [nightCalc?.lastThirdStart?.getTime(), nightCalc?.nightEnd?.getTime(),
+        // Re-evaluate on minute ticks
+        Math.floor(currentTime.getTime() / 60000)]);
 
     const isGateOpen = nightCalc
         ? currentTime >= nightCalc.lastThirdStart && currentTime < nightCalc.nightEnd
@@ -109,6 +216,42 @@ export function HomeTab() {
     const s4Style = useAnimatedStyle(() => ({ opacity: s4.value }));
     const s5Style = useAnimatedStyle(() => ({ opacity: s5.value }));
 
+    // ── Night mode gate ──
+    // Show the focused Tahajjud ritual flow ONLY if:
+    //   1. The user opened the app while already in the last third of the
+    //      night (captured at mount — see `openedDuringLastThird` above).
+    //   2. The window is still active right now.
+    //   3. They haven't tapped "Skip" for tonight.
+    // This prevents the screen from auto-popping when the user is mid-session
+    // and the time naturally rolls into the last third.
+    if (
+        openedDuringLastThird
+        && nightCalc
+        && isInTahajjudWindow(nightCalc, currentTime)
+        && !nightModeSkipped
+    ) {
+        // NOTE: plain View (not SafeAreaView) so NightHomeScreen's gradient
+        // fills behind the status bar. NightHomeScreen handles its own
+        // safe-area top padding internally via useSafeAreaInsets.
+        return (
+            <View style={styles.safeArea}>
+                <NightHomeScreen
+                    nightCalc={nightCalc}
+                    onPrayedTahajjud={handlePrayedTahajjudFromNightMode}
+                    onSkip={skipNightMode}
+                />
+                {/* Hidden NightCalculator keeps the calc fresh */}
+                <View style={{ height: 0, overflow: 'hidden' }}>
+                    <NightCalculator
+                        onNightCalcReady={setNightCalc}
+                        onPrayerTimesReady={setPrayerTimes}
+                        refreshKey={refreshKey}
+                    />
+                </View>
+            </View>
+        );
+    }
+
     return (
         <SafeAreaView style={styles.safeArea}>
             <ScrollView
@@ -124,19 +267,61 @@ export function HomeTab() {
                             {new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })}
                         </Text>
                         <Text style={[styles.greetingText, { color: colors.secondaryText }]}>
-                            Assalamu Alaikum,
+                            {t('home.greeting')}
                         </Text>
                         <Text style={[styles.nameText, { color: colors.primaryText }]}>{userName || 'Servant'}</Text>
                     </View>
-                    <TouchableOpacity
-                        activeOpacity={0.7}
-                        onPress={() => setIsSettingsVisible(true)}
-                        style={styles.settingsButton}
-                    >
-                        <BlurView intensity={Math.round(25 * blurIntensity)} tint="dark" style={[StyleSheet.absoluteFill, { borderRadius: 22, backgroundColor: cardBg }]} />
-                        <SlidersHorizontal color={colors.primaryText} size={18} strokeWidth={2} />
-                    </TouchableOpacity>
+                    <View style={{ flexDirection: 'row', gap: 8 }}>
+                        <TouchableOpacity
+                            activeOpacity={0.7}
+                            onPress={() => setShowSearch(true)}
+                            style={styles.settingsButton}
+                            accessibilityRole="button"
+                            accessibilityLabel="Search"
+                        >
+                            <BlurView intensity={Math.round(25 * blurIntensity)} tint="dark" style={[StyleSheet.absoluteFill, { borderRadius: 22, backgroundColor: cardBg }]} />
+                            <Search color={colors.primaryText} size={18} strokeWidth={2} />
+                        </TouchableOpacity>
+                        <TouchableOpacity
+                            activeOpacity={0.7}
+                            onPress={() => setIsSettingsVisible(true)}
+                            style={styles.settingsButton}
+                            accessibilityRole="button"
+                            accessibilityLabel="Settings"
+                        >
+                            <BlurView intensity={Math.round(25 * blurIntensity)} tint="dark" style={[StyleSheet.absoluteFill, { borderRadius: 22, backgroundColor: cardBg }]} />
+                            <SlidersHorizontal color={colors.primaryText} size={18} strokeWidth={2} />
+                        </TouchableOpacity>
+                    </View>
                 </View>
+
+                <GlobalSearch
+                    visible={showSearch}
+                    onClose={() => setShowSearch(false)}
+                    onResultPress={(result) => {
+                        // Lazy-require avoids the App.tsx → HomeTab → App.tsx
+                        // circular import.
+                        const { switchToTab, requestOpen } = require('../App');
+                        if (result.kind === 'surah') {
+                            requestOpen({ kind: 'surah', surahNumber: result.surah.number });
+                            switchToTab('Quran');
+                        } else if (result.kind === 'verse') {
+                            // Jump straight to the specific ayah, not the start of the surah.
+                            requestOpen({ kind: 'surah', surahNumber: result.surahNumber, ayahNumber: result.ayahNumber });
+                            switchToTab('Quran');
+                        } else if (result.kind === 'dua') {
+                            requestOpen({ kind: 'dua', id: result.dua.id });
+                            switchToTab('Duas');
+                        } else if (result.kind === 'letter') {
+                            requestOpen({ kind: 'letter', id: result.letter.id });
+                            switchToTab('Duas');
+                        } else if (result.kind === 'journal') {
+                            requestOpen({ kind: 'journal', id: result.entry.id });
+                        } else if (result.kind === 'tab') {
+                            switchToTab(result.tabName);
+                        }
+                    }}
+                />
 
                 {/* Hero: Celestial Portal */}
                 <Animated.View
@@ -227,18 +412,46 @@ export function HomeTab() {
                     </View>
 
                     <View style={styles.heroContent}>
-                        <Text style={[styles.heroSubtitle, { color: colors.accent }]}>Tonight's Journey</Text>
-                        <Text style={styles.heroTitle}>Enter the Silent Hour</Text>
+                        {/*
+                          Caps + shrink-to-fit on the hero text so the layout
+                          stays intact for users with iOS "Larger Text"
+                          accessibility setting enabled — otherwise the 30pt
+                          title scales up, wraps to 3+ lines, overflows the
+                          fixed-height portal, and pushes the moon + badge
+                          around the box (seen on some users' devices).
+                        */}
+                        <Text
+                            style={[styles.heroSubtitle, { color: colors.accent }]}
+                            numberOfLines={1}
+                            adjustsFontSizeToFit
+                            maxFontSizeMultiplier={1.2}
+                        >
+                            {t('home.tonightsJourney')}
+                        </Text>
+                        <Text
+                            style={styles.heroTitle}
+                            numberOfLines={2}
+                            adjustsFontSizeToFit
+                            minimumFontScale={0.6}
+                            maxFontSizeMultiplier={1.2}
+                        >
+                            {t('home.enterSilent')}
+                        </Text>
                         <Animated.View style={[styles.heroBadge, isGateOpen && styles.heroBadgeOpen, badgeGlowStyle]}>
                             <View style={[styles.pulseDot, isGateOpen && styles.pulseDotActive]} />
-                            <Text style={[styles.heroBadgeText, { color: isGateOpen ? colors.accent : '#64748b' }]}>
+                            <Text
+                                style={[styles.heroBadgeText, { color: isGateOpen ? colors.accent : '#64748b' }]}
+                                numberOfLines={1}
+                                adjustsFontSizeToFit
+                                maxFontSizeMultiplier={1.2}
+                            >
                                 {isGateOpen
-                                    ? 'Gate is Open'
+                                    ? t('home.gateOpen')
                                     : nightCalc
                                         ? (currentTime >= nightCalc.nightStart && currentTime < nightCalc.lastThirdStart
-                                            ? `Gate Opens ${format(nightCalc.lastThirdStart, 'h:mm a')}`
-                                            : 'Gate is Closed')
-                                        : 'Calculating...'}
+                                            ? t('home.gateOpens', { time: format(nightCalc.lastThirdStart, 'h:mm a') })
+                                            : t('home.gateClosed'))
+                                        : t('home.calculating')}
                             </Text>
                         </Animated.View>
                     </View>
@@ -248,7 +461,7 @@ export function HomeTab() {
                 <View style={styles.bentoContainer}>
                     {/* Large Card: Night Calculator */}
                     <Animated.View
-                        entering={FadeInDown.delay(200).duration(800)}
+                        entering={fadeIn(200)}
                         style={[styles.bentoCard, styles.bentoCardLarge]}
                     >
                         <BlurView intensity={Math.round(15 * blurIntensity)} tint="dark" style={[StyleSheet.absoluteFill, { backgroundColor: cardBg }]} />
@@ -258,7 +471,7 @@ export function HomeTab() {
                     {/* Prayer countdown */}
                     {prayerTimes && (
                         <Animated.View
-                            entering={FadeInDown.delay(350).duration(800)}
+                            entering={fadeIn(350)}
                             style={styles.fullWidthCard}
                         >
                             <PrayerCountdown prayerTimes={prayerTimes} />
@@ -266,13 +479,13 @@ export function HomeTab() {
                     )}
 
                     {/* Accountability Partner */}
-                    <Animated.View entering={FadeInDown.delay(350).duration(800)}>
+                    <Animated.View entering={fadeIn(350)}>
                         <AccountabilityPartnerCard />
                     </Animated.View>
 
                     {/* Tasbeeh — full width */}
                     <Animated.View
-                        entering={FadeInDown.delay(400).duration(800)}
+                        entering={fadeIn(400)}
                         style={styles.fullWidthCard}
                     >
                         <TasbeehCard />
@@ -280,15 +493,53 @@ export function HomeTab() {
 
                     {/* Dua Network */}
                     <Animated.View
-                        entering={FadeInDown.delay(600).duration(800)}
+                        entering={fadeIn(600)}
                         style={[styles.bentoCard, styles.bentoCardLarge]}
                     >
                         <BlurView intensity={Math.round(20 * blurIntensity)} tint="dark" style={[StyleSheet.absoluteFill, { backgroundColor: cardBg }]} />
                         <DuaNetwork />
                     </Animated.View>
 
+                    {/* Bedtime intelligence — only renders if user enabled it in Settings */}
+                    <Animated.View entering={fadeIn(680)}>
+                        <BedtimeCard nightCalc={nightCalc} />
+                    </Animated.View>
+
+                    {/* Eid greeting — only renders on Eid al-Fitr / al-Adha */}
+                    <EidCard />
+
+                    {/* Friday Surah Al-Kahf — only renders on Fridays */}
+                    <FridayKahfCard
+                        onOpenKahf={() => {
+                            const { switchToTab, requestOpen } = require('../App');
+                            requestOpen({ kind: 'surah', surahNumber: 18 });
+                            switchToTab('Quran');
+                        }}
+                    />
+
+                    {/* Auto-rotating weekly + monthly challenges */}
+                    <Animated.View entering={fadeIn(690)}>
+                        <ChallengesCard />
+                    </Animated.View>
+
+                    {/* 40-night Tahajjud challenge */}
+                    <Animated.View entering={fadeIn(700)}>
+                        <TahajjudChallengeCard />
+                    </Animated.View>
+
+                    {/* Verse of the day — rotates daily, deep-links into surah on tap */}
+                    <Animated.View entering={fadeIn(750)}>
+                        <VerseOfTheDay
+                            onOpenSurah={(surahNumber) => {
+                                const { switchToTab, requestOpen } = require('../App');
+                                requestOpen({ kind: 'surah', surahNumber });
+                                switchToTab('Quran');
+                            }}
+                        />
+                    </Animated.View>
+
                     {/* Horizontal: Hadith Carousel / Cards */}
-                    <Animated.View entering={FadeInDown.delay(800).duration(800)} style={styles.hadithCarousel}>
+                    <Animated.View entering={fadeIn(800)} style={styles.hadithCarousel}>
                         <HadithCard
                             text="The Lord descends every night to the lowest heaven when one-third of the night remains..."
                             source="Bukhari 1145"

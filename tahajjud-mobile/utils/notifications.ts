@@ -9,25 +9,42 @@ export const NOTIFICATION_ID_KEY_PREFIX = 'scheduled_notification_id_';
 let notificationHandlerConfigured = false;
 let isSchedulingGlobal = false;
 
-// Call this before any notification API usage — NOT at module load time
-function ensureNotificationHandler() {
+// Dev-only logger — stripped out in production builds
+const log = (...args: any[]) => { if (__DEV__) console.log(...args); };
+
+/**
+ * Configure the foreground notification handler. Safe to call repeatedly —
+ * idempotent. Exported so App.tsx can call it on cold start, ensuring the
+ * handler is set before any push could possibly arrive.
+ */
+export function ensureNotificationHandler() {
     if (notificationHandlerConfigured) return;
     notificationHandlerConfigured = true;
     Notifications.setNotificationHandler({
-        handleNotification: async () => ({
-            shouldShowAlert: false, // Strictly silence foreground alerts to prevent spam
-            shouldPlaySound: false, // Also silence sound in foreground
-            shouldSetBadge: true,
-            shouldShowBanner: false,
-            shouldShowList: true,
-        }),
+        handleNotification: async (notification) => {
+            const dataType = notification.request.content.data?.type;
+            // Always show partner notifications (wake-up call, partner prayed)
+            const isPartner = dataType === 'partner_prayed' || dataType === 'partner_wakeup';
+            // Always show Tahajjud alarms and prayer reminders even when app is open —
+            // iOS silently swallows them otherwise, meaning the user misses their alarm.
+            const isPrayer = dataType === 'tahajjud' || dataType === 'prayer' ||
+                             dataType === 'islamic_event';
+            const shouldShow = isPartner || isPrayer;
+            return {
+                shouldShowAlert: shouldShow,
+                shouldPlaySound: shouldShow,
+                shouldSetBadge: true,
+                shouldShowBanner: shouldShow,
+                shouldShowList: true,
+            };
+        },
     });
 }
 
 export async function requestNotificationPermissions(): Promise<boolean> {
     ensureNotificationHandler();
     if (!Device.isDevice) {
-        console.log('Notifications only work on physical devices');
+        log('Notifications only work on physical devices');
         return false;
     }
 
@@ -40,7 +57,7 @@ export async function requestNotificationPermissions(): Promise<boolean> {
     }
 
     if (finalStatus !== 'granted') {
-        console.log('Failed to get notification permissions');
+        log('Failed to get notification permissions');
         return false;
     }
 
@@ -76,7 +93,7 @@ export async function cancelNotification(key: string): Promise<void> {
         const idKey = `${NOTIFICATION_ID_KEY_PREFIX}${key.toLowerCase()}`;
         const oldIdKey = key.toLowerCase() === 'tahajjud' ? 'tahajjud_notification_id' : null;
 
-        // Cancel all IDs in the multi-reminder array (Tahajjud only)
+        // Cancel all IDs in the multi-reminder array and future nights (Tahajjud only)
         if (key.toLowerCase() === 'tahajjud') {
             const idsJson = await AsyncStorage.getItem('tahajjud_notification_ids_array');
             if (idsJson) {
@@ -85,7 +102,17 @@ export async function cancelNotification(key: string): Promise<void> {
                     await Notifications.cancelScheduledNotificationAsync(id).catch(() => {});
                 }
                 await AsyncStorage.removeItem('tahajjud_notification_ids_array');
-                console.log(`Canceled ${ids.length} Tahajjud notification(s)`);
+                log(`Canceled ${ids.length} Tahajjud notification(s)`);
+            }
+            // Also cancel future night notifications (days 1-6 ahead)
+            const futureIdsJson = await AsyncStorage.getItem('tahajjud_future_ids');
+            if (futureIdsJson) {
+                const futureIds: string[] = JSON.parse(futureIdsJson);
+                for (const id of futureIds) {
+                    await Notifications.cancelScheduledNotificationAsync(id).catch(() => {});
+                }
+                await AsyncStorage.removeItem('tahajjud_future_ids');
+                log(`Canceled ${futureIds.length} future Tahajjud notification(s)`);
             }
         }
 
@@ -154,7 +181,7 @@ export async function scheduleAllPrayerNotifications(
     tahajjudConfig?: { enabled: boolean, buffers: number[], targetTime: Date }
 ) {
     if (isSchedulingGlobal) {
-        console.log('[DEBUG] Skipping scheduleAllPrayerNotifications: already in progress');
+        log('[DEBUG] Skipping scheduleAllPrayerNotifications: already in progress');
         return;
     }
 
@@ -162,25 +189,46 @@ export async function scheduleAllPrayerNotifications(
     try {
         ensureNotificationHandler();
 
-        // 1. Decisively cancel all potential stale/duplicate notifications before rescheduling
-        // This is the "Nuclear Option" to ensure the device is never spammed.
-        await Notifications.cancelAllScheduledNotificationsAsync();
+        // Cancel only tracked prayer/Tahajjud notifications by their stored IDs.
+        // Previously used cancelAllScheduledNotificationsAsync() ("nuclear option")
+        // which also wiped the weekly digest and Hifz review notifications — they
+        // were never rescheduled, so users lost them on every app launch.
+        const prayers = ['fajr', 'dhuhr', 'asr', 'maghrib', 'isha'];
 
-        // Clear all ID keys from AsyncStorage as well to keep them in sync
-        const keys = await AsyncStorage.getAllKeys();
-        const notificationKeys = keys.filter(k =>
-            k.startsWith(NOTIFICATION_ID_KEY_PREFIX) ||
-            k === 'tahajjud_notification_id' ||
-            k === 'tahajjud_future_ids'
-        );
-        if (notificationKeys.length > 0) {
-            await AsyncStorage.multiRemove(notificationKeys);
+        for (const prayer of prayers) {
+            const id = await AsyncStorage.getItem(`${NOTIFICATION_ID_KEY_PREFIX}${prayer}`).catch(() => null);
+            if (id) await Notifications.cancelScheduledNotificationAsync(id).catch(() => {});
         }
+
+        const tahajjudIdsJson = await AsyncStorage.getItem('tahajjud_notification_ids_array').catch(() => null);
+        if (tahajjudIdsJson) {
+            const ids: string[] = JSON.parse(tahajjudIdsJson);
+            for (const id of ids) await Notifications.cancelScheduledNotificationAsync(id).catch(() => {});
+        }
+
+        const futureIdsJson = await AsyncStorage.getItem('tahajjud_future_ids').catch(() => null);
+        if (futureIdsJson) {
+            const ids: string[] = JSON.parse(futureIdsJson);
+            for (const id of ids) await Notifications.cancelScheduledNotificationAsync(id).catch(() => {});
+        }
+
+        const legacyId = await AsyncStorage.getItem('tahajjud_notification_id').catch(() => null);
+        if (legacyId) await Notifications.cancelScheduledNotificationAsync(legacyId).catch(() => {});
+
+        // Clear all tracked prayer ID keys
+        const keysToRemove = [
+            ...prayers.map(p => `${NOTIFICATION_ID_KEY_PREFIX}${p}`),
+            `${NOTIFICATION_ID_KEY_PREFIX}tahajjud`,
+            'tahajjud_notification_ids_array',
+            'tahajjud_future_ids',
+            'tahajjud_notification_id',
+        ];
+        await AsyncStorage.multiRemove(keysToRemove).catch(() => {});
 
         const isOverallEnabled = typeof enabledPrayers === 'boolean' ? enabledPrayers : Object.values(enabledPrayers).some(v => v);
 
         if (!isOverallEnabled && !tahajjudConfig?.enabled) {
-            console.log('[DEBUG] All notifications are disabled globally. Slate cleared.');
+            log('[DEBUG] All notifications are disabled globally. Slate cleared.');
             return;
         }
 
@@ -189,7 +237,7 @@ export async function scheduleAllPrayerNotifications(
         const prayerOffset = offsetRaw ? parseInt(offsetRaw, 10) : 0;
 
         if (isOverallEnabled) {
-            console.log('[DEBUG] Starting clean re-scheduling for daily prayers...');
+            log('[DEBUG] Starting clean re-scheduling for daily prayers...');
             const prayers = ['fajr', 'dhuhr', 'asr', 'maghrib', 'isha'];
 
             for (const prayer of prayers) {
@@ -205,7 +253,7 @@ export async function scheduleAllPrayerNotifications(
 
         // Handle Tahajjud if config is provided
         if (tahajjudConfig?.enabled) {
-            console.log('[DEBUG] Scheduling Tahajjud within global sweep...');
+            log('[DEBUG] Scheduling Tahajjud within global sweep...');
             const ids: string[] = [];
             for (const buffer of tahajjudConfig.buffers) {
                 const id = await internalScheduleTahajjudNotificationRaw(tahajjudConfig.targetTime, buffer);
@@ -278,7 +326,7 @@ export async function scheduleFuturePrayerNotifications(
                 },
             });
         } catch (err) {
-            console.warn(`[DEBUG] Failed to schedule future ${name}:`, err);
+            log(`[DEBUG] Failed to schedule future ${name}:`, err);
         }
     }
 }
@@ -292,7 +340,7 @@ async function internalScheduleTahajjudNotification(targetTime: Date, bufferMinu
     const safetyMargin = 3 * 60 * 1000;
 
     if (timeToWake <= new Date(now.getTime() + safetyMargin)) {
-        console.log('[DEBUG] Skipping Tahajjud: too close or in past');
+        log('[DEBUG] Skipping Tahajjud: too close or in past');
         return;
     }
 
@@ -308,7 +356,14 @@ async function internalScheduleTahajjudNotification(targetTime: Date, bufferMinu
             body,
             sound: 'tahajjud_alert.wav',
             priority: Notifications.AndroidNotificationPriority.MAX,
-            vibrate: [0, 1000, 500, 1000],
+            vibrate: [0, 1000, 500, 1000, 500, 1000],
+            // ── Time-sensitive: bypasses iOS Focus / Do Not Disturb ──
+            // This is the highest interruption level available without
+            // Apple's critical-alerts entitlement (which requires an app
+            // review request). Time-sensitive ensures the Tahajjud reminder
+            // pierces through Sleep / Do Not Disturb focus modes — exactly
+            // what you want from a wake-up alarm.
+            interruptionLevel: 'timeSensitive',
         },
         trigger: {
             type: Notifications.SchedulableTriggerInputTypes.DATE,
@@ -319,7 +374,7 @@ async function internalScheduleTahajjudNotification(targetTime: Date, bufferMinu
 
     await AsyncStorage.setItem(`${NOTIFICATION_ID_KEY_PREFIX}tahajjud`, notificationId);
     await AsyncStorage.setItem(NOTIFICATION_ENABLED_KEY, 'true');
-    console.log(`[DEBUG] Tahajjud scheduled for ${timeToWake.toLocaleString()}`);
+    log(`[DEBUG] Tahajjud scheduled for ${timeToWake.toLocaleString()}`);
 }
 
 /**
@@ -344,7 +399,10 @@ async function internalScheduleTahajjudNotificationRaw(targetTime: Date, bufferM
                 body,
                 sound: 'tahajjud_alert.wav',
                 priority: Notifications.AndroidNotificationPriority.MAX,
-                vibrate: [0, 1000, 500, 1000],
+                vibrate: [0, 1000, 500, 1000, 500, 1000],
+                // Same time-sensitive escalation as tonight's reminder so
+                // future-night Tahajjud alerts also break through Do Not Disturb.
+                interruptionLevel: 'timeSensitive',
             },
             trigger: {
                 type: Notifications.SchedulableTriggerInputTypes.DATE,
@@ -417,7 +475,7 @@ async function internalSchedulePrayerNotification(prayerName: string, targetTime
     const safetyMargin = 3 * 60 * 1000;
 
     if (scheduleTime <= new Date(now.getTime() + safetyMargin)) {
-        console.log(`[DEBUG] Skipping ${prayerName}: too close or in past`);
+        log(`[DEBUG] Skipping ${prayerName}: too close or in past`);
         return;
     }
 
@@ -440,5 +498,5 @@ async function internalSchedulePrayerNotification(prayerName: string, targetTime
     });
 
     await AsyncStorage.setItem(`${NOTIFICATION_ID_KEY_PREFIX}${key}`, notificationId);
-    console.log(`[DEBUG] ${prayerName} scheduled for ${scheduleTime.toLocaleString()} (${offsetMinutes} min before)`);
+    log(`[DEBUG] ${prayerName} scheduled for ${scheduleTime.toLocaleString()} (${offsetMinutes} min before)`);
 }

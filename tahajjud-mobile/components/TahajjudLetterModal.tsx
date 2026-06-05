@@ -5,13 +5,14 @@
 import React, { useState, useRef } from 'react';
 import {
     Modal, View, Text, TextInput, TouchableOpacity,
-    StyleSheet, KeyboardAvoidingView, Platform,
+    StyleSheet, KeyboardAvoidingView, Platform, TouchableWithoutFeedback, Keyboard,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { X, Check } from 'lucide-react-native';
 import { useTheme } from '../context/ThemeContext';
 import { savePersonalDua } from '../utils/personalDuas';
 import { haptic } from '../utils/haptic';
+import { getPromptForDate } from '../utils/journalPrompts';
 import { format } from 'date-fns';
 
 interface Props {
@@ -29,11 +30,13 @@ export function TahajjudLetterModal({ visible, onClose }: Props) {
     const handleSave = async () => {
         haptic.success();
         await savePersonalDua({
+            id: `tahajjud_letter_${Date.now()}`,
             title: `Tahajjud · ${format(now, 'MMM d, yyyy')}`,
             arabic: '',
             transliteration: '',
             translation: text.trim() || '(No dua written)',
             notes: '',
+            createdAt: Date.now(),
         });
         setDone(true);
         setTimeout(() => {
@@ -69,24 +72,27 @@ export function TahajjudLetterModal({ visible, onClose }: Props) {
                                 </TouchableOpacity>
                             </View>
 
-                            {/* Writing area */}
-                            <View style={styles.writeArea}>
-                                <Text style={styles.bismillah}>بِسْمِ اللَّهِ</Text>
-                                <Text style={styles.dateLabel}>{format(now, 'EEEE, MMMM d')}</Text>
-                                <Text style={styles.alhamdulillah}>Alhamdulillah 🤲</Text>
-                                <Text style={styles.prompt}>Ya Allah, tonight I…</Text>
-                                <TextInput
-                                    ref={inputRef}
-                                    style={styles.input}
-                                    placeholder="Write whatever is on your heart…"
-                                    placeholderTextColor="#1e3a5f"
-                                    multiline
-                                    value={text}
-                                    onChangeText={setText}
-                                    textAlignVertical="top"
-                                    autoFocus
-                                />
-                            </View>
+                            {/* Writing area — tapping anywhere outside the
+                                TextInput dismisses the keyboard. */}
+                            <TouchableWithoutFeedback onPress={Keyboard.dismiss} accessible={false}>
+                                <View style={styles.writeArea}>
+                                    <Text style={styles.bismillah}>بِسْمِ اللَّهِ</Text>
+                                    <Text style={styles.dateLabel}>{format(now, 'EEEE, MMMM d')}</Text>
+                                    <Text style={styles.alhamdulillah}>Alhamdulillah 🤲</Text>
+                                    <Text style={styles.prompt}>{getPromptForDate()}</Text>
+                                    <TextInput
+                                        ref={inputRef}
+                                        style={styles.input}
+                                        placeholder="Write whatever is on your heart…"
+                                        placeholderTextColor="#1e3a5f"
+                                        multiline
+                                        value={text}
+                                        onChangeText={setText}
+                                        textAlignVertical="top"
+                                        autoFocus
+                                    />
+                                </View>
+                            </TouchableWithoutFeedback>
 
                             <TouchableOpacity onPress={handleClose} style={styles.skipBtn}>
                                 <Text style={styles.skipText}>Skip</Text>

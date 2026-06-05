@@ -1,0 +1,137 @@
+// Tahajjud+ Live Activity
+//
+// Renders a countdown to Tahajjud (last third of the night) on the Lock Screen
+// and Dynamic Island. Started from JS via the LiveActivityModule bridge
+// when the user enables "Tahajjud reminder" notifications, and ended either
+// when Fajr arrives or when the user taps "I prayed Tahajjud" in-app.
+//
+// Requires iOS 16.1+. For older iOS the JS bridge no-ops.
+
+import ActivityKit
+import WidgetKit
+import SwiftUI
+
+struct TahajjudActivityAttributes: ActivityAttributes {
+    public struct ContentState: Codable, Hashable {
+        var lastThirdStart: Date
+        var fajrTime: Date
+    }
+
+    var startedAt: Date
+}
+
+/// Computed at render time — derives the stage from the current Date,
+/// so labels update as the night progresses without needing a push update.
+@available(iOS 16.1, *)
+private extension TahajjudActivityAttributes.ContentState {
+    var stage: String {
+        let now = Date()
+        if now < lastThirdStart { return "before" }
+        if now < fajrTime { return "active" }
+        return "ending"
+    }
+}
+
+@available(iOS 16.1, *)
+struct TahajjudLiveActivity: Widget {
+    var body: some WidgetConfiguration {
+        ActivityConfiguration(for: TahajjudActivityAttributes.self) { context in
+            // Lock Screen
+            VStack(alignment: .leading, spacing: 6) {
+                HStack {
+                    Image(systemName: "moon.stars.fill")
+                        .foregroundColor(.cyan)
+                    Text(stageLabel(context.state.stage))
+                        .font(.caption2.weight(.bold))
+                        .foregroundColor(.cyan)
+                        .tracking(1.4)
+                    Spacer()
+                }
+                if context.state.stage == "before" {
+                    Text(timerInterval: Date()...context.state.lastThirdStart, countsDown: true)
+                        .font(.title2.weight(.bold))
+                        .foregroundColor(.white)
+                    Text("until last third")
+                        .font(.caption)
+                        .foregroundColor(.gray)
+                } else if context.state.stage == "active" {
+                    Text(timerInterval: Date()...context.state.fajrTime, countsDown: true)
+                        .font(.title2.weight(.bold))
+                        .foregroundColor(.white)
+                    Text("until Fajr")
+                        .font(.caption)
+                        .foregroundColor(.gray)
+                } else {
+                    Text("Fajr arrived")
+                        .font(.title3.weight(.bold))
+                        .foregroundColor(.white)
+                }
+            }
+            .padding(16)
+            .activityBackgroundTint(Color.black.opacity(0.85))
+            .activitySystemActionForegroundColor(.cyan)
+
+        } dynamicIsland: { context in
+            DynamicIsland {
+                DynamicIslandExpandedRegion(.leading) {
+                    Image(systemName: "moon.stars.fill")
+                        .foregroundColor(.cyan)
+                }
+                DynamicIslandExpandedRegion(.trailing) {
+                    if context.state.stage == "before" {
+                        Text(timerInterval: Date()...context.state.lastThirdStart, countsDown: true)
+                            .font(.caption.weight(.bold))
+                            .foregroundColor(.cyan)
+                            .frame(maxWidth: .infinity, alignment: .trailing)
+                    } else {
+                        Text(timerInterval: Date()...context.state.fajrTime, countsDown: true)
+                            .font(.caption.weight(.bold))
+                            .foregroundColor(.cyan)
+                            .frame(maxWidth: .infinity, alignment: .trailing)
+                    }
+                }
+                DynamicIslandExpandedRegion(.center) {
+                    Text(stageLabel(context.state.stage))
+                        .font(.caption2.weight(.bold))
+                        .foregroundColor(.gray)
+                }
+                DynamicIslandExpandedRegion(.bottom) {
+                    Text(context.state.stage == "before" ? "until last third" : "until Fajr")
+                        .font(.caption)
+                        .foregroundColor(.gray)
+                }
+            } compactLeading: {
+                Image(systemName: "moon.stars.fill")
+                    .foregroundColor(.cyan)
+            } compactTrailing: {
+                if context.state.stage == "before" {
+                    Text(timerInterval: Date()...context.state.lastThirdStart, countsDown: true)
+                        .frame(width: 50)
+                        .font(.caption2.weight(.bold))
+                        .foregroundColor(.cyan)
+                } else {
+                    Text(timerInterval: Date()...context.state.fajrTime, countsDown: true)
+                        .frame(width: 50)
+                        .font(.caption2.weight(.bold))
+                        .foregroundColor(.cyan)
+                }
+            } minimal: {
+                Image(systemName: "moon.stars.fill")
+                    .foregroundColor(.cyan)
+            }
+            .keylineTint(Color.cyan)
+        }
+    }
+
+    private func stageLabel(_ s: String) -> String {
+        switch s {
+        case "before": return "TAHAJJUD"
+        case "active": return "LAST THIRD"
+        default: return "FAJR"
+        }
+    }
+}
+
+private struct TahajjudActivityIdProvider {
+    static let activityType = "TahajjudActivity"
+}

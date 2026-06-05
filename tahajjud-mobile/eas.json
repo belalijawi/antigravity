@@ -1,25 +1,33 @@
 {
-    "cli": {
-        "version": ">= 18.0.0"
+  "cli": {
+    "version": ">= 18.0.0",
+    "appVersionSource": "remote"
+  },
+  "build": {
+    "development": {
+      "developmentClient": true,
+      "distribution": "internal",
+      "autoIncrement": false
     },
-    "build": {
-        "development": {
-            "developmentClient": true,
-            "distribution": "internal"
-        },
-        "preview": {
-            "distribution": "internal"
-        },
-        "production": {
-            "distribution": "store"
-        }
+    "preview": {
+      "distribution": "internal",
+      "autoIncrement": false
     },
-    "submit": {
-        "production": {
-            "ios": {
-                "ascAppId": "6759176533",
-                "appleId": "belalijawi@yahoo.com"
-            }
-        }
+    "production": {
+      "distribution": "store",
+      "autoIncrement": true,
+      "environment": "production"
     }
+  },
+  "submit": {
+    "production": {
+      "ios": {
+        "ascAppId": "6759176533",
+        "appleId": "belalijawi@yahoo.com",
+        "ascApiKeyPath": "./.secrets/AuthKey_A29426BTB9.p8",
+        "ascApiKeyId": "A29426BTB9",
+        "ascApiKeyIssuerId": "d68f0632-0d5f-4ecf-9472-3ddc0099a5c8"
+      }
+    }
+  }
 }

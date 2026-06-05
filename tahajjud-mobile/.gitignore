@@ -17,3 +17,4 @@ ios/build/
 .env*
 *.log
 *.zip
+.secrets/

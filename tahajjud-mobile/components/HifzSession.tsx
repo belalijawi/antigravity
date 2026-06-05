@@ -10,6 +10,7 @@ import * as FileSystem from 'expo-file-system/legacy';
 import { QuranService, SurahDetail } from '../services/QuranService';
 import { QuranTimingService, AyahAudioData, getWordAtTime } from '../services/QuranTimingService';
 import { QuranWordService, AyahWords } from '../services/QuranWordService';
+import { getCurrentReciterId, subscribeReciter } from '../utils/reciters';
 import { useTheme } from '../context/ThemeContext';
 import {
     HifzAyah, HifzRating, StreakData, SavedSession,
@@ -25,17 +26,44 @@ import Animated, { FadeInDown, FadeInUp } from 'react-native-reanimated';
 const AUDIO_CACHE_DIR = FileSystem.documentDirectory + 'hifz_audio/';
 const TRANSLATION_EDITION_KEY = 'hifz_translation_edition_v1';
 
+// Mirrors the full translation set in SurahReader.VERIFIED_EDITIONS so Hifz
+// offers every language the reader does.
 const TRANSLATION_OPTIONS: { edition: string; label: string; flag: string }[] = [
-    { edition: 'en.sahih',        label: 'English – Sahih Intl',   flag: '🇬🇧' },
-    { edition: 'en.pickthall',    label: 'English – Pickthall',    flag: '🇬🇧' },
-    { edition: 'en.yusufali',     label: 'English – Yusuf Ali',    flag: '🇬🇧' },
-    { edition: 'fr.hamidullah',   label: 'French – Hamidullah',    flag: '🇫🇷' },
-    { edition: 'ur.ahmedali',     label: 'Urdu – Ahmed Ali',       flag: '🇵🇰' },
-    { edition: 'tr.ates',         label: 'Turkish – Ateş',         flag: '🇹🇷' },
-    { edition: 'es.asad',         label: 'Spanish – Asad',         flag: '🇪🇸' },
-    { edition: 'de.aburida',      label: 'German – Abu Rida',      flag: '🇩🇪' },
-    { edition: 'id.indonesian',   label: 'Indonesian',             flag: '🇮🇩' },
-    { edition: 'ru.kuliev',       label: 'Russian – Kuliev',       flag: '🇷🇺' },
+    // ── English ──
+    { edition: 'en.sahih',        label: 'English – Saheeh Intl',     flag: '🇬🇧' },
+    { edition: 'en.pickthall',    label: 'English – Pickthall',       flag: '🇬🇧' },
+    { edition: 'en.yusufali',     label: 'English – Yusuf Ali',       flag: '🇬🇧' },
+    { edition: 'en.khattab',      label: 'English – The Clear Quran', flag: '🇬🇧' },
+    // ── European ──
+    { edition: 'fr.hamidullah',   label: 'French – Hamidullah',       flag: '🇫🇷' },
+    { edition: 'es.cortes',       label: 'Spanish – Cortes',          flag: '🇪🇸' },
+    { edition: 'de.aburida',      label: 'German – Abu Rida',         flag: '🇩🇪' },
+    { edition: 'it.piccardo',     label: 'Italian – Piccardo',        flag: '🇮🇹' },
+    { edition: 'pt.elhayek',      label: 'Portuguese – El-Hayek',     flag: '🇵🇹' },
+    { edition: 'nl.keyzer',       label: 'Dutch – Keyzer',            flag: '🇳🇱' },
+    { edition: 'ru.kuliev',       label: 'Russian – Kuliev',          flag: '🇷🇺' },
+    { edition: 'sq.ahmeti',       label: 'Albanian – Ahmeti',         flag: '🇦🇱' },
+    { edition: 'bs.korkut',       label: 'Bosnian – Korkut',          flag: '🇧🇦' },
+    { edition: 'tr.diyanet',      label: 'Turkish – Diyanet',         flag: '🇹🇷' },
+    // ── Central / South Asian ──
+    { edition: 'fa.ghomshei',     label: 'Persian – Ghomshei',        flag: '🇮🇷' },
+    { edition: 'az.musayev',      label: 'Azerbaijani – Musayev',     flag: '🇦🇿' },
+    { edition: 'uz.sodik',        label: 'Uzbek – Sodik',             flag: '🇺🇿' },
+    { edition: 'ur.kanzuliman',   label: 'Urdu – Ahmed Raza Khan',    flag: '🇵🇰' },
+    { edition: 'hi.hindi',        label: 'Hindi – Farooq & Nadwi',    flag: '🇮🇳' },
+    { edition: 'bn.bengali',      label: 'Bengali – Hoque',           flag: '🇧🇩' },
+    { edition: 'ta.tamil',        label: 'Tamil – Jan Trust',         flag: '🇮🇳' },
+    // ── Southeast Asian ──
+    { edition: 'id.indonesian',   label: 'Indonesian',                flag: '🇮🇩' },
+    { edition: 'ms.basmeih',      label: 'Malay – Basmeih',           flag: '🇲🇾' },
+    { edition: 'th.thai',         label: 'Thai – King Fahd',          flag: '🇹🇭' },
+    // ── East Asian ──
+    { edition: 'zh.jian',         label: 'Chinese – Ma Jian',         flag: '🇨🇳' },
+    { edition: 'ja.japanese',     label: 'Japanese – Mita',           flag: '🇯🇵' },
+    // ── African ──
+    { edition: 'sw.barwani',      label: 'Swahili – Al-Barwani',      flag: '🇰🇪' },
+    { edition: 'so.abduh',        label: 'Somali – Abduh',            flag: '🇸🇴' },
+    { edition: 'am.sadiq',        label: 'Amharic – Sadiq & Habib',   flag: '🇪🇹' },
 ];
 
 interface Props {
@@ -214,14 +242,40 @@ export function HifzSession({ surahNumber, surahName, surahNameTranslation, tota
         // Set audio mode once for the entire session — calling it on every play causes delay
         Audio.setAudioModeAsync({
             staysActiveInBackground: true,
-            interruptionModeIOS: InterruptionModeIOS.MixWithOthers,
+            // DoNotMix → memorization audio yields to phone calls and Siri
+            // cleanly instead of mixing into them.
+            interruptionModeIOS: InterruptionModeIOS.DoNotMix,
             playsInSilentModeIOS: true,
             shouldDuckAndroid: true,
-            interruptionModeAndroid: InterruptionModeAndroid.DuckOthers,
+            interruptionModeAndroid: InterruptionModeAndroid.DoNotMix,
             playThroughEarpieceAndroid: false,
         }).catch(() => {});
         loadData();
+
+        // Refresh audio URLs when the user changes reciter in Settings while
+        // a Hifz session is in progress — otherwise the old voice keeps playing.
+        const unsubReciter = subscribeReciter(async (newReciterId) => {
+            try {
+                // Stop current sound + drop all preloads so they can't be reused
+                if (soundRef.current) {
+                    try { await soundRef.current.unloadAsync(); } catch { /* ignore */ }
+                    soundRef.current = null;
+                }
+                for (const s of Object.values(preloadMapRef.current)) {
+                    try { await s.unloadAsync(); } catch { /* ignore */ }
+                }
+                preloadMapRef.current = {};
+                // Rebuild the ayahNumber → URL map with the new reciter
+                const fresh = await QuranService.getAudioRecitation(surahNumber, newReciterId);
+                const urlMap: Record<number, string> = {};
+                fresh.forEach((a: any) => { urlMap[a.numberInSurah] = a.text; });
+                audioUrlMapRef.current = urlMap;
+                setIsPlaying(false);
+            } catch { /* ignore */ }
+        });
+
         return () => {
+            unsubReciter();
             soundRef.current?.unloadAsync().catch(() => {});
             // Release all preloaded sounds
             Object.values(preloadMapRef.current).forEach(s => s.unloadAsync().catch(() => {}));
@@ -242,7 +296,8 @@ export function HifzSession({ surahNumber, surahName, surahNameTranslation, tota
 
         const [surahData, audioAyahs, translationData, timingData, wordsData, allHifz, streak, goal, progress] = await Promise.all([
             QuranService.getSurah(surahNumber, 'quran-uthmani'),
-            QuranService.getAudioRecitation(surahNumber),
+            // Use the user's selected reciter (not hardcoded Alafasy).
+            QuranService.getAudioRecitation(surahNumber, getCurrentReciterId()),
             QuranService.getSurah(surahNumber, storedEdition),
             QuranTimingService.getSurahAudioData(surahNumber),
             QuranWordService.getSurahWords(surahNumber),
@@ -1502,7 +1557,7 @@ export function HifzSession({ surahNumber, surahName, surahNameTranslation, tota
     // ── Guide Modal ─────────────────────────────────────────────────
 
     const renderGuide = () => (
-        <Modal visible={guideVisible} animationType="slide" transparent>
+        <Modal visible={guideVisible} animationType="slide" transparent onRequestClose={() => setGuideVisible(false)}>
             <View style={styles.modalOverlay}>
                 <View style={[styles.modalContent, { paddingBottom: 0 }]}>
                     <View style={styles.modalHeader}>
@@ -1732,7 +1787,7 @@ export function HifzSession({ surahNumber, surahName, surahNameTranslation, tota
         const allSelected = availableAyahs.length > 0 && availableAyahs.every(n => selectedAyahs.includes(n));
 
         return (
-            <Modal visible={addAyahsModalVisible} animationType="slide" transparent>
+            <Modal visible={addAyahsModalVisible} animationType="slide" transparent onRequestClose={() => setAddAyahsModalVisible(false)}>
                 <View style={styles.modalOverlay}>
                     <View style={styles.modalContent}>
                         <View style={styles.modalHeader}>
@@ -1864,7 +1919,7 @@ export function HifzSession({ surahNumber, surahName, surahNameTranslation, tota
             {renderGuide()}
 
             {/* Translation Language Picker */}
-            <Modal visible={translationPickerVisible} animationType="slide" transparent>
+            <Modal visible={translationPickerVisible} animationType="slide" transparent onRequestClose={() => setTranslationPickerVisible(false)}>
                 <View style={styles.modalOverlay}>
                     <View style={styles.modalContent}>
                         <View style={styles.modalHeader}>

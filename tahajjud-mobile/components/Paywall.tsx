@@ -9,13 +9,16 @@ import {
     ActivityIndicator,
     Platform,
     Alert,
+    Linking,
 } from 'react-native';
-import { X, Check, Star, BookOpen, Moon, CalendarDays, Zap, WifiOff } from 'lucide-react-native';
+import { X, Check, Star, Moon, CalendarDays, WifiOff, Brain, Users, MapPin } from 'lucide-react-native';
 import { BlurView } from 'expo-blur';
 import RevenueCatService, { ENTITLEMENT_ID } from '../services/revenueCat';
 import { usePurchases } from '../context/PurchasesContext';
 import { useTheme } from '../context/ThemeContext';
 import { PurchasesPackage } from 'react-native-purchases';
+import { APP_URLS } from '../utils/urls';
+import { track } from '../utils/analytics';
 
 interface PaywallProps {
     onClose: () => void;
@@ -30,50 +33,110 @@ const Paywall: React.FC<PaywallProps> = ({ onClose }) => {
 
     useEffect(() => {
         loadOfferings();
+        track('paywall_viewed');
     }, []);
 
     const loadOfferings = async () => {
         setLoading(true);
         const offerings = await RevenueCatService.getOfferings();
         if (offerings) {
+            console.log('[Paywall] availablePackages:', offerings.availablePackages.map(p => ({
+                identifier: p.identifier,
+                packageType: p.packageType,
+                productId: p.product.identifier,
+                price: p.product.priceString,
+            })));
             setPackages(offerings.availablePackages);
+        } else {
+            console.log('[Paywall] No offering returned from RevenueCat');
         }
         setLoading(false);
     };
 
     const handlePurchase = async (pkg: PurchasesPackage) => {
         setPurchasing(true);
-        const customerInfo = await RevenueCatService.purchasePackage(pkg);
-        if (customerInfo) {
-            // Success!
-            await checkPremiumStatus();
-            onClose();
-            Alert.alert('Welcome to Tahajjud+', 'Your premium features are now active. JazakAllah Khair for your support!');
+        track('purchase_started', { package: pkg.identifier });
+        try {
+            const customerInfo = await RevenueCatService.purchasePackage(pkg);
+            if (customerInfo) {
+                track('purchase_completed', { package: pkg.identifier });
+                await checkPremiumStatus();
+                onClose();
+                Alert.alert('Welcome to Tahajjud+', 'Your premium features are now active. JazakAllah Khair for your support!');
+            } else {
+                // null = user cancelled — no alert needed, just dismiss spinner
+                track('purchase_cancelled', { package: pkg.identifier });
+            }
+        } catch {
+            Alert.alert('Purchase failed', 'Something went wrong. Please check your connection and try again.');
+        } finally {
+            setPurchasing(false);
         }
-        setPurchasing(false);
     };
 
     const handleRestore = async () => {
         setPurchasing(true);
-        const customerInfo = await RevenueCatService.restorePurchases();
-        if (customerInfo) {
-            await checkPremiumStatus();
-            if (typeof customerInfo.entitlements.active[ENTITLEMENT_ID] !== 'undefined') {
-                Alert.alert('Restored', 'Your premium access has been restored.');
-                onClose();
+        try {
+            const customerInfo = await RevenueCatService.restorePurchases();
+            if (customerInfo) {
+                await checkPremiumStatus();
+                if (typeof customerInfo.entitlements.active[ENTITLEMENT_ID] !== 'undefined') {
+                    Alert.alert('Restored', 'Your premium access has been restored.');
+                    onClose();
+                } else {
+                    Alert.alert('No subscription found', 'We could not find any active subscriptions for this Apple ID.');
+                }
             } else {
-                Alert.alert('Not Found', 'We could not find any active subscriptions for this account.');
+                Alert.alert('Restore failed', 'Something went wrong. Please check your connection and try again.');
             }
+        } catch {
+            Alert.alert('Restore failed', 'Something went wrong. Please check your connection and try again.');
+        } finally {
+            setPurchasing(false);
         }
-        setPurchasing(false);
     };
 
     const features = [
-        { icon: <WifiOff size={20} color={colors.accent} />, title: 'Offline Quran', desc: 'Download full surah audio and listen without an internet connection' },
-        { icon: <BookOpen size={20} color={colors.accent} />, title: 'Unlimited Letters to Allah', desc: 'Write as many private letters to Allah as your heart desires' },
-        { icon: <Moon size={20} color={colors.accent} />, title: 'Premium Themes', desc: 'Exclusive dark & cosmic aesthetics for your app' },
-        { icon: <CalendarDays size={20} color={colors.accent} />, title: 'Full Prayer History', desc: 'View your complete Tahajjud journey — every night, every streak' },
-        { icon: <Zap size={20} color={colors.accent} />, title: 'Support the Mission', desc: 'Help us improve the app and keep it running for everyone' },
+        {
+            icon: <Moon size={20} color={colors.accent} />,
+            title: 'Night Journal',
+            desc: 'Reflect after every Tahajjud — log your mood, rakats, and duas. Build a record of your nights with Allah.',
+        },
+        {
+            icon: <CalendarDays size={20} color={colors.accent} />,
+            title: 'Full Prayer History',
+            desc: 'Month and year views of every prayer logged. Watch your consistency build over weeks and months.',
+        },
+        {
+            icon: <Users size={20} color={colors.accent} />,
+            title: 'Accountability Circle',
+            desc: 'Up to 5 partners. See who prayed tonight, send wake-up calls, hold each other to the last third.',
+        },
+        {
+            icon: <WifiOff size={20} color={colors.accent} />,
+            title: 'Offline Quran + All Reciters',
+            desc: 'Download full surahs, unlock all 7 reciters, build custom playlists — no signal needed.',
+        },
+        {
+            icon: <Brain size={20} color={colors.accent} />,
+            title: 'Hifz Mode',
+            desc: 'Structured memorization with progressive locking and spaced repetition. Serious hifdh, simplified.',
+        },
+        {
+            icon: <MapPin size={20} color={colors.accent} />,
+            title: 'Mosque Timetable',
+            desc: 'Photograph your mosque\'s monthly timetable and the app reads all the times automatically — exact prayer times, no calculations.',
+        },
+        {
+            icon: <Star size={20} color={colors.accent} />,
+            title: 'Prayer Analytics',
+            desc: 'See your consistency per prayer, strongest and weakest salah, best day of the week, and 30-day trends.',
+        },
+        {
+            icon: <Star size={20} color={colors.accent} />,
+            title: 'Dhikr Stats & Custom Dhikr',
+            desc: 'Track your all-time dhikr count, daily streak, 7-day chart, and add your own custom dhikr with personal targets.',
+        },
     ];
 
     if (loading) {
@@ -96,8 +159,9 @@ const Paywall: React.FC<PaywallProps> = ({ onClose }) => {
             <ScrollView contentContainerStyle={styles.scrollContent}>
                 <View style={styles.heroSection}>
                     <Star color={colors.accent} size={48} fill={colors.accent} style={styles.heroIcon} />
-                    <Text style={styles.heroTitle}>Unlock the Full Experience</Text>
-                    <Text style={styles.heroSubtitle}>Elevate your spiritual journey with premium features and support our mission.</Text>
+                    <Text style={styles.heroTitle}>You're building something real.</Text>
+                    <Text style={styles.heroSubtitle}>Unlock the tools to go deeper — journal your nights, track your full history, and pray with your circle.</Text>
+                    <Text style={[styles.heroTrial, { color: colors.accent }]}>7 days free · cancel anytime</Text>
                 </View>
 
                 <View style={styles.featuresList}>
@@ -110,41 +174,66 @@ const Paywall: React.FC<PaywallProps> = ({ onClose }) => {
                             </View>
                         </View>
                     ))}
+                    <Text style={styles.andMore}>+ premium themes, stacked reminders & more</Text>
                 </View>
 
                 <View style={styles.pricingSection}>
                     {packages.map((pkg) => {
                         const isAnnual = pkg.packageType === 'ANNUAL' || pkg.identifier === '$rc_annual';
+                        const isLifetime = pkg.packageType === 'LIFETIME' || pkg.identifier === '$rc_lifetime';
                         const monthlyEquivalent = isAnnual
                             ? pkg.product.currencyCode
-                                ? new Intl.NumberFormat('en', {
+                                ? (() => { try { return new Intl.NumberFormat('en', {
                                     style: 'currency',
                                     currency: pkg.product.currencyCode,
                                     minimumFractionDigits: 2,
                                     maximumFractionDigits: 2,
-                                  }).format(pkg.product.price / 12)
+                                  }).format(pkg.product.price / 12); } catch { return null; } })()
                                 : null
                             : null;
 
+                        const intro: any = (pkg.product as any).introPrice;
+                        const isFreeTrial = !isLifetime && !!intro && intro.price === 0;
+                        const trialLabel = isFreeTrial && intro?.periodNumberOfUnits && intro?.periodUnit
+                            ? `${intro.periodNumberOfUnits} ${String(intro.periodUnit).toLowerCase()}${intro.periodNumberOfUnits > 1 ? 's' : ''} free`
+                            : 'Free trial';
+
+                        const badge = isFreeTrial
+                            ? { text: `🎁 ${trialLabel.toUpperCase()}` }
+                            : isLifetime
+                                ? { text: '♾️ FOREVER' }
+                                : isAnnual
+                                    ? { text: '⭐ BEST VALUE' }
+                                    : null;
+
                         return (
                             <View key={pkg.identifier} style={styles.packageWrapper}>
-                                {isAnnual && (
+                                {badge && (
                                     <View style={[styles.bestValueBadge, { backgroundColor: colors.accent }]}>
-                                        <Text style={styles.bestValueText}>⭐ BEST VALUE</Text>
+                                        <Text style={styles.bestValueText}>{badge.text}</Text>
                                     </View>
                                 )}
                                 <TouchableOpacity
                                     style={[
                                         styles.packageCard,
                                         { borderColor: colors.accent },
-                                        isAnnual && styles.packageCardHighlighted,
+                                        (isAnnual || isFreeTrial || isLifetime) && styles.packageCardHighlighted,
                                     ]}
                                     onPress={() => handlePurchase(pkg)}
                                     disabled={purchasing}
                                 >
                                     <View style={styles.packageInfo}>
                                         <Text style={styles.packageTitle}>{pkg.product.title.split(' (')[0]}</Text>
-                                        {isAnnual && monthlyEquivalent ? (
+                                        {isFreeTrial ? (
+                                            <Text style={[styles.packageDesc, { color: colors.accent }]}>
+                                                {trialLabel}, then {pkg.product.priceString}
+                                                {isAnnual ? '/year' : '/month'}
+                                            </Text>
+                                        ) : isLifetime ? (
+                                            <Text style={[styles.packageDesc, { color: colors.accent }]}>
+                                                One-time payment · No renewal
+                                            </Text>
+                                        ) : isAnnual && monthlyEquivalent ? (
                                             <Text style={[styles.packageDesc, { color: colors.accent }]}>
                                                 Only {monthlyEquivalent}/month — save vs monthly
                                             </Text>
@@ -153,8 +242,10 @@ const Paywall: React.FC<PaywallProps> = ({ onClose }) => {
                                         )}
                                     </View>
                                     <View style={[styles.priceBadge, { backgroundColor: colors.accent }]}>
-                                        <Text style={styles.priceText}>{pkg.product.priceString}</Text>
-                                        {isAnnual && <Text style={styles.priceSubText}>/ year</Text>}
+                                        <Text style={styles.priceText}>
+                                            {isFreeTrial ? 'Try Free' : pkg.product.priceString}
+                                        </Text>
+                                        {!isFreeTrial && isAnnual && <Text style={styles.priceSubText}>/ year</Text>}
                                     </View>
                                 </TouchableOpacity>
                             </View>
@@ -174,7 +265,23 @@ const Paywall: React.FC<PaywallProps> = ({ onClose }) => {
 
                 <View style={styles.footer}>
                     <Text style={styles.footerText}>
-                        By subscribing, you agree to our Terms of Use and Privacy Policy. Subscriptions automatically renew unless canceled at least 24 hours before the end of the current period.
+                        Your 7-day free trial converts to a paid subscription unless canceled at least 24 hours before it ends. Manage or cancel anytime in your iPhone's Settings → Apple ID → Subscriptions. By subscribing you agree to our{' '}
+                        <Text
+                            style={[styles.footerText, { color: colors.accent, textDecorationLine: 'underline' }]}
+                            onPress={() => Linking.openURL(APP_URLS.terms)}
+                            accessibilityRole="link"
+                        >
+                            Terms of Use
+                        </Text>
+                        {' '}and{' '}
+                        <Text
+                            style={[styles.footerText, { color: colors.accent, textDecorationLine: 'underline' }]}
+                            onPress={() => Linking.openURL(APP_URLS.privacy)}
+                            accessibilityRole="link"
+                        >
+                            Privacy Policy
+                        </Text>
+                        .
                     </Text>
                 </View>
             </ScrollView>
@@ -235,9 +342,23 @@ const styles = StyleSheet.create({
         fontSize: 16,
         textAlign: 'center',
         lineHeight: 24,
+        marginBottom: 10,
+    },
+    heroTrial: {
+        fontSize: 13,
+        fontWeight: '700',
+        textAlign: 'center',
+        letterSpacing: 0.5,
     },
     featuresList: {
-        marginBottom: 40,
+        marginBottom: 12,
+    },
+    andMore: {
+        color: '#475569',
+        fontSize: 13,
+        textAlign: 'center',
+        marginBottom: 32,
+        fontStyle: 'italic',
     },
     featureItem: {
         flexDirection: 'row',

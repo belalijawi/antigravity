@@ -21,8 +21,7 @@ class RevenueCatService {
                 Purchases.configure({ apiKey: API_KEYS.google });
             }
 
-            Purchases.setLogLevel(LOG_LEVEL.DEBUG); // Helpful during development
-            console.log('RevenueCat initialized successfully.');
+            Purchases.setLogLevel(__DEV__ ? LOG_LEVEL.DEBUG : LOG_LEVEL.ERROR);
         } catch (error) {
             console.error('Error initializing RevenueCat:', error);
         }

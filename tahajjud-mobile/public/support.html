@@ -1,98 +1,202 @@
 <!DOCTYPE html>
 <html lang="en">
-
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>App Support - Tahajjud+</title>
+    <title>Support · Tahajjud+</title>
+    <meta name="theme-color" content="#020617">
     <style>
+        :root {
+            --bg: #020617; --accent: #22d3ee;
+            --text: #f1f5f9; --text-2: #94a3b8; --text-3: #64748b;
+            --border: rgba(255,255,255,0.08);
+        }
+        * { box-sizing: border-box; }
         body {
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-            line-height: 1.6;
-            color: #1a1a1a;
-            margin: 0;
-            padding: 40px 20px;
-            background-color: #f9fafb;
-            display: block;
-            text-align: center;
+            font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto, sans-serif;
+            background: radial-gradient(ellipse at top, #0a1228 0%, var(--bg) 60%);
+            color: var(--text);
+            margin: 0; line-height: 1.7;
         }
-
-        .container {
-            background-color: #ffffff;
-            padding: 40px;
-            border-radius: 12px;
-            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.05);
-            display: inline-block;
-            text-align: center;
-            width: 100%;
-            max-width: 800px;
-            box-sizing: border-box;
-            margin: 0 auto;
+        a { color: var(--accent); }
+        .container { max-width: 760px; margin: 0 auto; padding: 24px; }
+        nav {
+            display: flex; justify-content: space-between; align-items: center;
+            padding: 16px 0 32px; margin-bottom: 32px;
+            border-bottom: 1px solid var(--border);
         }
-
+        nav .logo {
+            display: flex; align-items: center; gap: 10px;
+            font-weight: 800; color: var(--text); text-decoration: none;
+        }
+        nav .logo-icon {
+            width: 36px; height: 36px;
+            border-radius: 9px;
+            overflow: hidden;
+            box-shadow: 0 2px 10px rgba(34,211,238,0.25);
+        }
+        .logo-icon img { width: 100%; height: 100%; display: block; object-fit: cover; }
+        nav a.back { color: var(--text-2); font-size: 14px; }
         h1 {
-            color: #0f172a;
-            margin-bottom: 20px;
+            font-size: 40px; font-weight: 900; margin: 12px 0 12px;
+            letter-spacing: -1px;
         }
-
-        p {
-            color: #4b5563;
-            margin-bottom: 20px;
-        }
-
-        .contact-box {
-            background-color: #f1f5f9;
-            padding: 30px;
-            border-radius: 8px;
-            margin: 30px auto !important;
-            display: block;
-            width: 90%;
-            max-width: 500px;
-            box-sizing: border-box;
+        .intro { color: var(--text-2); font-size: 17px; margin-bottom: 32px; }
+        .contact-card {
+            background: linear-gradient(135deg, rgba(34,211,238,0.08), rgba(56,189,248,0.04));
+            border: 1px solid rgba(34,211,238,0.2);
+            border-radius: 18px;
+            padding: 28px;
             text-align: center;
-            float: none;
-            clear: both;
+            margin: 32px 0 48px;
         }
-
-        .email {
-            font-size: 1.2rem;
-            font-weight: bold;
-            color: #2563eb;
-            text-decoration: none;
+        .contact-card h2 { margin: 0 0 8px; font-size: 22px; font-weight: 800; }
+        .contact-card p { color: var(--text-2); margin: 0 0 18px; font-size: 14px; }
+        .contact-email {
+            display: inline-block;
+            background: var(--accent); color: #0a1228;
+            padding: 12px 24px; border-radius: 12px;
+            font-weight: 800; font-size: 15px; text-decoration: none;
         }
-
-        .email:hover {
-            text-decoration: underline;
+        h2 { font-size: 22px; font-weight: 800; margin: 48px 0 16px; }
+        .faq-item {
+            border: 1px solid var(--border);
+            border-radius: 14px;
+            padding: 18px 22px;
+            margin-bottom: 12px;
+            background: rgba(255,255,255,0.02);
         }
-
-        .footer {
-            margin-top: 40px;
-            font-size: 0.9rem;
-            color: #64748b;
+        .faq-q { color: var(--text); font-weight: 700; font-size: 15px; margin: 0 0 8px; }
+        .faq-a { color: var(--text-2); font-size: 14px; line-height: 1.6; margin: 0; }
+        .faq-a a { color: var(--accent); }
+        ul { color: var(--text-2); padding-left: 22px; font-size: 14px; }
+        ul li { margin-bottom: 6px; }
+        footer {
+            margin-top: 80px; padding-top: 32px;
+            border-top: 1px solid var(--border);
+            color: var(--text-3); font-size: 12px; text-align: center;
         }
     </style>
 </head>
-
 <body>
-    <div class="container">
-        <h1>Tahajjud+ Support</h1>
-        <p>We are here to help you on your spiritual journey. If you are experiencing issues with the app, have feature
-            suggestions, or just want to say salam, please reach out to us.</p>
+<div class="container">
 
-        <div class="contact-box">
-            <p>Email us at:</p>
-            <a href="mailto:tahajjud.letters@gmail.com" class="email">tahajjud.letters@gmail.com</a>
-        </div>
+    <nav>
+        <a href="/" class="logo">
+            <div class="logo-icon"><img src="/icon.png" alt="" /></div>
+            <span>Tahajjud+</span>
+        </a>
+        <a href="/" class="back">← Back</a>
+    </nav>
 
-        <p style="margin-top: 30px;">
-            We aim to respond to all inquiries within 48 hours.
-        </p>
+    <h1>Support</h1>
+    <p class="intro">JazakAllah Khair for using Tahajjud+. We read every email and reply within 48 hours.</p>
 
-        <div class="footer">
-            &copy; 2026 Tahajjud+. All rights reserved.<br>
-            <a href="index.html">Privacy Policy</a>
-        </div>
+    <div class="contact-card">
+        <h2>Get in touch</h2>
+        <p>Bugs, feedback, feature requests, account issues — write to us:</p>
+        <a class="contact-email" href="mailto:tahajjud.letters@gmail.com">tahajjud.letters@gmail.com</a>
     </div>
-</body>
 
+    <h2>Frequently asked questions</h2>
+
+    <div class="faq-item">
+        <p class="faq-q">When does the free trial start? Will I be charged automatically?</p>
+        <p class="faq-a">Your 7-day free trial starts the moment you subscribe. Apple does not charge you during the trial. If you don't cancel at least 24 hours before it ends, it converts to the monthly subscription at the regular price. You can cancel anytime in iPhone Settings → Apple ID → Subscriptions → Tahajjud+ Premium.</p>
+    </div>
+
+    <div class="faq-item">
+        <p class="faq-q">How do I cancel my subscription?</p>
+        <p class="faq-a">Apple handles all subscriptions. Open iPhone Settings → tap your name at the top → Subscriptions → Tahajjud+ Premium → Cancel Subscription. You'll keep access until the end of the paid period.</p>
+    </div>
+
+    <div class="faq-item">
+        <p class="faq-q">I cancelled but I'm still being charged.</p>
+        <p class="faq-a">Apple sometimes lags on reflecting cancellations. First confirm in Settings → Apple ID → Subscriptions that the subscription shows "Expires" rather than "Renews". If you were charged after canceling, request a refund at <a href="https://reportaproblem.apple.com" target="_blank">reportaproblem.apple.com</a> — Apple typically approves these within 48h. We can't process refunds directly because we don't process the charge.</p>
+    </div>
+
+    <div class="faq-item">
+        <p class="faq-q">I bought premium but the app says I'm still free.</p>
+        <p class="faq-a">Open the paywall and tap "Already a member? Restore Purchases" at the bottom. This re-syncs your subscription status from Apple's servers. If still stuck, email us your Apple ID receipt number.</p>
+    </div>
+
+    <div class="faq-item">
+        <p class="faq-q">Prayer times look wrong for my city.</p>
+        <p class="faq-a">Open Settings → Prayer Times → check which Calculation Method is selected. Different scholarly schools use slightly different Fajr/Isha angles. Try switching to your local mosque's preferred method (ISNA for North America, Muslim World League for Europe, Umm al-Qura for the Gulf, etc.). Also verify location is enabled — Settings → Tahajjud+ → Location.</p>
+    </div>
+
+    <div class="faq-item">
+        <p class="faq-q">I'm not getting prayer notifications.</p>
+        <p class="faq-a">Three things to check: (1) iOS Settings → Notifications → Tahajjud+ → make sure notifications are on with "Time-Sensitive" enabled, (2) in the app, Settings → Notifications → enable the prayers you want, (3) make sure you're not in Do Not Disturb / Focus mode during prayer times. If still failing, restart the app — this re-schedules everything.</p>
+    </div>
+
+    <div class="faq-item">
+        <p class="faq-q">My Tahajjud streak disappeared.</p>
+        <p class="faq-a">Streaks survive one missed night per week thanks to the weekly Freeze. The Freeze is auto-consumed the moment you'd otherwise break the streak — you don't have to do anything. If you miss two nights in the same week, the streak resets. To preserve a streak you don't want to lose, log Tahajjud as soon as you wake — the app accepts a log up to a few hours after Fajr.</p>
+    </div>
+
+    <div class="faq-item">
+        <p class="faq-q">How do I download surahs for offline listening?</p>
+        <p class="faq-a">Premium feature. Quran tab → tap any surah → tap the cloud-download icon next to the play button. Downloaded surahs play instantly with no internet. Manage downloads in Settings → Storage.</p>
+    </div>
+
+    <div class="faq-item">
+        <p class="faq-q">Can I change reciter?</p>
+        <p class="faq-a">Free users get Mishary Rashid Alafasy. Premium unlocks all 7 reciters: Alafasy, Sudais, Maher Al-Mueaqly, Saood Ash-Shuraym, Abdul Basit, Minshawi, Husary. Settings → Quran Reciter → tap any to switch (changes mid-playback if you're listening).</p>
+    </div>
+
+    <div class="faq-item">
+        <p class="faq-q">My journal entries aren't syncing across my iPhone and iPad.</p>
+        <p class="faq-a">Cloud sync requires signing in on both devices with the same account (Apple Sign-In or Google). Go to Settings → Sync & Cloud → make sure you're signed in. If the issue persists, force a sync by opening any entry and saving it again.</p>
+    </div>
+
+    <div class="faq-item">
+        <p class="faq-q">How does the Dua Wall work? Is my identity shown?</p>
+        <p class="faq-a">Your dua text appears anonymously to other users. Your identity is never displayed. We store your account ID server-side only to prevent abuse (one publish per day, response to reports) but never show it. See the <a href="/privacy">Privacy Policy</a> for details.</p>
+    </div>
+
+    <div class="faq-item">
+        <p class="faq-q">I submitted a testimony — when will it appear?</p>
+        <p class="faq-a">All submissions are reviewed by a moderator before going live, usually within 24-48 hours. We check for accuracy, language, and respect. You're welcome to email us to follow up.</p>
+    </div>
+
+    <div class="faq-item">
+        <p class="faq-q">How do I delete my account and all my data?</p>
+        <p class="faq-a">Settings → Sync & Cloud → Delete My Account. This permanently removes all your Firestore data and signs you out. Local data on your phone is removed when you delete the app. To verify, email us — we'll confirm deletion within 30 days.</p>
+    </div>
+
+    <div class="faq-item">
+        <p class="faq-q">The Quran translation in my language has a typo / I don't agree with how a verse is rendered.</p>
+        <p class="faq-a">Translations are sourced from Tanzil (the digital standard used by Quran.com, Tarteel, Muslim Pro, and most major Quran apps). We don't author translations ourselves. If you find a clear typo, email us and we'll forward to the Tanzil maintainers. If you disagree with a translator's interpretation, switch to a different translation in the Quran reader's language picker.</p>
+    </div>
+
+    <div class="faq-item">
+        <p class="faq-q">I have a feature idea.</p>
+        <p class="faq-a">Please share. We read every message. Email <a href="mailto:tahajjud.letters@gmail.com">tahajjud.letters@gmail.com</a> with the subject "Feature idea".</p>
+    </div>
+
+    <div class="faq-item">
+        <p class="faq-q">Does Tahajjud+ work on Android?</p>
+        <p class="faq-a">Yes — the app is built for both iOS and Android. Some iOS-specific features (Apple Watch, Live Activities, Siri Shortcuts, Apple Health bedtime suggestions) are iOS-only. The core experience — prayer times, Quran, journal, tracker, Dua Wall — is identical on both platforms.</p>
+    </div>
+
+    <h2>Reporting content</h2>
+    <p>If you see a dua on the Dua Wall or a testimony you believe violates our community guidelines (profanity, harassment, false attribution), tap the flag icon next to that content. After 5 reports, content is automatically hidden pending moderator review. You can also email us with screenshots for faster response.</p>
+
+    <h2>Reporting bugs</h2>
+    <p>When emailing about a bug, please include:</p>
+    <ul>
+        <li>iPhone model + iOS version (Settings → General → About)</li>
+        <li>Tahajjud+ version (Settings → About)</li>
+        <li>What you did before the bug</li>
+        <li>What you expected to happen vs. what actually happened</li>
+        <li>Screenshot if visual</li>
+    </ul>
+    <p>This helps us reproduce + fix significantly faster.</p>
+
+    <footer>
+        © 2026 Tahajjud+ · <a href="/">Home</a> · <a href="/privacy">Privacy</a> · <a href="/terms">Terms of Use</a>
+    </footer>
+</div>
+</body>
 </html>

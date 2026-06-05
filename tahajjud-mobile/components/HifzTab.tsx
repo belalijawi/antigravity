@@ -11,6 +11,7 @@ import { useFocusEffect } from '@react-navigation/native';
 import Animated, { FadeInDown } from 'react-native-reanimated';
 import { QuranService, SurahMeta } from '../services/QuranService';
 import { HifzSession } from './HifzSession';
+import { fuzzyMatch } from '../utils/fuzzy';
 import { useTheme } from '../context/ThemeContext';
 import { tabletContentStyle } from '../utils/layout';
 import {
@@ -92,15 +93,12 @@ export function HifzTab({ embedded = false }: { embedded?: boolean }) {
 
     const handleSearch = (text: string) => {
         setSearchQuery(text);
-        const q = text.toLowerCase();
+        if (!text.trim()) { setFilteredSurahs(surahs); return; }
         setFilteredSurahs(
-            text
-                ? surahs.filter(s =>
-                    s.englishName.toLowerCase().includes(q) ||
-                    s.englishNameTranslation.toLowerCase().includes(q) ||
-                    s.number.toString().includes(q)
-                )
-                : surahs
+            surahs.filter(s =>
+                s.number.toString() === text.trim() ||
+                fuzzyMatch(text, s.englishName, s.englishNameTranslation, s.name)
+            )
         );
     };
 
@@ -251,6 +249,7 @@ export function HifzTab({ embedded = false }: { embedded?: boolean }) {
                         placeholderTextColor="#334155"
                         value={searchQuery}
                         onChangeText={handleSearch}
+                        maxFontSizeMultiplier={1.2}
                     />
                 </View>
 
@@ -370,9 +369,10 @@ const styles = StyleSheet.create({
         borderWidth: 1,
         borderColor: 'rgba(255,255,255,0.08)',
         paddingHorizontal: 14,
-        paddingVertical: 10,
+        paddingVertical: 12,
+        minHeight: 44,
     },
-    searchInput: { flex: 1, color: '#f8fafc', fontSize: 14 },
+    searchInput: { flex: 1, color: '#f8fafc', fontSize: 14, lineHeight: 20 },
 
     listContent: { paddingHorizontal: 20, paddingBottom: 120, gap: 8 },
 

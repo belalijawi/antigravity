@@ -19,7 +19,7 @@ struct WidgetData: Codable {
     )
 
     static func load() -> WidgetData {
-        let defaults = UserDefaults(suiteName: "group.com.tahajjudplus.app")
+        let defaults = UserDefaults(suiteName: "group.com.tahajjudplus")
         guard let data = defaults?.data(forKey: "widget_data"),
               let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
         else { return .placeholder }
@@ -471,7 +471,15 @@ struct TahajjudWidget: Widget {
         }
         .configurationDisplayName("Tahajjud+")
         .description("Next prayer time and Tahajjud streak.")
-        .supportedFamilies([.systemSmall, .systemMedium, .systemLarge])
+        .supportedFamilies(supportedFamilies())
+    }
+
+    private func supportedFamilies() -> [WidgetFamily] {
+        var families: [WidgetFamily] = [.systemSmall, .systemMedium, .systemLarge]
+        if #available(iOS 16.0, *) {
+            families.append(contentsOf: [.accessoryRectangular, .accessoryCircular, .accessoryInline])
+        }
+        return families
     }
 }
 
@@ -487,9 +495,93 @@ struct TahajjudWidgetEntryView: View {
             MediumWidgetView(entry: entry)
         case .systemLarge:
             LargeWidgetView(entry: entry)
+        case .accessoryRectangular:
+            if #available(iOS 16.0, *) {
+                AccessoryRectangularView(entry: entry)
+            } else { SmallWidgetView(entry: entry) }
+        case .accessoryCircular:
+            if #available(iOS 16.0, *) {
+                AccessoryCircularView(entry: entry)
+            } else { SmallWidgetView(entry: entry) }
+        case .accessoryInline:
+            if #available(iOS 16.0, *) {
+                AccessoryInlineView(entry: entry)
+            } else { SmallWidgetView(entry: entry) }
         default:
             SmallWidgetView(entry: entry)
         }
+    }
+}
+
+// MARK: - Lock Screen accessory widgets (iOS 16+)
+
+@available(iOS 16.0, *)
+struct AccessoryRectangularView: View {
+    let entry: TahajjudEntry
+
+    var body: some View {
+        let nextDate = entry.widgetData.nextPrayerTime
+        let tahajjud = entry.widgetData.tahajjudStart
+        let now = Date()
+        // Guard: SwiftUI's `Text(timerInterval:...)` crashes if the upper
+        // bound is in the past. Use `nextDate.addingTimeInterval(60)` floor.
+        let safeUpper = max(nextDate, now.addingTimeInterval(60))
+        VStack(alignment: .leading, spacing: 2) {
+            HStack(spacing: 4) {
+                Image(systemName: "moon.stars.fill")
+                Text(entry.widgetData.nextPrayer.uppercased())
+                    .font(.caption2.weight(.bold))
+                    .tracking(1.0)
+            }
+            if nextDate > now {
+                Text(timerInterval: now...safeUpper, countsDown: true)
+                    .font(.title3.weight(.bold))
+                    .monospacedDigit()
+            } else {
+                Text(nextDate, format: .dateTime.hour().minute())
+                    .font(.title3.weight(.bold))
+                    .monospacedDigit()
+            }
+            if let t = tahajjud, t > now {
+                Text("Tahajjud \(t, format: .dateTime.hour().minute())")
+                    .font(.caption2)
+                    .opacity(0.8)
+            } else if entry.widgetData.streak > 0 {
+                Text("Streak \(entry.widgetData.streak)d")
+                    .font(.caption2)
+                    .opacity(0.8)
+            }
+        }
+        .containerBackground(.clear, for: .widget)
+    }
+}
+
+@available(iOS 16.0, *)
+struct AccessoryCircularView: View {
+    let entry: TahajjudEntry
+
+    var body: some View {
+        VStack(spacing: 1) {
+            Image(systemName: "moon.stars.fill")
+                .font(.system(size: 12))
+            Text("\(entry.widgetData.streak)")
+                .font(.system(size: 18, weight: .bold, design: .rounded))
+                .monospacedDigit()
+            Text("days")
+                .font(.system(size: 8))
+                .opacity(0.7)
+        }
+        .containerBackground(.clear, for: .widget)
+    }
+}
+
+@available(iOS 16.0, *)
+struct AccessoryInlineView: View {
+    let entry: TahajjudEntry
+
+    var body: some View {
+        let nextDate = entry.widgetData.nextPrayerTime
+        Text("\(entry.widgetData.nextPrayer): \(nextDate, format: .dateTime.hour().minute())")
     }
 }
 

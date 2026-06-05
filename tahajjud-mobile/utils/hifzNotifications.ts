@@ -1,6 +1,8 @@
 import * as Notifications from 'expo-notifications';
+import { Platform } from 'react-native';
 import { HifzAyah } from './hifzStorage';
 import { requestNotificationPermissions } from './notifications';
+import { localDateStr } from './localDate';
 
 const HIFZ_NOTIF_TAG = 'hifz_review';
 
@@ -34,15 +36,18 @@ export async function scheduleHifzNotifications(
     Object.values(allHifz).forEach(a => {
         const due = new Date(a.nextReview);
         if (due > now && due <= sevenDaysOut) {
-            const key = due.toISOString().slice(0, 10);
+            const key = localDateStr(due);
             byDate[key] = (byDate[key] ?? 0) + 1;
         }
     });
 
     for (const [dateStr, count] of Object.entries(byDate)) {
-        // Fire at 9 AM on the due date
-        const trigger = new Date(`${dateStr}T09:00:00`);
-        if (trigger <= now) continue;
+        // Fire at 9 AM local time on the due date.
+        // Parse year/month/day manually so Date uses local timezone,
+        // not UTC (which `new Date('YYYY-MM-DDT...')` would do on some runtimes).
+        const [y, m, d] = dateStr.split('-').map(Number);
+        const fireDate = new Date(y, m - 1, d, 9, 0, 0, 0);
+        if (fireDate <= now) continue;
 
         await Notifications.scheduleNotificationAsync({
             content: {
@@ -51,7 +56,11 @@ export async function scheduleHifzNotifications(
                 data: { type: HIFZ_NOTIF_TAG },
                 sound: true,
             },
-            trigger,
+            trigger: {
+                type: Notifications.SchedulableTriggerInputTypes.DATE,
+                date: fireDate,
+                ...(Platform.OS === 'android' && { channelId: 'prayers' }),
+            },
         });
     }
 }

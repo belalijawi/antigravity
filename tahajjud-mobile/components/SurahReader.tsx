@@ -1,22 +1,37 @@
 import React, { useEffect, useState, useRef, useCallback } from 'react';
-import { View, Text, StyleSheet, ActivityIndicator, TouchableOpacity, Modal, FlatList, SafeAreaView, ViewToken, Pressable, Platform, Animated } from 'react-native';
-import { ArrowLeft, Globe, X, Check, Bookmark, Play, Pause, SkipBack, SkipForward, Volume2, Timer, WifiOff, Brain } from 'lucide-react-native';
+import { View, Text, StyleSheet, ActivityIndicator, TouchableOpacity, Modal, FlatList, ViewToken, Pressable, Platform, Animated } from 'react-native';
+// Use the safe-area-context version (cross-platform). The built-in
+// `react-native` SafeAreaView is a no-op on Android — that's why the system
+// status bar was overlapping the SurahReader header.
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { ArrowLeft, Globe, X, Check, Bookmark, Play, Pause, SkipBack, SkipForward, Volume2, Timer, WifiOff, Brain, Repeat } from 'lucide-react-native';
 import { BlurView } from 'expo-blur';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { QuranService, SurahDetail, Edition, Ayah } from '../services/QuranService';
-import { Audio, AVPlaybackStatus, InterruptionModeIOS, InterruptionModeAndroid } from 'expo-av';
+import TrackPlayer, { useProgress, Event, State } from 'react-native-track-player';
+import { BackHandler } from 'react-native';
 import { useTheme } from '../context/ThemeContext';
 import OfflineQuranService from '../services/OfflineQuranService';
 import { HifzSession } from './HifzSession';
 import { usePurchases } from '../context/PurchasesContext';
+import { useQuranAudio } from '../context/QuranAudioContext';
 import { QuranTimingService, AyahAudioData, getWordAtTime } from '../services/QuranTimingService';
+import { parseTajweed, isTajweedEdition, TAJWEED_COLORS } from '../utils/tajweedParser';
 import { QuranWordService, AyahWords } from '../services/QuranWordService';
+import { getCurrentReciterId, subscribeReciter } from '../utils/reciters';
 
 interface Props {
     surahNumber: number;
     edition?: string;
     onEditionChange: (newEdition: string) => void;
     onClose: () => void;
+    playQueue?: number[];    // ordered surah numbers for playlist mode
+    playlistName?: string;  // shown in the player bar
+    /**
+     * Optional 1-based ayah number to scroll to on open. Used when the user
+     * jumps in from a verse reference like "67:1" in the global search.
+     */
+    initialAyahNumber?: number;
 }
 
 const DEFAULT_BISMILLAH = 'In the name of Allah, the Entirely Merciful, the Especially Merciful';
@@ -41,24 +56,50 @@ const BISMILLAH_MAP: Record<string, string> = {
 };
 
 const VERIFIED_EDITIONS = [
+    // ── Arabic (original) ──
+    { identifier: 'quran-uthmani', displayName: 'Arabic', subName: 'Madinah Mushaf (Hafs)', isPremium: true },
+    { identifier: 'quran-tajweed', displayName: 'Arabic', subName: 'With Tajweed colors', isPremium: true },
+
+    // ── English ──
     { identifier: 'en.sahih', displayName: 'English', subName: 'Saheeh International', isPremium: false },
-    { identifier: 'quran-uthmani', displayName: 'Arabic', subName: 'Original Text (Uthmani)', isPremium: true },
     { identifier: 'en.khattab', displayName: 'English', subName: 'The Clear Quran (Khattab)', isPremium: true },
+
+    // ── European languages ──
     { identifier: 'fr.hamidullah', displayName: 'French', subName: 'Muhammad Hamidullah', isPremium: true },
     { identifier: 'es.cortes', displayName: 'Spanish', subName: 'Julio Cortes', isPremium: true },
     { identifier: 'de.aburida', displayName: 'German', subName: 'Abu Rida', isPremium: true },
-    { identifier: 'tr.diyanet', displayName: 'Turkish', subName: 'Diyanet Isleri', isPremium: true },
-    { identifier: 'ru.kuliev', displayName: 'Russian', subName: 'Elmir Kuliev', isPremium: true },
-    { identifier: 'id.indonesian', displayName: 'Indonesian', subName: 'Bahasa Indonesia', isPremium: true },
-    { identifier: 'ms.basmeih', displayName: 'Malay', subName: 'Abdullah Basmeih', isPremium: true },
-    { identifier: 'fa.ghomshei', displayName: 'Persian', subName: 'Mahdi Elahi Ghomshei', isPremium: true },
-    { identifier: 'ur.kanzuliman', displayName: 'Urdu', subName: 'Ahmed Raza Khan', isPremium: true },
-    { identifier: 'bn.bengali', displayName: 'Bengali', subName: 'Zohurul Hoque', isPremium: true },
-    { identifier: 'hi.hindi', displayName: 'Hindi', subName: 'Farooq Khan & Nadwi', isPremium: true },
-    { identifier: 'zh.jian', displayName: 'Chinese', subName: 'Ma Jian', isPremium: true },
     { identifier: 'it.piccardo', displayName: 'Italian', subName: 'Hamza Roberto Piccardo', isPremium: true },
     { identifier: 'pt.elhayek', displayName: 'Portuguese', subName: 'Samir El-Hayek', isPremium: true },
+    { identifier: 'nl.keyzer', displayName: 'Dutch', subName: 'Salomo Keyzer', isPremium: true },
+    { identifier: 'ru.kuliev', displayName: 'Russian', subName: 'Elmir Kuliev', isPremium: true },
+    { identifier: 'sq.ahmeti', displayName: 'Albanian', subName: 'Sherif Ahmeti', isPremium: true },
+    { identifier: 'bs.korkut', displayName: 'Bosnian', subName: 'Besim Korkut', isPremium: true },
+    { identifier: 'tr.diyanet', displayName: 'Turkish', subName: 'Diyanet Isleri', isPremium: true },
+
+    // ── Middle East / Caucasus / Central Asia ──
+    { identifier: 'fa.ghomshei', displayName: 'Persian', subName: 'Mahdi Elahi Ghomshei', isPremium: true },
+    { identifier: 'az.musayev', displayName: 'Azerbaijani', subName: 'Alikhan Musayev', isPremium: true },
+    { identifier: 'uz.sodik', displayName: 'Uzbek', subName: 'Muhammad Sodik Muhammad Yusuf', isPremium: true },
+
+    // ── South Asia ──
+    { identifier: 'ur.kanzuliman', displayName: 'Urdu', subName: 'Ahmed Raza Khan', isPremium: true },
+    { identifier: 'hi.hindi', displayName: 'Hindi', subName: 'Farooq Khan & Nadwi', isPremium: true },
+    { identifier: 'bn.bengali', displayName: 'Bengali', subName: 'Zohurul Hoque', isPremium: true },
+    { identifier: 'ta.tamil', displayName: 'Tamil', subName: 'Jan Trust Foundation', isPremium: true },
+
+    // ── Southeast Asia ──
+    { identifier: 'id.indonesian', displayName: 'Indonesian', subName: 'Bahasa Indonesia', isPremium: true },
+    { identifier: 'ms.basmeih', displayName: 'Malay', subName: 'Abdullah Basmeih', isPremium: true },
+    { identifier: 'th.thai', displayName: 'Thai', subName: 'King Fahd Complex', isPremium: true },
+
+    // ── East Asia ──
+    { identifier: 'zh.jian', displayName: 'Chinese', subName: 'Ma Jian', isPremium: true },
     { identifier: 'ja.japanese', displayName: 'Japanese', subName: 'Ryoichi Mita', isPremium: true },
+
+    // ── Africa ──
+    { identifier: 'sw.barwani', displayName: 'Swahili', subName: 'Ali Muhsin Al-Barwani', isPremium: true },
+    { identifier: 'so.abduh', displayName: 'Somali', subName: 'Mahmud Muhammad Abduh', isPremium: true },
+    { identifier: 'am.sadiq', displayName: 'Amharic', subName: 'Muhammad Sadiq & Sani Habib', isPremium: true },
 ];
 
 function getActiveWordByWeight(words: string[], posMs: number, durMs: number): number {
@@ -74,8 +115,154 @@ function getActiveWordByWeight(words: string[], posMs: number, durMs: number): n
     return words.length - 1;
 }
 
-export function SurahReader({ surahNumber, edition = 'en.sahih', onEditionChange, onClose }: Props) {
+// \u2500\u2500\u2500 Memoized ayah row \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+// Pulled out and React.memo'd so that when playback ticks fire (every 200ms),
+// only the currently-playing ayah re-renders \u2014 all other visible ayahs are
+// skipped via shallow prop comparison. Cuts FlatList re-renders from N to 1
+// per playback tick and is what makes the reader feel smooth during playback.
+interface AyahRowProps {
+    ayah: Ayah;
+    index: number;
+    isActive: boolean;
+    isPlaying: boolean;
+    audioLoading: boolean;
+    isBookmarked: boolean;
+    edition: string;
+    activeWordIndex: number;   // -1 when not active
+    activeMeaning: string;
+    accentColor: string;
+    // Stable handlers — receive `index` / `ayahNumber` as args so the parent
+    // doesn't need to recreate function references per row each render.
+    onPressAyah: (ayahNumber: number) => void;
+    onPressPlay: (index: number) => void;
+}
+
+const AyahRow = React.memo(function AyahRow({
+    ayah, index, isActive, isPlaying, audioLoading, isBookmarked, edition,
+    activeWordIndex, activeMeaning, accentColor, onPressAyah, onPressPlay,
+}: AyahRowProps) {
+    const isArabicMushaf = edition.startsWith('quran-') || edition.startsWith('ar.');
+    const isRTL = isArabicMushaf
+        || edition.startsWith('ur.')
+        || edition.startsWith('fa.')
+        || edition.startsWith('he.')
+        || edition.startsWith('sd.')
+        || edition.startsWith('ps.');
+
+    const baseTextStyle: any = [
+        styles.ayahText,
+        isRTL && { textAlign: 'right' as const, writingDirection: 'rtl' as const },
+        isArabicMushaf && { fontFamily: 'AmiriQuran', lineHeight: 56 },
+        !isArabicMushaf && isRTL && { lineHeight: 30, fontSize: 17 },
+    ];
+
+    return (
+        <Pressable
+            style={({ pressed }) => [
+                styles.ayahCard,
+                isBookmarked && styles.bookmarkedAyahCard,
+                isActive && styles.activeAyahCard,
+                // Immediate visual feedback so users feel the press register
+                // even before the bookmark state propagates through the list.
+                pressed && { opacity: 0.7 },
+            ]}
+            android_ripple={{ color: 'rgba(34, 211, 238, 0.15)', borderless: false }}
+            hitSlop={4}
+            onPress={() => onPressAyah(ayah.numberInSurah)}
+        >
+            <View style={styles.ayahInfo}>
+                <View style={styles.numberCircle}>
+                    <Text style={styles.numberText}>{ayah.numberInSurah}</Text>
+                </View>
+                <View style={styles.ayahActions}>
+                    <Pressable
+                        onPress={() => onPressPlay(index)}
+                        style={({ pressed }) => [styles.ayahPlayButton, pressed && { opacity: 0.6 }]}
+                        android_ripple={{ color: 'rgba(34, 211, 238, 0.25)', borderless: true, radius: 22 }}
+                        hitSlop={10}
+                    >
+                        {isActive && audioLoading ? (
+                            <ActivityIndicator size="small" color="#22d3ee" />
+                        ) : isActive && isPlaying ? (
+                            <Pause size={16} color="#22d3ee" fill="#22d3ee" />
+                        ) : (
+                            <Play size={16} color="#94a3b8" />
+                        )}
+                    </Pressable>
+                    {isBookmarked && <Bookmark color="#22d3ee" size={16} fill="#22d3ee" />}
+                </View>
+            </View>
+
+            {/* Karaoke highlight only for the active ayah while playing */}
+            {isActive && isPlaying ? (() => {
+                const words = ayah.text.split(' ');
+                return (
+                    <View>
+                        <Text style={baseTextStyle}>
+                            {words.map((word: string, wi: number) => (
+                                <Text key={wi} style={wi === activeWordIndex ? styles.wordActive : styles.wordUpcoming}>
+                                    {word}{wi < words.length - 1 ? ' ' : ''}
+                                </Text>
+                            ))}
+                        </Text>
+                        {activeMeaning ? (
+                            <View style={styles.wordMeaningPill}>
+                                <Text style={[styles.wordMeaningText, { color: accentColor }]}>{activeMeaning}</Text>
+                            </View>
+                        ) : null}
+                    </View>
+                );
+            })() : isTajweedEdition(edition) ? (
+                <Text style={[...baseTextStyle, isActive && { opacity: 0.95 }]}>
+                    {parseTajweed(ayah.text).map((tok, ti) => (
+                        <Text key={ti} style={{ color: TAJWEED_COLORS[tok.rule] }}>{tok.text}</Text>
+                    ))}
+                </Text>
+            ) : (
+                <Text style={[...baseTextStyle, isActive && { color: '#22d3ee' }]}>
+                    {ayah.text}
+                </Text>
+            )}
+        </Pressable>
+    );
+});
+
+export function SurahReader({ surahNumber: initialSurahNumber, edition = 'en.sahih', onEditionChange, onClose, playQueue, playlistName, initialAyahNumber }: Props) {
+    const [activeSurahNumber, setActiveSurahNumber] = useState(initialSurahNumber);
+    const surahNumber = activeSurahNumber; // alias so existing references stay valid
+    const autoPlayRef = useRef(false); // true when advancing to next surah automatically
+
+    // Android hardware back button — close the reader instead of leaving the
+    // app. iOS users tap the on-screen back arrow; Android users instinctively
+    // hit the system back gesture, which previously did nothing here.
+    useEffect(() => {
+        if (Platform.OS !== 'android') return;
+        const sub = BackHandler.addEventListener('hardwareBackPress', () => {
+            onClose();
+            return true; // mark event handled so OS doesn't also bubble it
+        });
+        return () => sub.remove();
+    }, [onClose]);
+
+    // Queue tracking for playlist mode
+    const queueIndexRef = useRef<number>(0);
+
+    // Initialize queue position when playQueue is provided
+    useEffect(() => {
+        if (playQueue && playQueue.length > 0) {
+            const idx = playQueue.indexOf(initialSurahNumber);
+            queueIndexRef.current = idx >= 0 ? idx : 0;
+        }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
     const { isPremium, openPaywall } = usePurchases();
+    const audio = useQuranAudio();
+    // Read playing state first so useProgress can use it to set poll rate.
+    const isPlaying = audio.isPlaying;
+    const audioLoading = audio.isLoading;
+    // Poll at 250ms while playing for smooth karaoke; slow to 2 s when idle
+    // so the native bridge stays quiet and list scroll stays responsive.
+    const progress = useProgress(isPlaying ? 250 : 2000);
     const [surah, setSurah] = useState<SurahDetail | null>(null);
     const [loading, setLoading] = useState(true);
     const [modalVisible, setModalVisible] = useState(false);
@@ -84,30 +271,77 @@ export function SurahReader({ surahNumber, edition = 'en.sahih', onEditionChange
     const [initialScrollDone, setInitialScrollDone] = useState(false);
     const [bookmarkedAyah, setBookmarkedAyah] = useState<number | null>(null);
     const lastReadAyahRef = useRef<number>(1);
+    // Remembers the last ayah we jumped to so we re-scroll only when the user
+    // explicitly requests a new ayah (not on every re-render).
+    const lastProcessedAyahRef = useRef<number | undefined>(undefined);
 
-    // Offline state
+    // Offline state — used to highlight downloaded surahs in the list etc.
     const [offlineUri, setOfflineUri] = useState<string | null>(null);
-    const [offlinePlaying, setOfflinePlaying] = useState(false);
-    const offlineSoundRef = useRef<Audio.Sound | null>(null);
 
-    // Audio State & Refs (Refs prevent stale closures in playback callbacks)
-    const [isPlaying, setIsPlaying] = useState(false);
+    // Audio state — primary engine is TrackPlayer (via QuranAudioContext) so
+    // the user gets Now Playing / lockscreen controls. Local state mirrors
+    // what the context tells us for UI purposes.
     const [playbackSpeed, setPlaybackSpeed] = useState<0.75 | 1 | 1.25 | 1.5>(1);
     const playbackSpeedRef = useRef<0.75 | 1 | 1.25 | 1.5>(1);
-    const soundRef = useRef<Audio.Sound | null>(null);
-    const preloadedSoundRef = useRef<Audio.Sound | null>(null);
-    const preloadedIndexRef = useRef<number | null>(null);
     const [currentAyahIndex, setCurrentAyahIndex] = useState<number | null>(null);
     const currentAyahIndexRef = useRef<number | null>(null);
-    const [audioLoading, setAudioLoading] = useState(false);
     const [audioAyahs, setAudioAyahs] = useState<Ayah[]>([]);
     const audioAyahsRef = useRef<Ayah[]>([]);
 
-    // Word-level highlight tracking
-    const [playbackPosition, setPlaybackPosition] = useState(0);
-    const [playbackDuration, setPlaybackDuration] = useState(1);
+    // Word-level highlight tracking — position/duration derived from
+    // TrackPlayer's useProgress (in seconds; convert to ms for timing data).
+    const playbackPosition = progress.position * 1000;
+    const playbackDuration = Math.max(progress.duration * 1000, 1);
     const [ayahTimingData, setAyahTimingData] = useState<AyahAudioData[]>([]);
     const [ayahWordData, setAyahWordData] = useState<AyahWords[]>([]);
+
+    // Surah is declared after these states — guarded inline below.
+    // Compute the active word index for the CURRENTLY playing ayah only.
+    // Memoized so the FlatList doesn't re-evaluate per-row on every render.
+    // When playback ticks update playbackPosition (every 200ms), this memo
+    // re-runs, but it's a single O(1)-ish lookup, not per-ayah work.
+    const surahForActive = useRef<SurahDetail | null>(null);
+    const { activeWordIndex, activeMeaning } = React.useMemo(() => {
+        const s = surahForActive.current;
+        if (!s || currentAyahIndex === null || currentAyahIndex < 0) {
+            return { activeWordIndex: -1, activeMeaning: '' };
+        }
+        const ayah = s.ayahs[currentAyahIndex];
+        if (!ayah) return { activeWordIndex: -1, activeMeaning: '' };
+        const words = ayah.text.split(' ');
+        const isArabicMushaf = edition.startsWith('quran-') || edition.startsWith('ar.');
+        const segments = ayahTimingData.find(a => a.ayahNumber === ayah.numberInSurah)?.segments ?? [];
+        const idx = isArabicMushaf && segments.length > 0
+            ? getWordAtTime(segments, playbackPosition)
+            : isArabicMushaf
+                ? getActiveWordByWeight(words, playbackPosition, playbackDuration)
+                : Math.floor(Math.min(playbackPosition / Math.max(playbackDuration, 1), 1) * words.length);
+        const wordList = ayahWordData.find(a => a.ayahNumber === ayah.numberInSurah)?.words ?? [];
+        const meaning = isArabicMushaf && idx >= 0 && idx < wordList.length
+            ? wordList[idx]?.meaning ?? ''
+            : '';
+        return { activeWordIndex: idx, activeMeaning: meaning };
+    }, [currentAyahIndex, playbackPosition, playbackDuration, ayahTimingData, ayahWordData, edition]);
+
+    // ── Sync currentAyahIndex with whichever track TrackPlayer is on ──
+    // When TrackPlayer auto-advances (or lockscreen skip-next fires), the
+    // active track's ayahNumber tells us which row to highlight. Only sync
+    // when we're playing audio for the same surah this reader is showing.
+    useEffect(() => {
+        if (
+            audio.currentAyahNumber != null
+            && audio.currentSurahNumber === activeSurahNumber
+            && surahForActive.current
+        ) {
+            const idx = surahForActive.current.ayahs.findIndex(
+                (a) => a.numberInSurah === audio.currentAyahNumber
+            );
+            if (idx >= 0 && idx !== currentAyahIndexRef.current) {
+                setCurrentAyahIndex(idx);
+                currentAyahIndexRef.current = idx;
+            }
+        }
+    }, [audio.currentAyahNumber, audio.currentSurahNumber, activeSurahNumber]);
 
     // Stable Function Refs for background callbacks
     const playAyahRef = useRef<(index: number) => Promise<void>>(null);
@@ -119,6 +353,11 @@ export function SurahReader({ surahNumber, edition = 'en.sahih', onEditionChange
     const [sleepSecondsLeft, setSleepSecondsLeft] = useState(0);
     const sleepIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
+    // Repeat mode
+    const [repeatSurah, setRepeatSurah] = useState(false);
+    const repeatSurahRef = useRef(false);
+
+
     const clearSleepTimer = () => {
         if (sleepIntervalRef.current) {
             clearInterval(sleepIntervalRef.current);
@@ -126,8 +365,8 @@ export function SurahReader({ surahNumber, edition = 'en.sahih', onEditionChange
         }
         setSleepTimerMins(0);
         setSleepSecondsLeft(0);
-        // Restore full volume
-        soundRef.current?.setVolumeAsync(1.0).catch(() => {});
+        // Restore full volume on TrackPlayer
+        TrackPlayer.setVolume(1.0).catch(() => {});
     };
 
     const cycleSleepTimer = () => {
@@ -142,21 +381,20 @@ export function SurahReader({ surahNumber, edition = 'en.sahih', onEditionChange
             remaining -= 1;
             setSleepSecondsLeft(remaining);
             // Fade volume in last 30 seconds
-            if (remaining <= 30 && soundRef.current) {
+            if (remaining <= 30) {
                 const vol = Math.max(0.01, remaining / 30);
-                try { await soundRef.current.setVolumeAsync(vol); } catch (_) {}
+                try { await TrackPlayer.setVolume(vol); } catch (_) {}
             }
             if (remaining <= 0) {
                 clearInterval(sleepIntervalRef.current!);
                 sleepIntervalRef.current = null;
                 setSleepTimerMins(0);
                 setSleepSecondsLeft(0);
-                // Stop playback
+                // Pause and reset volume
                 try {
-                    await soundRef.current?.pauseAsync();
-                    await soundRef.current?.setVolumeAsync(1.0);
+                    await TrackPlayer.pause();
+                    await TrackPlayer.setVolume(1.0);
                 } catch (_) {}
-                setIsPlaying(false);
             }
         }, 1000);
     };
@@ -198,48 +436,90 @@ export function SurahReader({ surahNumber, edition = 'en.sahih', onEditionChange
 
     const { colors } = useTheme();
 
+    // Follow external surah changes (e.g. user picks a new verse from search
+    // while SurahReader is already mounted on a different surah). Internal
+    // auto-advance still calls setActiveSurahNumber directly — that's fine
+    // because the prop hasn't changed.
+    useEffect(() => {
+        if (initialSurahNumber !== activeSurahNumber) {
+            setActiveSurahNumber(initialSurahNumber);
+        }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [initialSurahNumber]);
+
     useEffect(() => {
         loadSurah();
-    }, [surahNumber, edition]);
+    }, [activeSurahNumber, edition]);
+
+    // Refresh local audioAyahs (per-ayah URL list) whenever the user changes
+    // reciter. The audio context handles the live TrackPlayer queue swap
+    // (preserving position) — this just keeps our cached URL list fresh so
+    // future playAyah() calls build the queue with the new voice.
+    useEffect(() => {
+        const unsub = subscribeReciter(async (newReciterId) => {
+            try {
+                const fresh = await QuranService.getAudioRecitation(activeSurahNumber, newReciterId);
+                setAudioAyahs(fresh);
+                audioAyahsRef.current = fresh;
+            } catch { /* ignore */ }
+        });
+        return () => unsub();
+    }, [activeSurahNumber]);
+
+    // Bumped each time loadSurah is called. Stored on a ref so async callbacks
+    // can compare against the latest value and bail if the user has since
+    // switched to a different surah (race-condition guard). Without this, if
+    // the user taps surah A then quickly switches to surah B, A's slower
+    // response could land after B's and overwrite B's content.
+    const loadRequestIdRef = useRef(0);
 
     const loadSurah = async () => {
+        const isAutoAdvance = autoPlayRef.current;
+        const requestId = ++loadRequestIdRef.current;
+        const requestedSurahNumber = surahNumber;
         setLoading(true);
         setInitialScrollDone(false);
-        hideBar();
+        if (!isAutoAdvance) hideBar();
 
-        // Re-assert audio mode for this surah session
-        try {
-            await Audio.setAudioModeAsync({
-                allowsRecordingIOS: false,
-                staysActiveInBackground: true,
-                interruptionModeIOS: InterruptionModeIOS.MixWithOthers,
-                playsInSilentModeIOS: true,
-                shouldDuckAndroid: false,
-                interruptionModeAndroid: InterruptionModeAndroid.DoNotMix,
-                playThroughEarpieceAndroid: false,
-            });
-        } catch (e) {
-            console.error('Error re-asserting audio mode:', e);
-        }
+        // Audio session is now managed globally by TrackPlayer in
+        // QuranAudioContext — no per-surah setup needed here.
 
-        // Check for offline audio
+        // Check for offline audio (used by the download badge logic elsewhere)
         const localUri = OfflineQuranService.getLocalUri(surahNumber);
         setOfflineUri(localUri);
 
         const data = await QuranService.getSurah(surahNumber, edition);
+
+        // Race-condition guard: user switched to a different surah while we
+        // were fetching this one — abandon this load entirely.
+        if (requestId !== loadRequestIdRef.current) return;
+
         if (data) {
             setSurah(data);
+            surahForActive.current = data;
+            // ⚡️ Render the surah text IMMEDIATELY — audio recitation, ayah
+            // timing data, and word-level data are only needed for playback
+            // and don't block reading. Load them in the background so the
+            // user sees text instantly and the loading spinner goes away.
+            setLoading(false);
 
-            // Fetch audio recitations (default Alafasy) + word-level timing in parallel
-            const [audioData, timingData, wordsData] = await Promise.all([
-                QuranService.getAudioRecitation(surahNumber),
-                QuranTimingService.getSurahAudioData(surahNumber),
-                QuranWordService.getSurahWords(surahNumber),
-            ]);
-            setAudioAyahs(audioData);
-            audioAyahsRef.current = audioData;
-            setAyahTimingData(timingData);
-            setAyahWordData(wordsData);
+            // Background load — does not block the UI
+            (async () => {
+                try {
+                    const [audioData, timingData, wordsData] = await Promise.all([
+                        QuranService.getAudioRecitation(requestedSurahNumber, getCurrentReciterId()),
+                        QuranTimingService.getSurahAudioData(requestedSurahNumber),
+                        QuranWordService.getSurahWords(requestedSurahNumber),
+                    ]);
+                    // Same race-condition guard for background data — if the
+                    // user already moved on, these results are stale.
+                    if (requestId !== loadRequestIdRef.current) return;
+                    setAudioAyahs(audioData);
+                    audioAyahsRef.current = audioData;
+                    setAyahTimingData(timingData);
+                    setAyahWordData(wordsData);
+                } catch { /* audio is opt-in; ignore failures */ }
+            })();
 
             // Load specific bookmark for this surah/ayah if exists
             try {
@@ -256,214 +536,140 @@ export function SurahReader({ surahNumber, edition = 'en.sahih', onEditionChange
             }
         }
         setLoading(false);
-    };
 
-    // Cleanup audio resources correctly on unmount
-    useEffect(() => {
-        return () => {
-            const cleanup = async () => {
-                if (soundRef.current) {
-                    try {
-                        await soundRef.current.unloadAsync();
-                        soundRef.current = null;
-                    } catch (e) { console.log('Cleanup error (main):', e); }
-                }
-                if (preloadedSoundRef.current) {
-                    try {
-                        await preloadedSoundRef.current.unloadAsync();
-                        preloadedSoundRef.current = null;
-                    } catch (e) { console.log('Cleanup error (pre):', e); }
-                }
-                if (offlineSoundRef.current) {
-                    try {
-                        await offlineSoundRef.current.unloadAsync();
-                        offlineSoundRef.current = null;
-                    } catch (e) { console.log('Cleanup error (offline):', e); }
-                }
-            };
-            cleanup();
-        };
-    }, []);
-
-    const handleOfflinePlayPause = async () => {
-        if (!offlineUri) return;
-        try {
-            if (offlineSoundRef.current) {
-                if (offlinePlaying) {
-                    await offlineSoundRef.current.pauseAsync();
-                    setOfflinePlaying(false);
-                } else {
-                    await offlineSoundRef.current.playAsync();
-                    setOfflinePlaying(true);
-                }
-            } else {
-                const { sound } = await Audio.Sound.createAsync(
-                    { uri: offlineUri },
-                    { shouldPlay: true },
-                    (status) => {
-                        if (status.isLoaded && status.didJustFinish) {
-                            setOfflinePlaying(false);
-                            offlineSoundRef.current?.unloadAsync();
-                            offlineSoundRef.current = null;
-                        }
-                    }
-                );
-                offlineSoundRef.current = sound;
-                setOfflinePlaying(true);
-            }
-        } catch (e) {
-            console.error('Offline playback error:', e);
+        // Auto-play first ayah when continuing from previous surah
+        if (isAutoAdvance) {
+            autoPlayRef.current = false;
+            setTimeout(() => playAyahRef.current?.(0), 300);
         }
     };
 
+    // Stop TrackPlayer when the reader unmounts (e.g. user closes the surah).
+    useEffect(() => {
+        return () => {
+            TrackPlayer.reset().catch(() => {});
+        };
+    }, []);
+
+    // Routes ayah playback through TrackPlayer (via the QuranAudioContext).
+    // The queue is the full current surah (1 ayah = 1 track), so lockscreen
+    // skip-next/prev steps through ayahs and Now Playing shows the right
+    // metadata. Reusing the queue when staying within the same surah means
+    // we just `skip(index)` instead of rebuilding.
+    // Cancellation token — bumped on every playAyah call. If the user taps
+    // another ayah while a previous load is still in flight, the new tap wins
+    // and the old request abandons before clobbering TrackPlayer state.
+    const playAyahTokenRef = useRef(0);
+
     const playAyah = async (index: number) => {
-        if (!audioAyahs[index]) return;
+        if (!audioAyahs[index] || !surah) return;
+
+        // Each tap gets a fresh token. If a later tap fires before this one
+        // finishes, that tap will increment the token and we'll see it differs
+        // from ours below — meaning we should bail out instead of fighting it.
+        const token = ++playAyahTokenRef.current;
+
+        // Eagerly mark this ayah as active so the play button changes to
+        // a spinner immediately, instead of staying on the grey Play icon
+        // until the network fetch finishes.
+        setCurrentAyahIndex(index);
+        currentAyahIndexRef.current = index;
+        showBar();
 
         try {
-            setAudioLoading(true);
+            const sameSurahAlreadyLoaded =
+                audio.currentSurahNumber === surahNumber
+                && audio.currentAyahNumber != null;
 
-            // 1. Re-assert audio mode just before play to wake up the background worker if needed
-            try {
-                await Audio.setAudioModeAsync({
-                    allowsRecordingIOS: false,
-                    staysActiveInBackground: true,
-                    interruptionModeIOS: InterruptionModeIOS.MixWithOthers,
-                    playsInSilentModeIOS: true,
-                    shouldDuckAndroid: true,
-                    interruptionModeAndroid: InterruptionModeAndroid.DuckOthers,
-                    playThroughEarpieceAndroid: false,
-                });
-            } catch (e) {
-                console.log('Error re-asserting audio mode in play:', e);
-            }
-
-            // 2. Check if we have this ayah pre-loaded
-            if (preloadedSoundRef.current && preloadedIndexRef.current === index) {
-                const oldSound = soundRef.current;
-                const nextSound = preloadedSoundRef.current;
-
-                // CRITICAL: Play the NEXT sound before unloading the old one to bridge the gap
-                await nextSound.setRateAsync(playbackSpeedRef.current, true).catch(() => {});
-                await nextSound.playAsync();
-
-                // Now clean up the old one
-                if (oldSound) {
-                    try {
-                        await oldSound.unloadAsync();
-                    } catch (e) {
-                        console.log('Error unloading old sound:', e);
-                    }
-                }
-
-                soundRef.current = nextSound;
-                preloadedSoundRef.current = null;
-                preloadedIndexRef.current = null;
-
-                soundRef.current.setOnPlaybackStatusUpdate(onPlaybackStatusUpdate);
-                soundRef.current.setStatusAsync({ progressUpdateIntervalMillis: 50 }).catch(() => {});
+            if (sameSurahAlreadyLoaded) {
+                // Queue already exists for this surah — just jump to the
+                // right track. No reload required. This is the FAST path —
+                // typically completes in <100ms.
+                await audio.skipToIndex(index);
             } else {
-                // Manual play or no pre-load available
-                const oldSound = soundRef.current;
-                const preOldSound = preloadedSoundRef.current;
-
-                const { sound: newSound } = await Audio.Sound.createAsync(
-                    { uri: audioAyahs[index].text },
-                    { shouldPlay: true, progressUpdateIntervalMillis: 50, rate: playbackSpeedRef.current, shouldCorrectPitch: true },
-                    onPlaybackStatusUpdate
-                );
-
-                if (oldSound) {
-                    try {
-                        await oldSound.unloadAsync();
-                    } catch (e) {
-                        console.log('Error unloading old sound:', e);
-                    }
+                // Build a fresh queue for the whole surah, starting playback
+                // at the tapped ayah.
+                const tracks = audioAyahs.map(a => ({
+                    url: a.text,
+                    title: `${surah.englishName} · ${a.numberInSurah}`,
+                    ayahNumber: a.numberInSurah,
+                }));
+                await audio.startAyahQueue(tracks, surahNumber, surah.englishName);
+                // Race-guard: if user tapped a different ayah while we were
+                // building the queue, abandon — the new tap is handling it.
+                if (token !== playAyahTokenRef.current) return;
+                if (index > 0) {
+                    await audio.skipToIndex(index);
                 }
-                if (preOldSound) {
-                    try {
-                        await preOldSound.unloadAsync();
-                    } catch (e) {
-                        console.log('Error unloading pre-old sound:', e);
-                    }
-                }
-
-                soundRef.current = newSound;
-                preloadedSoundRef.current = null;
-                preloadedIndexRef.current = null;
             }
 
-            setCurrentAyahIndex(index);
-            currentAyahIndexRef.current = index;
-            setIsPlaying(true);
-            setAudioLoading(false);
-            setPlaybackPosition(0);
-            setPlaybackDuration(1);
-            showBar();
+            // Final race-guard before scroll/rate
+            if (token !== playAyahTokenRef.current) return;
 
-            // 3. Start pre-loading the next ayah immediately for seamless background transition
-            // We delay this slightly to let the current playback start smoothly
-            setTimeout(() => {
-                preloadNextAyah(index + 1);
-            }, 500);
+            // Re-assert playback rate after starting (track changes reset it)
+            await TrackPlayer.setRate(playbackSpeedRef.current).catch(() => {});
 
-            // Auto-scroll to current ayah with safety check
+            // Auto-scroll to the active ayah so the user can see the highlight
             try {
                 flatListRef.current?.scrollToIndex({
                     index,
                     animated: true,
-                    viewPosition: 0.3
+                    viewPosition: 0.3,
                 });
-            } catch (e) {
-                // Silently ignore scroll errors in background
-                console.log('Scroll error (likely in background):', e);
-            }
-
-        } catch (error) {
-            console.error('Error playing ayah:', error);
-            setAudioLoading(false);
-        }
-    };
-
-    const preloadNextAyah = async (index: number) => {
-        const ayahsList = audioAyahsRef.current;
-        if (index >= ayahsList.length) return;
-
-        try {
-            // Unload old pre-load if horizontal skip happened
-            if (preloadedSoundRef.current) {
-                await preloadedSoundRef.current.unloadAsync();
-            }
-
-            const { sound: nextSound } = await Audio.Sound.createAsync(
-                { uri: ayahsList[index].text },
-                { shouldPlay: false }
-            );
-            preloadedSoundRef.current = nextSound;
-            preloadedIndexRef.current = index;
-            console.log('Pre-loaded ayah:', index);
+            } catch { /* offscreen items can throw; ignore */ }
         } catch (e) {
-            console.log('Pre-load failed:', e);
+            console.error('[SurahReader] playAyah error:', e);
         }
     };
 
+    // End-of-queue handler — fires when TrackPlayer's queue ends (either
+    // last ayah of surah finished playing OR user kept hitting "next" past
+    // the final ayah). Picks the right "next" behaviour based on mode.
     const handleNextAyah = useCallback(() => {
-        const currentIndex = currentAyahIndexRef.current;
-        const ayahsList = audioAyahsRef.current;
-
-        const nextIndex = (currentIndex !== null ? currentIndex : -1) + 1;
-        if (nextIndex < ayahsList.length) {
-            playAyahRef.current?.(nextIndex);
+        // End of surah behaviour:
+        if (repeatSurahRef.current) {
+            // 1. Repeat: restart from first ayah
+            setTimeout(() => playAyahRef.current?.(0), 200);
+            return;
+        }
+        if (playQueue && playQueue.length > 0) {
+            // 2. Playlist mode: advance to next surah in playlist
+            const nextQueueIndex = queueIndexRef.current + 1;
+            if (nextQueueIndex < playQueue.length) {
+                queueIndexRef.current = nextQueueIndex;
+                autoPlayRef.current = true;
+                setCurrentAyahIndex(null);
+                currentAyahIndexRef.current = null;
+                setActiveSurahNumber(playQueue[nextQueueIndex]);
+                return;
+            }
+        }
+        // 3. Default: advance to next surah (stops at Al-Nas = 114)
+        if (activeSurahNumber < 114) {
+            autoPlayRef.current = true;
+            setCurrentAyahIndex(null);
+            currentAyahIndexRef.current = null;
+            setActiveSurahNumber(activeSurahNumber + 1);
         } else {
-            setIsPlaying(false);
             setCurrentAyahIndex(null);
             currentAyahIndexRef.current = null;
             hideBar();
         }
-    }, [hideBar]);
+    }, [hideBar, activeSurahNumber, playQueue]);
+
+    // Listen for TrackPlayer's "queue ended" event so end-of-surah behaviour
+    // (repeat / next surah / next playlist track) fires reliably.
+    useEffect(() => {
+        const sub = TrackPlayer.addEventListener(Event.PlaybackQueueEnded, () => {
+            handleNextAyahRef.current?.();
+        });
+        return () => sub.remove();
+    }, []);
 
     // Sync refs every render
     playAyahRef.current = playAyah;
     handleNextAyahRef.current = handleNextAyah;
+    repeatSurahRef.current = repeatSurah;
 
     const handlePrevAyah = () => {
         const currentIndex = currentAyahIndexRef.current;
@@ -473,29 +679,26 @@ export function SurahReader({ surahNumber, edition = 'en.sahih', onEditionChange
         }
     };
 
-    const onPlaybackStatusUpdate = (status: AVPlaybackStatus) => {
-        if (status.isLoaded) {
-            setPlaybackPosition(status.positionMillis ?? 0);
-            setPlaybackDuration(status.durationMillis ?? 1);
-            if (status.didJustFinish) {
-                handleNextAyahRef.current?.();
-            }
-        }
-    };
-
     const handlePlayPause = async () => {
-        if (!soundRef.current) {
-            playAyahRef.current?.(currentAyahIndex !== null ? currentAyahIndex : 0);
-            return;
-        }
+        // Prefer the live TrackPlayer state — on Android the activeTrack
+        // metadata can lag behind, which caused tapping play-while-playing
+        // to incorrectly enter the "start fresh" branch and restart the surah.
+        try {
+            const { state } = await TrackPlayer.getPlaybackState();
+            if (
+                state === State.Playing ||
+                state === State.Paused ||
+                state === State.Buffering ||
+                state === State.Ready
+            ) {
+                // Something is loaded — just toggle. Don't reset.
+                await audio.togglePlayPause();
+                return;
+            }
+        } catch { /* fall through to fresh-start path */ }
 
-        if (isPlaying) {
-            await soundRef.current.pauseAsync();
-            setIsPlaying(false);
-        } else {
-            await soundRef.current.playAsync();
-            setIsPlaying(true);
-        }
+        // Nothing loaded yet — start playback from the current ayah.
+        playAyahRef.current?.(currentAyahIndex !== null ? currentAyahIndex : 0);
     };
 
     const handleSpeedChange = async () => {
@@ -503,21 +706,46 @@ export function SurahReader({ surahNumber, edition = 'en.sahih', onEditionChange
         const next = speeds[(speeds.indexOf(playbackSpeed) + 1) % speeds.length];
         setPlaybackSpeed(next);
         playbackSpeedRef.current = next;
-        if (soundRef.current) {
-            try { await soundRef.current.setRateAsync(next, true); } catch {}
-        }
+        try { await TrackPlayer.setRate(next); } catch { /* ignore */ }
     };
 
     const renderAudioControlsContent = () => (
         <>
+            {/* Main controls row: speed | skip back | play | skip forward */}
             <View style={styles.audioControls}>
-                <TouchableOpacity onPress={handlePrevAyah} style={styles.controlButton}>
-                    <SkipBack size={20} color="#fff" />
-                </TouchableOpacity>
+                <Pressable
+                    onPress={handleSpeedChange}
+                    android_ripple={{ color: colors.accent + '40', borderless: false }}
+                    hitSlop={6}
+                    style={({ pressed }) => [
+                        styles.sleepTimerBtn,
+                        playbackSpeed !== 1 && { backgroundColor: colors.accent + '33', borderColor: colors.accent + '66' },
+                        pressed && { opacity: 0.6 },
+                    ]}
+                >
+                    <Text style={[styles.sleepTimerText, playbackSpeed !== 1 && { color: colors.accent }]}>
+                        {playbackSpeed}x
+                    </Text>
+                </Pressable>
 
-                <TouchableOpacity
+                <Pressable
+                    onPress={handlePrevAyah}
+                    android_ripple={{ color: 'rgba(255,255,255,0.2)', borderless: true, radius: 24 }}
+                    hitSlop={10}
+                    style={({ pressed }) => [styles.controlButton, pressed && { opacity: 0.6 }]}
+                >
+                    <SkipBack size={20} color="#fff" />
+                </Pressable>
+
+                <Pressable
                     onPress={handlePlayPause}
-                    style={[styles.playPauseButton, { backgroundColor: colors.accent }]}
+                    android_ripple={{ color: 'rgba(0,0,0,0.2)', borderless: true, radius: 32 }}
+                    hitSlop={10}
+                    style={({ pressed }) => [
+                        styles.playPauseButton,
+                        { backgroundColor: colors.accent },
+                        pressed && { opacity: 0.85 },
+                    ]}
                 >
                     {audioLoading ? (
                         <ActivityIndicator size="small" color="#000" />
@@ -526,33 +754,51 @@ export function SurahReader({ surahNumber, edition = 'en.sahih', onEditionChange
                     ) : (
                         <Play size={24} color="#000" fill="#000" style={{ marginLeft: 2 }} />
                     )}
-                </TouchableOpacity>
+                </Pressable>
 
-                <TouchableOpacity onPress={handleNextAyah} style={styles.controlButton}>
+                <Pressable
+                    onPress={handleNextAyah}
+                    android_ripple={{ color: 'rgba(255,255,255,0.2)', borderless: true, radius: 24 }}
+                    hitSlop={10}
+                    style={({ pressed }) => [styles.controlButton, pressed && { opacity: 0.6 }]}
+                >
                     <SkipForward size={20} color="#fff" />
-                </TouchableOpacity>
+                </Pressable>
+
+                {/* Placeholder to balance the speed button on the left */}
+                <View style={{ width: 42 }} />
             </View>
 
-            <View style={styles.audioFooter}>
-                {currentAyahIndex !== null && surah && (
-                    <View style={styles.audioInfo}>
-                        <Volume2 size={12} color="#94a3b8" />
-                        <Text style={styles.audioInfoText}>
-                            Ayah {currentAyahIndex + 1} of {surah.numberOfAyahs}
-                        </Text>
-                    </View>
-                )}
-                {/* Playback speed button */}
-                <TouchableOpacity
-                    onPress={handleSpeedChange}
-                    style={[styles.sleepTimerBtn, playbackSpeed !== 1 && { backgroundColor: colors.accent + '33', borderColor: colors.accent + '66' }]}
-                >
-                    <Text style={[styles.sleepTimerText, playbackSpeed !== 1 && { color: colors.accent }]}>
-                        {playbackSpeed}x
-                    </Text>
-                </TouchableOpacity>
+            {/* Footer: ayah counter row */}
+            {currentAyahIndex !== null && surah && (
+                <View style={styles.audioFooter}>
+                    {playlistName && playQueue && playQueue.length > 0 ? (
+                        <View style={styles.audioInfo}>
+                            <Volume2 size={12} color="#94a3b8" />
+                            <Text style={styles.audioInfoText}>
+                                {playlistName} · {queueIndexRef.current + 1}/{playQueue.length}
+                            </Text>
+                        </View>
+                    ) : (
+                        <View style={styles.audioInfo}>
+                            <Volume2 size={12} color="#94a3b8" />
+                            <Text style={styles.audioInfoText}>
+                                Ayah {currentAyahIndex + 1} of {surah.numberOfAyahs}
+                            </Text>
+                        </View>
+                    )}
+                </View>
+            )}
 
-                {/* Sleep timer button */}
+            {/* Footer: toggles row */}
+            <View style={styles.audioFooterToggles}>
+                <TouchableOpacity
+                    onPress={() => setRepeatSurah(prev => !prev)}
+                    style={[styles.sleepTimerBtn, repeatSurah && { backgroundColor: colors.accent + '33', borderColor: colors.accent + '66' }]}
+                >
+                    <Repeat size={13} color={repeatSurah ? colors.accent : '#94a3b8'} />
+                    <Text style={[styles.sleepTimerText, repeatSurah && { color: colors.accent }]}>Loop</Text>
+                </TouchableOpacity>
                 <TouchableOpacity
                     onPress={cycleSleepTimer}
                     style={[styles.sleepTimerBtn, sleepTimerMins > 0 && { backgroundColor: colors.accent + '33', borderColor: colors.accent + '66' }]}
@@ -566,22 +812,44 @@ export function SurahReader({ surahNumber, edition = 'en.sahih', onEditionChange
         </>
     );
 
-    // Auto-scroll when data is ready
+    // Auto-scroll when data is ready. Priority order:
+    //   1. `initialAyahNumber` prop — caller wants a specific ayah (e.g. user
+    //      tapped "2:255" in the global search). Re-fires whenever the prop
+    //      changes, so a second search to a new ayah within the same surah
+    //      still scrolls.
+    //   2. Resume from saved bookmark on first mount.
     useEffect(() => {
-        if (!loading && surah && !initialScrollDone && flatListRef.current) {
-            const index = lastReadAyahRef.current - 1;
-            if (index > 0) {
-                setTimeout(() => {
-                    flatListRef.current?.scrollToIndex({
-                        index,
-                        animated: false,
-                        viewPosition: 0
-                    });
-                }, 100);
-            }
-            setInitialScrollDone(true);
+        if (loading || !surah || !flatListRef.current) return;
+
+        const ayahJumpRequested =
+            initialAyahNumber !== undefined &&
+            initialAyahNumber !== lastProcessedAyahRef.current;
+        const firstScroll = !initialScrollDone;
+        if (!ayahJumpRequested && !firstScroll) return;
+
+        lastProcessedAyahRef.current = initialAyahNumber;
+
+        const targetAyah = initialAyahNumber ?? lastReadAyahRef.current;
+        const index = Math.max(0, Math.min(targetAyah - 1, surah.ayahs.length - 1));
+
+        if (index > 0) {
+            setTimeout(() => {
+                flatListRef.current?.scrollToIndex({
+                    index,
+                    animated: ayahJumpRequested && !firstScroll,
+                    viewPosition: 0,
+                });
+            }, 100);
+        } else if (index === 0) {
+            // Explicit "go to ayah 1" — make sure we're at the top.
+            setTimeout(() => {
+                flatListRef.current?.scrollToOffset({ offset: 0, animated: false });
+            }, 100);
         }
-    }, [loading, surah, initialScrollDone]);
+
+        if (initialAyahNumber) setBookmarkedAyah(initialAyahNumber);
+        if (firstScroll) setInitialScrollDone(true);
+    }, [loading, surah, initialScrollDone, initialAyahNumber]);
 
     const saveBookmark = async (ayahNumber: number) => {
         if (!surah) return;
@@ -599,6 +867,48 @@ export function SurahReader({ surahNumber, edition = 'en.sahih', onEditionChange
             console.error('Error saving bookmark:', e);
         }
     };
+
+    // Stable action handlers so FlatList items don't see new function refs
+    // on every parent re-render. Without this, every visible ayah re-renders
+    // on every audio tick (4Hz) and the reader feels laggy. We route through
+    // a ref so the callbacks themselves are stable, but always call the
+    // latest version of saveBookmark / playAyah / handlePlayPause.
+    const actionsRef = useRef({ saveBookmark, playAyah, handlePlayPause });
+    actionsRef.current = { saveBookmark, playAyah, handlePlayPause };
+    const handleAyahPress = useCallback((ayahNumber: number) => {
+        actionsRef.current.saveBookmark(ayahNumber);
+    }, []);
+    const handleAyahPlayPress = useCallback((index: number) => {
+        if (currentAyahIndexRef.current === index) {
+            actionsRef.current.handlePlayPause();
+        } else {
+            actionsRef.current.playAyah(index);
+        }
+    }, []);
+
+    // Memoized renderItem so FlatList passes a stable function reference. Combined
+    // with React.memo on AyahRow, this means only rows whose props actually
+    // changed (active/bookmarked/playing) re-render — fixes Android list lag.
+    const renderAyahItem = useCallback(({ item: ayah, index }: { item: Ayah; index: number }) => {
+        const isActive = currentAyahIndex === index;
+        const isBookmarked = bookmarkedAyah === ayah.numberInSurah;
+        return (
+            <AyahRow
+                ayah={ayah}
+                index={index}
+                isActive={isActive}
+                isPlaying={isActive && isPlaying}
+                audioLoading={isActive && audioLoading}
+                isBookmarked={isBookmarked}
+                edition={edition}
+                activeWordIndex={isActive ? activeWordIndex : -1}
+                activeMeaning={isActive ? activeMeaning : ''}
+                accentColor={colors.accent}
+                onPressAyah={handleAyahPress}
+                onPressPlay={handleAyahPlayPress}
+            />
+        );
+    }, [currentAyahIndex, bookmarkedAyah, isPlaying, audioLoading, edition, activeWordIndex, activeMeaning, colors.accent, handleAyahPress, handleAyahPlayPress]);
 
     const onViewableItemsChanged = useRef(({ viewableItems }: { viewableItems: ViewToken[] }) => {
         if (viewableItems.length > 0) {
@@ -645,7 +955,7 @@ export function SurahReader({ surahNumber, edition = 'en.sahih', onEditionChange
     return (
         <View style={styles.container}>
             {/* Top Bar */}
-            <SafeAreaView style={styles.headerSafeArea}>
+            <SafeAreaView style={styles.headerSafeArea} edges={['top', 'left', 'right']}>
                 <View style={styles.header}>
                     <TouchableOpacity onPress={onClose} style={styles.iconButton}>
                         <ArrowLeft color="#fff" size={24} />
@@ -656,24 +966,11 @@ export function SurahReader({ surahNumber, edition = 'en.sahih', onEditionChange
                         <Text style={styles.headerSubtitle}>{surah.englishNameTranslation}</Text>
                     </View>
 
-                    {offlineUri && (
-                        <TouchableOpacity
-                            onPress={handleOfflinePlayPause}
-                            style={[styles.offlineBadge, { borderColor: colors.accent + '66', backgroundColor: colors.accent + '15' }]}
-                        >
-                            {offlinePlaying ? (
-                                <Pause size={13} color={colors.accent} fill={colors.accent} />
-                            ) : (
-                                <WifiOff size={13} color={colors.accent} />
-                            )}
-                            <Text style={[styles.offlineBadgeText, { color: colors.accent }]}>
-                                {offlinePlaying ? 'Pause' : 'Offline'}
-                            </Text>
-                        </TouchableOpacity>
-                    )}
-
                     <TouchableOpacity
-                        onPress={() => setHifzVisible(true)}
+                        onPress={() => {
+                            if (!isPremium) { openPaywall(); return; }
+                            setHifzVisible(true);
+                        }}
                         style={styles.hifzButton}
                     >
                         <Brain color={colors.accent} size={20} />
@@ -694,13 +991,23 @@ export function SurahReader({ surahNumber, edition = 'en.sahih', onEditionChange
                 keyExtractor={(item) => item.number.toString()}
                 onViewableItemsChanged={onViewableItemsChanged}
                 viewabilityConfig={viewabilityConfig}
-                initialNumToRender={10}
-                maxToRenderPerBatch={10}
-                windowSize={5}
+                initialNumToRender={8}
+                maxToRenderPerBatch={6}
+                windowSize={4}
+                // Frees memory + GPU cost for off-screen rows on long surahs
+                // (Baqarah = 286 ayahs). Critical for Android scroll perf.
+                removeClippedSubviews={Platform.OS === 'android'}
+                updateCellsBatchingPeriod={50}
                 onScrollToIndexFailed={(info) => {
+                    // FlatList can't measure offscreen variable-height items
+                    // synchronously. Step 1: approximate the offset using the
+                    // measured average — gets us close. Step 2: after layout
+                    // settles, run a precise scrollToIndex.
+                    const offset = info.averageItemLength * info.index;
+                    flatListRef.current?.scrollToOffset({ offset, animated: false });
                     setTimeout(() => {
-                        flatListRef.current?.scrollToIndex({ index: info.index, animated: false });
-                    }, 500);
+                        flatListRef.current?.scrollToIndex({ index: info.index, animated: false, viewPosition: 0 });
+                    }, 200);
                 }}
                 ListHeaderComponent={() => {
                     if (surah.number === 9) return null;
@@ -726,87 +1033,16 @@ export function SurahReader({ surahNumber, edition = 'en.sahih', onEditionChange
                         </View>
                     );
                 }}
-                contentContainerStyle={styles.scrollContent}
-                renderItem={({ item: ayah, index }) => {
-                    const isBookmarked = bookmarkedAyah === ayah.numberInSurah;
-
-                    return (
-                        <Pressable
-                            style={[
-                                styles.ayahCard,
-                                isBookmarked && styles.bookmarkedAyahCard,
-                                currentAyahIndex === index && styles.activeAyahCard
-                            ]}
-                            onPress={() => saveBookmark(ayah.numberInSurah)}
-                        >
-                            <View style={styles.ayahInfo}>
-                                <View style={styles.numberCircle}>
-                                    <Text style={styles.numberText}>{ayah.numberInSurah}</Text>
-                                </View>
-                                <View style={styles.ayahActions}>
-                                    <TouchableOpacity
-                                        onPress={() => currentAyahIndex === index ? handlePlayPause() : playAyah(index)}
-                                        style={styles.ayahPlayButton}
-                                    >
-                                        {currentAyahIndex === index && isPlaying ? (
-                                            <Pause size={16} color="#22d3ee" fill="#22d3ee" />
-                                        ) : (
-                                            <Play size={16} color="#94a3b8" />
-                                        )}
-                                    </TouchableOpacity>
-                                    {isBookmarked && (
-                                        <Bookmark color="#22d3ee" size={16} fill="#22d3ee" />
-                                    )}
-                                </View>
-                            </View>
-                            {currentAyahIndex === index && isPlaying ? (() => {
-                                const words = ayah.text.split(' ');
-                                const isArabic = edition.startsWith('ar.') || edition.startsWith('quran-');
-                                const segments = ayahTimingData.find(a => a.ayahNumber === ayah.numberInSurah)?.segments ?? [];
-                                const activeWord = isArabic && segments.length > 0
-                                    ? getWordAtTime(segments, playbackPosition)
-                                    : isArabic
-                                        ? getActiveWordByWeight(words, playbackPosition, playbackDuration)
-                                        : Math.floor(Math.min(playbackPosition / Math.max(playbackDuration, 1), 1) * words.length);
-                                const wordList = ayahWordData.find(a => a.ayahNumber === ayah.numberInSurah)?.words ?? [];
-                                const activeMeaning = isArabic && activeWord >= 0 && activeWord < wordList.length
-                                    ? wordList[activeWord]?.meaning ?? ''
-                                    : '';
-                                return (
-                                    <View>
-                                        <Text style={[styles.ayahText, isArabic && { textAlign: 'right' }]}>
-                                            {words.map((word: string, wi: number) => (
-                                                <Text
-                                                    key={wi}
-                                                    style={
-                                                        wi === activeWord
-                                                            ? styles.wordActive
-                                                            : styles.wordUpcoming
-                                                    }
-                                                >
-                                                    {word}{wi < words.length - 1 ? ' ' : ''}
-                                                </Text>
-                                            ))}
-                                        </Text>
-                                        {activeMeaning ? (
-                                            <View style={styles.wordMeaningPill}>
-                                                <Text style={[styles.wordMeaningText, { color: colors.accent }]}>{activeMeaning}</Text>
-                                            </View>
-                                        ) : null}
-                                    </View>
-                                );
-                            })() : (
-                                <Text style={[
-                                    styles.ayahText,
-                                    (edition.startsWith('ar.') || edition.startsWith('quran-')) && { textAlign: 'right' },
-                                    currentAyahIndex === index && { color: '#22d3ee' }
-                                ]}>
-                                    {ayah.text}
-                                </Text>
-                            )}
-                        </Pressable>
-                    );
-                }}
+                contentContainerStyle={[styles.scrollContent, showAudioBar && { paddingBottom: 300 }]}
+                // NOTE: deliberately exclude `activeWordIndex` here — it changes
+                // per-word during audio playback (~3-8x per second) and was
+                // causing the whole FlatList to invalidate on every word
+                // highlight tick. On long surahs (Baqarah, 286 ayahs) the
+                // constant re-render starved the touch handler and broke
+                // scrolling on Android. The active row still gets the prop
+                // directly via renderItem so word highlighting still works.
+                extraData={`${currentAyahIndex}-${isPlaying}-${audioLoading}-${bookmarkedAyah}`}
+                renderItem={renderAyahItem}
             />
 
             {/* Floating Audio Player — slides up on play, hidden on load */}
@@ -1220,10 +1456,17 @@ const styles = StyleSheet.create({
     audioFooter: {
         flexDirection: 'row',
         alignItems: 'center',
-        justifyContent: 'space-between',
+        justifyContent: 'center',
         width: '100%',
-        paddingHorizontal: 4,
+        marginTop: 6,
+    },
+    audioFooterToggles: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'center',
+        gap: 8,
         marginTop: 8,
+        width: '100%',
     },
     audioInfo: {
         flexDirection: 'row',
@@ -1240,6 +1483,7 @@ const styles = StyleSheet.create({
     sleepTimerBtn: {
         flexDirection: 'row',
         alignItems: 'center',
+        justifyContent: 'center',
         gap: 4,
         paddingHorizontal: 10,
         paddingVertical: 5,
@@ -1247,10 +1491,12 @@ const styles = StyleSheet.create({
         borderWidth: 1,
         borderColor: 'rgba(255,255,255,0.15)',
         backgroundColor: 'rgba(255,255,255,0.06)',
+        minWidth: 42,
     },
     sleepTimerText: {
         color: '#94a3b8',
         fontSize: 11,
         fontWeight: '600',
+        textAlign: 'center',
     },
 });
