@@ -19,6 +19,9 @@ import { FridayKahfCard } from './FridayKahfCard';
 import { EidCard } from './EidCard';
 import { LiveActivity } from '../utils/liveActivity';
 import { SettingsScreen } from './SettingsScreen';
+import { GlobalTahajjudMap } from './GlobalTahajjudMap';
+import { logTahajjudToMap, subscribeDailyTotal } from '../utils/tahajjudMap';
+import { Globe } from 'lucide-react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { BlurView } from 'expo-blur';
 import Animated, {
@@ -61,6 +64,12 @@ export function HomeTab() {
         });
         return () => { scrollSub.remove(); paywallSub.remove(); };
     }, [openPaywall]);
+
+    // Subscribe to global Tahajjud map daily total
+    useEffect(() => {
+        const unsub = subscribeDailyTotal(setMapDailyTotal);
+        return () => unsub();
+    }, []);
     const [nightCalc, setNightCalc] = useState<NightCalculation | null>(null);
     const [prayerTimes, setPrayerTimes] = useState<PrayerTimes | null>(null);
     const [currentTime, setCurrentTime] = useState(new Date());
@@ -71,6 +80,8 @@ export function HomeTab() {
     // middle of a normal session if the time naturally crosses into the
     // last third — only on a fresh app open during that window.
     const [openedDuringLastThird, setOpenedDuringLastThird] = useState(false);
+    const [showMap, setShowMap] = useState(false);
+    const [mapDailyTotal, setMapDailyTotal] = useState(0);
     useEffect(() => {
         if (nightCalc && isInTahajjudWindow(nightCalc, new Date())) {
             setOpenedDuringLastThird(true);
@@ -110,6 +121,9 @@ export function HomeTab() {
             // Notify accountability partner (same as Tracker does)
             const { AccountabilityPartner } = await import('../utils/accountabilityPartner');
             AccountabilityPartner.logTahajjudForPartner().catch(() => {});
+
+            // Add anonymous dot to global map
+            logTahajjudToMap().catch(() => {});
 
             // Tally toward the 40-night challenge (idempotent for today)
             const { TahajjudChallenge } = await import('../utils/tahajjudChallenge');
@@ -483,6 +497,37 @@ export function HomeTab() {
                         <AccountabilityPartnerCard />
                     </Animated.View>
 
+                    {/* Hidden until 50+ daily logs — map needs critical mass to look alive */}
+                    {mapDailyTotal >= 50 && <Animated.View entering={fadeIn(370)}>
+                        <TouchableOpacity
+                            style={[styles.mapCard, { borderColor: colors.accent + '33' }]}
+                            onPress={() => setShowMap(true)}
+                            activeOpacity={0.8}
+                        >
+                            <BlurView intensity={Math.round(20 * blurIntensity)} tint="dark" style={StyleSheet.absoluteFill} />
+                            <LinearGradient
+                                colors={[colors.accent + '12', 'transparent']}
+                                style={StyleSheet.absoluteFill}
+                                start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}
+                            />
+                            <View style={[styles.mapGlobe, { backgroundColor: colors.accent + '22' }]}>
+                                <Globe size={22} color={colors.accent} />
+                            </View>
+                            <View style={{ flex: 1 }}>
+                                <Text style={[styles.mapTitle, { color: colors.primaryText }]}>
+                                    {mapDailyTotal.toLocaleString()} Muslims praying tonight
+                                </Text>
+                                <Text style={[styles.mapSub, { color: colors.secondaryText }]}>
+                                    See the ummah standing together worldwide
+                                </Text>
+                            </View>
+                            <View style={[styles.mapLive, { backgroundColor: '#22c55e18', borderColor: '#22c55e44' }]}>
+                                <View style={[styles.mapLiveDot, { backgroundColor: '#22c55e' }]} />
+                                <Text style={[styles.mapLiveText, { color: '#22c55e' }]}>LIVE</Text>
+                            </View>
+                        </TouchableOpacity>
+                    </Animated.View>}
+
                     {/* Tasbeeh — full width */}
                     <Animated.View
                         entering={fadeIn(400)}
@@ -548,6 +593,12 @@ export function HomeTab() {
 
                 </View>
             </ScrollView>
+
+            {/* Global Tahajjud Map Modal */}
+            <GlobalTahajjudMap
+                visible={showMap}
+                onClose={() => setShowMap(false)}
+            />
 
             <Modal
                 visible={isSettingsVisible}
@@ -801,5 +852,23 @@ const styles = StyleSheet.create({
     },
     fullWidthCard: {
         marginBottom: 16,
-    }
+    },
+    mapCard: {
+        flexDirection: 'row', alignItems: 'center', gap: 14,
+        borderRadius: 18, overflow: 'hidden', borderWidth: 1,
+        padding: 16, marginBottom: 16,
+    },
+    mapGlobe: {
+        width: 44, height: 44, borderRadius: 14,
+        alignItems: 'center', justifyContent: 'center',
+    },
+    mapTitle: { fontSize: 14, fontWeight: '800', marginBottom: 3 },
+    mapSub: { fontSize: 12, fontWeight: '500' },
+    mapLive: {
+        flexDirection: 'row', alignItems: 'center', gap: 5,
+        paddingHorizontal: 9, paddingVertical: 5,
+        borderRadius: 10, borderWidth: 1,
+    },
+    mapLiveDot: { width: 6, height: 6, borderRadius: 3 },
+    mapLiveText: { fontSize: 10, fontWeight: '800', letterSpacing: 0.5 },
 });

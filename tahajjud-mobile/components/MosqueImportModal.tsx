@@ -96,7 +96,7 @@ export function MosqueImportModal({ visible, onClose }: Props) {
                     'This photo is quite large and may take longer to process. For best results, take a new photo closer to the timetable rather than using a high-resolution library photo.',
                     [
                         { text: 'Cancel', style: 'cancel' },
-                        { text: 'Continue anyway', onPress: () => processImage(base64, result.assets![0].mimeType) },
+                        { text: 'Continue anyway', onPress: async () => { try { await processImage(base64, result.assets![0].mimeType); } catch { setErrorMsg('Something went wrong. Please try again.'); setStep('error'); } } },
                     ]
                 );
                 return;
@@ -286,10 +286,11 @@ export function MosqueImportModal({ visible, onClose }: Props) {
                             {/* Warn if days are missing */}
                             {(() => {
                                 const [year, month] = preview.month.split('-').map(Number);
+                                if (isNaN(year) || isNaN(month)) return null;
                                 const daysInMonth = new Date(year, month, 0).getDate();
                                 const extracted = Object.keys(preview.times).length;
                                 const missing = daysInMonth - extracted;
-                                if (missing <= 0) return null;
+                                if (missing <= 0 || isNaN(missing)) return null;
                                 return (
                                     <View style={styles.warningBox}>
                                         <AlertCircle size={14} color="#f59e0b" />
@@ -344,18 +345,19 @@ export function MosqueImportModal({ visible, onClose }: Props) {
                     {step === 'success' && (
                         <View style={styles.centred}>
                             <View style={[styles.successCircle, { borderColor: '#22c55e55', backgroundColor: '#22c55e12' }]}>
-                                <Check size={40} color="#22c55e" />
+                                <Check size={44} color="#22c55e" />
                             </View>
                             <Text style={styles.successTitle}>Timetable saved 🕌</Text>
                             <Text style={styles.processingSub}>
-                                The app will now use your mosque's times instead of calculated ones.
+                                The app will now use your mosque's exact times instead of calculated ones.
                             </Text>
                             <TouchableOpacity
-                                style={[styles.importBtn, { backgroundColor: colors.accent, marginTop: 32 }]}
+                                style={[styles.fullBtn, { backgroundColor: colors.accent, marginTop: 16 }]}
                                 onPress={onClose}
                                 activeOpacity={0.85}
                             >
-                                <Text style={styles.importBtnText}>Done</Text>
+                                <Check size={18} color="#0a1228" strokeWidth={3} />
+                                <Text style={styles.fullBtnText}>Done</Text>
                             </TouchableOpacity>
                         </View>
                     )}
@@ -363,15 +365,17 @@ export function MosqueImportModal({ visible, onClose }: Props) {
                     {/* ── ERROR ── */}
                     {step === 'error' && (
                         <View style={styles.centred}>
-                            <AlertCircle size={48} color="#ef4444" />
+                            <View style={[styles.successCircle, { borderColor: '#ef444455', backgroundColor: '#ef444412' }]}>
+                                <AlertCircle size={44} color="#ef4444" />
+                            </View>
                             <Text style={[styles.processingTitle, { color: '#ef4444' }]}>Couldn't read timetable</Text>
                             <Text style={styles.processingSub}>{errorMsg}</Text>
                             <TouchableOpacity
-                                style={[styles.importBtn, { backgroundColor: colors.accent, marginTop: 24 }]}
+                                style={[styles.fullBtn, { backgroundColor: colors.accent, marginTop: 16 }]}
                                 onPress={() => setStep('idle')}
                                 activeOpacity={0.85}
                             >
-                                <Text style={styles.importBtnText}>Try again</Text>
+                                <Text style={styles.fullBtnText}>Try again</Text>
                             </TouchableOpacity>
                         </View>
                     )}
@@ -417,6 +421,14 @@ const styles = StyleSheet.create({
         flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10,
         borderRadius: 14, paddingVertical: 15, marginBottom: 12,
     },
+    fullBtn: {
+        flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10,
+        borderRadius: 18, paddingVertical: 17,
+        width: '100%',
+        shadowOpacity: 0.3, shadowRadius: 14, shadowOffset: { width: 0, height: 6 },
+        elevation: 6,
+    },
+    fullBtnText: { color: '#0a1228', fontSize: 17, fontWeight: '800', letterSpacing: -0.2 },
     importBtnOutline: {
         flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10,
         borderRadius: 14, paddingVertical: 15, marginBottom: 12,
@@ -425,7 +437,7 @@ const styles = StyleSheet.create({
     importBtnText: { color: '#fff', fontSize: 16, fontWeight: '700' },
     tip: { color: '#475569', fontSize: 13, textAlign: 'center', lineHeight: 20, marginTop: 8 },
     // Processing / success / error
-    centred: { alignItems: 'center', paddingVertical: 40, gap: 14 },
+    centred: { alignItems: 'center', paddingVertical: 48, gap: 16, width: '100%' },
     processingTitle: { color: '#f1f5f9', fontSize: 18, fontWeight: '800', textAlign: 'center' },
     processingSub: { color: '#64748b', fontSize: 14, textAlign: 'center', lineHeight: 21 },
     successCircle: {

@@ -103,6 +103,7 @@ export function TasbeehCard() {
     const celebOpacity   = useSharedValue(0);
     const [celebText, setCelebText] = useState('');
     const goalCelebratedRef = useRef<string>(''); // tracks which day+goal we already celebrated
+    const hasLoadedRef      = useRef(false);       // prevents celebration firing on initial mount
 
     const allDhikrs: Dhikr[] = [...BUILT_IN, ...customDhikrs];
     const dhikr = allDhikrs[selectedIndex] ?? BUILT_IN[0];
@@ -121,6 +122,7 @@ export function TasbeehCard() {
             if (rawCustom)   setCustomDhikrs(JSON.parse(rawCustom));
             if (rawGoal)     setDailyGoal(parseInt(rawGoal, 10) || 0);
         } catch (_) {}
+        hasLoadedRef.current = true; // mark initial load complete
     };
 
     // ── Derived: today's sessions ──────────────────────────────────────────────
@@ -130,6 +132,7 @@ export function TasbeehCard() {
 
     // ── Goal completion celebration ───────────────────────────────────────────
     useEffect(() => {
+        if (!hasLoadedRef.current) return; // don't fire on initial load
         if (dailyGoal <= 0 || dailyTotal < dailyGoal) return;
         const key = `${todayKey()}_${dailyGoal}`;
         if (goalCelebratedRef.current === key) return; // already celebrated today
@@ -318,7 +321,11 @@ export function TasbeehCard() {
                     </View>
                     <View style={{ flexDirection: 'row', gap: 8 }}>
                         <TouchableOpacity
-                            onPress={() => isPremium ? setShowStats(s => !s) : openPaywall()}
+                            onPress={() => {
+                                if (Platform.OS === 'ios') Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                                else Vibration.vibrate(20);
+                                isPremium ? setShowStats(s => !s) : openPaywall();
+                            }}
                             style={[styles.goalBtn, { borderColor: showStats ? colors.accent + '55' : 'rgba(255,255,255,0.10)', backgroundColor: showStats ? colors.accent + '15' : 'rgba(255,255,255,0.04)' }]}
                         >
                             {showStats

@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useRef } from "react";
 import { View, Text, TouchableOpacity, StyleSheet, Alert, DeviceEventEmitter, Modal } from "react-native";
 import { WidgetPromo, shouldShowWidgetPromo } from './WidgetPromo';
 import { TahajjudJournalModal } from './TahajjudJournalModal';
@@ -20,6 +20,7 @@ import { TahajjudChallenge } from '../utils/tahajjudChallenge';
 import { localDateStr } from '../utils/localDate';
 import { track } from '../utils/analytics';
 import { maybeRequestWeeklyReview } from '../utils/weeklyReview';
+import { logTahajjudToMap } from '../utils/tahajjudMap';
 
 const TRACKER_KEY    = 'prayer-tracker-v2';
 const BEST_STREAK_KEY = 'tahajjud-best-streak';
@@ -137,6 +138,7 @@ export function Tracker() {
     const [showLetter, setShowLetter] = useState(false);
     const [milestoneToShow, setMilestoneToShow] = useState<number | null>(null);
     const [freezeAvailable, setFreezeAvailable] = useState(true);
+    const loggingRef = useRef<Set<string>>(new Set()); // prevents race on rapid double-tap
     const [achievements, setAchievements] = useState<Achievement[]>([]);
     const [badgeDetail, setBadgeDetail] = useState<Achievement | null>(null);
     // Cached per-prayer start times for today. Used to grey-out prayers that
@@ -276,6 +278,8 @@ export function Tracker() {
 
     const logPrayer = async (key: PrayerKey) => {
         if (isLoggedToday(history[key])) return;
+        if (loggingRef.current.has(key)) return; // already in-flight
+        loggingRef.current.add(key);
 
         // Block logging a prayer whose time hasn't started yet (e.g. tapping
         // Isha at 10am). If we don't have today's prayer times yet, allow it
@@ -285,6 +289,7 @@ export function Tracker() {
             const fmt = startTimes[key].toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
             haptic.medium();
             Alert.alert(`${label} hasn't started yet`, `${label} time begins at ${fmt} today. Come back then.`);
+            loggingRef.current.delete(key);
             return;
         }
 
@@ -294,7 +299,13 @@ export function Tracker() {
             ...history,
             [key]: [...history[key], new Date().toISOString()],
         };
-        await save(updated);
+        try {
+            await save(updated);
+        } finally {
+            // Release the in-flight lock — state now reflects the log so the
+            // isLoggedToday guard catches any further taps
+            loggingRef.current.delete(key);
+        }
         track('prayer_logged', { prayer: key });
 
         // Weekly review prompt — fires at most once a week, only after 3+ total prayers
@@ -329,6 +340,8 @@ export function Tracker() {
             }).catch(() => {});
             // Log for accountability partner
             AccountabilityPartner.logTahajjudForPartner().catch(() => {});
+            // Add anonymous dot to global map
+            logTahajjudToMap().catch(() => {});
             // Refresh the Friday digest so it reflects this week's count
             refreshWeeklyDigest().catch(() => {});
             // Tell HistoryCalendar + PrayerAnalytics to reload
