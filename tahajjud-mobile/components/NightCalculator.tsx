@@ -5,7 +5,7 @@ import * as Location from "expo-location";
 import { BlurView } from 'expo-blur';
 import { getPrayerTimes } from "../lib/api";
 import { calculateLastThird, NightCalculation, PrayerTimes } from "../lib/prayer-times";
-import { Moon, Bell, BellOff, Plus, X } from "lucide-react-native";
+import { Moon, Bell, BellOff, Plus, X, Lock } from "lucide-react-native";
 import { LinearGradient } from 'expo-linear-gradient';
 import { PrayerCard } from "./PrayerCard";
 import { format, addDays } from "date-fns";
@@ -694,7 +694,9 @@ export function NightCalculator({ onNightCalcReady, onPrayerTimesReady, refreshK
                                 style={[styles.addChipBtn, { borderColor: isPremium ? colors.accent + '44' : 'rgba(255,255,255,0.08)' }]}
                                 onPress={() => isPremium ? saveBuffers([...buffers, 30]) : openPaywall()}
                             >
-                                <Plus size={11} color={isPremium ? colors.accent : '#475569'} />
+                                {isPremium
+                                    ? <Plus size={11} color={colors.accent} />
+                                    : <Lock size={10} color="#f59e0b" />}
                             </TouchableOpacity>
                         )}
                     </View>

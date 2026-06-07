@@ -37,7 +37,34 @@ service cloud.firestore {
     // only read — never write directly to this collection.
     match /community/{docId} {
       allow read:   if request.auth != null;
-      allow create, update, delete: if isAdmin();
+      allow create, delete: if isAdmin();
+      // Admin can edit anything; regular signed-in users may ONLY bump the
+      // reactions counter (for testimony likes). The milestone Cloud Function
+      // runs with service-account credentials and bypasses these rules.
+      allow update: if isAdmin()
+        || (request.auth != null
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['reactions']));
+    }
+
+    // ─── Testimony like markers (idempotency) ──────────────────────
+    // One marker per (user, testimony) so likes can't be double-counted.
+    // Delete is allowed (unlike) but only for the user's own marker.
+    match /testimony-reactions/{reactionId} {
+      allow read: if request.auth != null;
+      allow create: if request.auth != null
+        && request.resource.data.userId == request.auth.uid;
+      allow delete: if request.auth != null
+        && resource.data.userId == request.auth.uid;
+      allow update: if false;
+    }
+
+    // ─── Global Tahajjud Map (anonymous city-level dots) ───────────
+    // Each doc is { lat, lng, ts } — no userId, fully anonymous. Any
+    // signed-in user can read the map and add their own dot. No edits.
+    match /tahajjud_map/{docId} {
+      allow read:   if request.auth != null;
+      allow create: if request.auth != null;
+      allow update, delete: if false;
     }
 
     // ─── Testimony submissions queue (pending review) ──────────────

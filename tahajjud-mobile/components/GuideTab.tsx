@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
+import React, { useState, useEffect } from 'react';
+import { View, Text, TouchableOpacity, StyleSheet, DeviceEventEmitter } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { WhyTahajjud } from './WhyTahajjud';
 import { TestimoniesTab } from './TestimoniesTab';
@@ -10,6 +10,19 @@ import { tabletContentStyle } from '../utils/layout';
 export function GuideTab() {
     const { colors } = useTheme();
     const [activeSection, setActiveSection] = useState<'info' | 'testimonies' | 'guide'>('info');
+
+    // Deep-link from feature discovery to the Stories (testimonies) section
+    useEffect(() => {
+        const sub = DeviceEventEmitter.addListener('guide:openStories', () => setActiveSection('testimonies'));
+        return () => sub.remove();
+    }, []);
+
+    // Mark Stories discovered once the user views that section
+    useEffect(() => {
+        if (activeSection === 'testimonies') {
+            import('../utils/featureDiscovery').then(m => m.markFeatureUsed('testimonies')).catch(() => {});
+        }
+    }, [activeSection]);
 
     return (
         <SafeAreaView style={styles.container} edges={['top', 'left', 'right']}>

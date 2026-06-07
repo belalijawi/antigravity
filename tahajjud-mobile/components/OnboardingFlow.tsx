@@ -12,20 +12,18 @@
  * Persists `onboarding_complete_v1` so it never reappears for the same user.
  * Skippable on every step.
  */
-import React, { useEffect, useState } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Platform, ScrollView, ActivityIndicator } from 'react-native';
+import React, { useState } from 'react';
+import { View, Text, StyleSheet, TouchableOpacity, Platform } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
-import { Moon, MapPin, Bell, Users, BookHeart, ChevronRight, Check, Star, CalendarDays, Brain, BarChart2, Compass } from 'lucide-react-native';
+import { Moon, MapPin, Bell, BookHeart, ChevronRight, Check } from 'lucide-react-native';
 import * as Location from 'expo-location';
 import * as Notifications from 'expo-notifications';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import Animated, { FadeIn, FadeOut, SlideInRight, SlideOutLeft } from 'react-native-reanimated';
+import Animated, { SlideInRight, SlideOutLeft } from 'react-native-reanimated';
 import { useTheme } from '../context/ThemeContext';
 import { haptic } from '../utils/haptic';
-import { usePurchases } from '../context/PurchasesContext';
-import RevenueCatService from '../services/revenueCat';
-import { PurchasesPackage } from 'react-native-purchases';
+import Paywall from './Paywall';
 
 const STORAGE_KEY = 'onboarding_complete_v1';
 
@@ -68,28 +66,15 @@ const SLIDES: Slide[] = [
         action: 'notifications',
     },
     {
-        icon: Star,
+        // Premium step renders the real Paywall component (see early return);
+        // these fields are placeholders since the slide UI isn't used for it.
+        // This is the LAST step — onboarding ends when the paywall is
+        // accepted or skipped, then the user lands in the app.
+        icon: Moon,
         title: 'Unlock the full experience',
         body: '',
-        cta: 'Start 7-day free trial',
-        skip: 'Continue without premium',
         action: 'premium',
     },
-    {
-        icon: Users,
-        title: 'Optional: Pair with a friend',
-        body: 'Add an Accountability Partner later in Settings. You\'ll each see when the other prays Tahajjud — quietly, no peer pressure.',
-        cta: 'Take me in',
-    },
-];
-
-const PREMIUM_FEATURES = [
-    { icon: Moon,         label: 'Night Journal',         desc: 'Reflect after every Tahajjud' },
-    { icon: CalendarDays, label: 'Full Prayer History',   desc: 'Month & year views of every prayer' },
-    { icon: Users,        label: 'Accountability Circle', desc: 'Wake up partners & track together' },
-    { icon: Compass,      label: 'Mosque Timetable',      desc: 'Import your mosque\'s exact times' },
-    { icon: BarChart2,    label: 'Prayer Analytics',      desc: 'See your strongest & weakest prayers' },
-    { icon: Brain,        label: 'Hifz Mode',             desc: 'Structured Quran memorisation' },
 ];
 
 interface Props {
@@ -97,39 +82,12 @@ interface Props {
 }
 
 export function OnboardingFlow({ onComplete }: Props) {
-    const { colors, blurIntensity } = useTheme();
-    const { checkPremiumStatus } = usePurchases();
+    const { colors } = useTheme();
     const [step, setStep] = useState(0);
-    const [packages, setPackages] = useState<PurchasesPackage[]>([]);
-    const [loadingPkgs, setLoadingPkgs] = useState(false);
-    const [purchasing, setPurchasing] = useState(false);
 
     const slide = SLIDES[step];
     const Icon = slide.icon;
     const isLast = step === SLIDES.length - 1;
-
-    // Pre-load packages when user reaches premium step
-    useEffect(() => {
-        if (slide.action === 'premium' && packages.length === 0) {
-            setLoadingPkgs(true);
-            RevenueCatService.getOfferings().then((o: any) => {
-                if (o) setPackages(o.availablePackages);
-            }).catch(() => {}).finally(() => setLoadingPkgs(false));
-        }
-    }, [step]);
-
-    const handlePurchase = async (pkg: PurchasesPackage) => {
-        setPurchasing(true);
-        try {
-            const info = await RevenueCatService.purchasePackage(pkg);
-            if (info) {
-                await checkPremiumStatus();
-                haptic.success();
-                next(); // move onboarding forward after successful purchase
-            }
-        } catch { /* user cancelled or error — stay on step */ }
-        finally { setPurchasing(false); }
-    };
 
     const finish = async () => {
         try { await AsyncStorage.setItem(STORAGE_KEY, 'true'); } catch { /* ignore */ }
@@ -157,13 +115,15 @@ export function OnboardingFlow({ onComplete }: Props) {
                         .catch(() => { /* ignore */ });
                 }
             } catch { /* ignore */ }
-        } else if (slide.action === 'premium') {
-            // "Continue without premium" — just advance
-            next();
-            return;
         }
         next();
     };
+
+    // Premium step uses the real Paywall (same as Settings), fitted into the
+    // onboarding flow — its X / successful purchase both advance onboarding.
+    if (slide.action === 'premium') {
+        return <Paywall onClose={next} />;
+    }
 
     return (
         <SafeAreaView style={styles.root} edges={['top', 'bottom']}>
@@ -193,101 +153,29 @@ export function OnboardingFlow({ onComplete }: Props) {
                 key={step}
                 entering={SlideInRight.duration(300)}
                 exiting={SlideOutLeft.duration(200)}
-                style={slide.action === 'premium' ? styles.contentPremium : styles.content}
+                style={styles.content}
             >
-                {slide.action !== 'premium' && (
-                    <View style={[styles.iconWrap, { backgroundColor: colors.accent + '15', borderColor: colors.accent + '33' }]}>
-                        <Icon size={40} color={colors.accent} strokeWidth={1.5} />
-                    </View>
-                )}
+                <View style={[styles.iconWrap, { backgroundColor: colors.accent + '15', borderColor: colors.accent + '33' }]}>
+                    <Icon size={40} color={colors.accent} strokeWidth={1.5} />
+                </View>
 
                 <Text style={[styles.title, { color: colors.primaryText }]}>{slide.title}</Text>
-
-                {slide.action === 'premium' ? (
-                    <ScrollView showsVerticalScrollIndicator={false} style={{ width: '100%', flex: 1 }} contentContainerStyle={{ gap: 10, paddingBottom: 16 }}>
-                        {/* Compact feature rows */}
-                        {PREMIUM_FEATURES.map((f, i) => {
-                            const FIcon = f.icon;
-                            return (
-                                <View key={i} style={[styles.featureRow, { borderColor: 'rgba(255,255,255,0.07)' }]}>
-                                    <View style={[styles.featureIcon, { backgroundColor: colors.accent + '15' }]}>
-                                        <FIcon size={15} color={colors.accent} strokeWidth={2} />
-                                    </View>
-                                    <Text style={[styles.featureLabel, { color: colors.primaryText, flex: 1 }]}>{f.label}</Text>
-                                    <Check size={13} color={colors.accent} strokeWidth={3} />
-                                </View>
-                            );
-                        })}
-
-                        {/* Pricing cards */}
-                        <View style={{ height: 12 }} />
-                        {loadingPkgs ? (
-                            <ActivityIndicator color={colors.accent} />
-                        ) : (
-                            packages.map(pkg => {
-                                const isAnnual   = pkg.packageType === 'ANNUAL'   || pkg.identifier === '$rc_annual';
-                                const isLifetime = pkg.packageType === 'LIFETIME' || pkg.identifier === '$rc_lifetime';
-                                const intro: any = (pkg.product as any).introPrice;
-                                const isFreeTrial = !isLifetime && !!intro && intro.price === 0;
-                                const monthlyEq = isAnnual && pkg.product.currencyCode
-                                    ? (() => { try { return new Intl.NumberFormat('en', { style: 'currency', currency: pkg.product.currencyCode, minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(pkg.product.price / 12); } catch { return null; } })()
-                                    : null;
-
-                                const badge = isFreeTrial ? '🎁 FREE TRIAL'
-                                    : isLifetime ? '♾️ FOREVER'
-                                    : isAnnual ? '⭐ BEST VALUE' : null;
-
-                                return (
-                                    <View key={pkg.identifier}>
-                                        {badge && (
-                                            <View style={[styles.pkgBadge, { backgroundColor: colors.accent }]}>
-                                                <Text style={styles.pkgBadgeText}>{badge}</Text>
-                                            </View>
-                                        )}
-                                        <TouchableOpacity
-                                            style={[styles.pkgCard, { borderColor: (isAnnual || isFreeTrial || isLifetime) ? colors.accent : 'rgba(255,255,255,0.12)' }]}
-                                            onPress={() => handlePurchase(pkg)}
-                                            disabled={purchasing}
-                                            activeOpacity={0.8}
-                                        >
-                                            <View style={{ flex: 1 }}>
-                                                <Text style={[styles.pkgTitle, { color: colors.primaryText }]}>{pkg.product.title.split(' (')[0]}</Text>
-                                                <Text style={[styles.pkgDesc, { color: colors.accent }]}>
-                                                    {isFreeTrial ? `${intro.periodNumberOfUnits} ${String(intro.periodUnit).toLowerCase()}s free, then ${pkg.product.priceString}${isAnnual ? '/yr' : '/mo'}`
-                                                        : isLifetime ? 'One-time · no renewal'
-                                                        : isAnnual && monthlyEq ? `${monthlyEq}/month`
-                                                        : pkg.product.description}
-                                                </Text>
-                                            </View>
-                                            <View style={[styles.pkgPrice, { backgroundColor: colors.accent }]}>
-                                                <Text style={styles.pkgPriceText}>{isFreeTrial ? 'Try free' : pkg.product.priceString}</Text>
-                                            </View>
-                                        </TouchableOpacity>
-                                    </View>
-                                );
-                            })
-                        )}
-                    </ScrollView>
-                ) : (
-                    <Text style={[styles.body, { color: colors.secondaryText }]}>{slide.body}</Text>
-                )}
+                <Text style={[styles.body, { color: colors.secondaryText }]}>{slide.body}</Text>
             </Animated.View>
 
             <View style={styles.footer}>
-                {slide.action !== 'premium' && (
-                    <TouchableOpacity
-                        onPress={slide.action ? handleAction : next}
-                        style={[styles.cta, { backgroundColor: colors.accent, shadowColor: colors.accent }]}
-                        activeOpacity={0.85}
-                    >
-                        <Text style={styles.ctaText}>{slide.cta ?? 'Continue'}</Text>
-                        {isLast ? (
-                            <Check size={18} color="#0a1228" strokeWidth={3} />
-                        ) : (
-                            <ChevronRight size={18} color="#0a1228" strokeWidth={3} />
-                        )}
-                    </TouchableOpacity>
-                )}
+                <TouchableOpacity
+                    onPress={slide.action ? handleAction : next}
+                    style={[styles.cta, { backgroundColor: colors.accent, shadowColor: colors.accent }]}
+                    activeOpacity={0.85}
+                >
+                    <Text style={styles.ctaText}>{slide.cta ?? 'Continue'}</Text>
+                    {isLast ? (
+                        <Check size={18} color="#0a1228" strokeWidth={3} />
+                    ) : (
+                        <ChevronRight size={18} color="#0a1228" strokeWidth={3} />
+                    )}
+                </TouchableOpacity>
 
                 {slide.skip ? (
                     <TouchableOpacity onPress={slide.action ? handleAction : next} style={styles.skip} hitSlop={{ top: 10, bottom: 10, left: 20, right: 20 }}>
@@ -366,8 +254,9 @@ const styles = StyleSheet.create({
         fontSize: 14,
         fontWeight: '500',
         textAlign: 'center',
-        marginBottom: 20,
-        marginTop: -8,
+        lineHeight: 20,
+        marginBottom: 18,
+        paddingTop: 4,
     },
     featureList: {
         width: '100%',

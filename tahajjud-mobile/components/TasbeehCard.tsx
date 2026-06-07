@@ -104,6 +104,7 @@ export function TasbeehCard() {
     const [celebText, setCelebText] = useState('');
     const goalCelebratedRef = useRef<string>(''); // tracks which day+goal we already celebrated
     const hasLoadedRef      = useRef(false);       // prevents celebration firing on initial mount
+    const prevGoalRef       = useRef<number>(0);   // detects goal changes vs count crossings
 
     const allDhikrs: Dhikr[] = [...BUILT_IN, ...customDhikrs];
     const dhikr = allDhikrs[selectedIndex] ?? BUILT_IN[0];
@@ -118,8 +119,10 @@ export function TasbeehCard() {
                 AsyncStorage.getItem(CUSTOM_KEY),
                 AsyncStorage.getItem(GOAL_KEY),
             ]);
-            if (rawSessions) setSessions(JSON.parse(rawSessions));
-            if (rawCustom)   setCustomDhikrs(JSON.parse(rawCustom));
+            // Guard: only accept arrays — corrupt/migrated storage could hold a
+            // non-array, which would crash .filter/.reduce at render time.
+            if (rawSessions) { const s = JSON.parse(rawSessions); if (Array.isArray(s)) setSessions(s); }
+            if (rawCustom)   { const c = JSON.parse(rawCustom);   if (Array.isArray(c)) setCustomDhikrs(c); }
             if (rawGoal)     setDailyGoal(parseInt(rawGoal, 10) || 0);
         } catch (_) {}
         hasLoadedRef.current = true; // mark initial load complete
@@ -133,6 +136,11 @@ export function TasbeehCard() {
     // ── Goal completion celebration ───────────────────────────────────────────
     useEffect(() => {
         if (!hasLoadedRef.current) return; // don't fire on initial load
+        // Only celebrate when the COUNT crossed the goal — not when the user
+        // lowered their goal below a total they'd already reached.
+        const goalChanged = prevGoalRef.current !== dailyGoal;
+        prevGoalRef.current = dailyGoal;
+        if (goalChanged) return;
         if (dailyGoal <= 0 || dailyTotal < dailyGoal) return;
         const key = `${todayKey()}_${dailyGoal}`;
         if (goalCelebratedRef.current === key) return; // already celebrated today
@@ -214,6 +222,10 @@ export function TasbeehCard() {
         const updated = [session, ...sessions].slice(0, 100);
         setSessions(updated);
         try { await AsyncStorage.setItem(SESSIONS_KEY, JSON.stringify(updated)); } catch (_) {}
+        // Analytics: report the number of presses so PostHog can SUM them into a
+        // global total — every press counts (full + partial rounds), one event
+        // per session rather than one per tap.
+        import('../utils/analytics').then(m => m.track('tasbeeh_count', { count: finalCount, dhikr: dhikr.id })).catch(() => {});
     };
 
     // ── Counter tap ───────────────────────────────────────────────────────────
@@ -233,6 +245,7 @@ export function TasbeehCard() {
             if (Platform.OS === 'ios') Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
             else Vibration.vibrate([0, 80, 50, 80]);
             saveSession(dhikr.target);
+            import('../utils/analytics').then(m => m.track('tasbeeh_round', { dhikr: dhikr.id, target: dhikr.target })).catch(() => {});
         } else {
             setCount(newCount);
         }
@@ -324,7 +337,12 @@ export function TasbeehCard() {
                             onPress={() => {
                                 if (Platform.OS === 'ios') Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
                                 else Vibration.vibrate(20);
-                                isPremium ? setShowStats(s => !s) : openPaywall();
+                                if (isPremium) {
+                                    setShowStats(s => !s);
+                                    import('../utils/featureDiscovery').then(m => m.markFeatureUsed('tasbeeh_stats')).catch(() => {});
+                                } else {
+                                    openPaywall();
+                                }
                             }}
                             style={[styles.goalBtn, { borderColor: showStats ? colors.accent + '55' : 'rgba(255,255,255,0.10)', backgroundColor: showStats ? colors.accent + '15' : 'rgba(255,255,255,0.04)' }]}
                         >

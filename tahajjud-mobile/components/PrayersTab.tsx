@@ -93,13 +93,30 @@ export function PrayersTab() {
     const { colors } = useTheme();
     const { isPremium, openPaywall } = usePurchases();
     const [activeTab, setActiveTab] = useState<PrayerSubTab>('tracker');
+    const [statsIsNew, setStatsIsNew] = useState(false);
     const scrollRef = useRef<ScrollView>(null);
+
+    // Show a "NEW" dot on Stats until the user has opened it — checked once on
+    // mount. Dismissal happens synchronously in the onPress handler below so the
+    // dot disappears the instant the user taps Stats (no async re-read race).
+    useEffect(() => {
+        import('../utils/featureDiscovery')
+            .then(m => m.hasUsedFeature('prayer_analytics'))
+            .then(used => setStatsIsNew(!used))
+            .catch(() => {});
+    }, []);
 
     useEffect(() => {
         const sub = DeviceEventEmitter.addListener('scrollToTop', (tab: string) => {
             if (tab === 'Prayers') scrollRef.current?.scrollTo({ y: 0, animated: true });
         });
-        return () => sub.remove();
+        // Deep-link from feature discovery to a specific sub-tab
+        const openSub = DeviceEventEmitter.addListener('prayers:openSubTab', (key: PrayerSubTab) => {
+            // 'stats' is premium-gated; the discovery card already routed free
+            // users to the paywall, so reaching here means they have access.
+            setActiveTab(key);
+        });
+        return () => { sub.remove(); openSub.remove(); };
     }, []);
 
     return (
@@ -122,6 +139,11 @@ export function PrayersTab() {
                                 onPress={() => {
                                     if (locked) { openPaywall(); return; }
                                     setActiveTab(tab.key);
+                                    if (tab.key === 'stats') {
+                                        setStatsIsNew(false); // clear the NEW dot instantly
+                                        import('../utils/featureDiscovery').then(m => m.markFeatureUsed('prayer_analytics')).catch(() => {});
+                                    }
+                                    if (tab.key === 'qibla') import('../utils/featureDiscovery').then(m => m.markFeatureUsed('qibla')).catch(() => {});
                                 }}
                                 style={[
                                     styles.tabPill,
@@ -137,6 +159,9 @@ export function PrayersTab() {
                                         {tab.label}
                                     </Text>
                                     {locked && <Lock size={9} color="#f59e0b" />}
+                                    {tab.key === 'stats' && statsIsNew && !active && (
+                                        <View style={styles.newDot} />
+                                    )}
                                 </View>
                             </TouchableOpacity>
                         );
@@ -208,6 +233,10 @@ const styles = StyleSheet.create({
         fontSize: 13,
         fontWeight: '800',
         letterSpacing: 0.2,
+    },
+    newDot: {
+        width: 6, height: 6, borderRadius: 3,
+        backgroundColor: '#22c55e',
     },
     scroll: {
         flexGrow: 1,

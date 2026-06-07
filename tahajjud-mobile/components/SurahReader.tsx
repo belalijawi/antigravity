@@ -4,7 +4,7 @@ import { View, Text, StyleSheet, ActivityIndicator, TouchableOpacity, Modal, Fla
 // `react-native` SafeAreaView is a no-op on Android — that's why the system
 // status bar was overlapping the SurahReader header.
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { ArrowLeft, Globe, X, Check, Bookmark, Play, Pause, SkipBack, SkipForward, Volume2, Timer, WifiOff, Brain, Repeat } from 'lucide-react-native';
+import { ArrowLeft, Globe, X, Check, Bookmark, Play, Pause, SkipBack, SkipForward, Volume2, Timer, WifiOff, Brain, Repeat, Lock } from 'lucide-react-native';
 import { BlurView } from 'expo-blur';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { QuranService, SurahDetail, Edition, Ayah } from '../services/QuranService';
@@ -698,6 +698,7 @@ export function SurahReader({ surahNumber: initialSurahNumber, edition = 'en.sah
         } catch { /* fall through to fresh-start path */ }
 
         // Nothing loaded yet — start playback from the current ayah.
+        import('../utils/analytics').then(m => m.track('quran_played', { surah: surah?.number })).catch(() => {});
         playAyahRef.current?.(currentAyahIndex !== null ? currentAyahIndex : 0);
     };
 
@@ -928,6 +929,8 @@ export function SurahReader({ surahNumber: initialSurahNumber, edition = 'en.sah
     };
 
     const handleEditionSelect = (item: typeof VERIFIED_EDITIONS[0]) => {
+        // Quran translations are FREE for everyone — we never paywall the
+        // meaning of the Quran. Premium is for tools (Hifz, offline, etc.).
         onEditionChange(item.identifier);
         setModalVisible(false);
     };
@@ -974,7 +977,10 @@ export function SurahReader({ surahNumber: initialSurahNumber, edition = 'en.sah
                         style={styles.hifzButton}
                     >
                         <Brain color={colors.accent} size={20} />
-                        <Text style={[styles.hifzLabel, { color: colors.accent }]}>Hifz</Text>
+                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 3, marginTop: 2 }}>
+                            <Text style={[styles.hifzLabel, { color: colors.accent, marginTop: 0 }]}>Hifz</Text>
+                            {!isPremium && <Lock size={9} color="#f59e0b" />}
+                        </View>
                     </TouchableOpacity>
 
                     <TouchableOpacity onPress={openLanguageModal} style={styles.langButton}>

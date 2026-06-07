@@ -3,7 +3,7 @@ import { View, Text, StyleSheet, Platform, Animated, ActivityIndicator, Linking 
 import * as Location from 'expo-location';
 import { LinearGradient } from 'expo-linear-gradient';
 import { BlurView } from 'expo-blur';
-import { AlertTriangle, Smartphone } from 'lucide-react-native';
+import { Smartphone } from 'lucide-react-native';
 import { calculateQibla, getCompassDirection } from '../utils/qiblaCalculator';
 import { useTheme } from '../context/ThemeContext';
 import { haptic } from '../utils/haptic';
@@ -291,14 +291,6 @@ export function QiblaCompass() {
                         <Text style={[styles.targetLabel, { color: colors.secondaryText }]}>FORWARD</Text>
                     </View>
 
-                    {/* Accuracy Warning Overlay */}
-                    {accuracy !== null && accuracy < 2 && (
-                        <View style={styles.accuracyWarning}>
-                            <AlertTriangle size={14} color="#fbbf24" strokeWidth={2.5} />
-                            <Text style={styles.accuracyText}>Low Accuracy: Wave in 8-motion</Text>
-                        </View>
-                    )}
-
                     {/* Flat Position Reminder */}
                     <View style={styles.flatReminder}>
                         <Smartphone size={10} color={colors.secondaryText} opacity={0.5} />
@@ -413,7 +405,7 @@ export function QiblaCompass() {
                     <View style={styles.statusBadge}>
                         <View style={[styles.statusDot, { backgroundColor: '#ef4444' }]} />
                         <Text style={[styles.statusText, { color: colors.secondaryText }]}>
-                            Low Accuracy - Calibrate
+                            Low accuracy — wave phone in a figure-8 to calibrate
                         </Text>
                     </View>
                 )}
@@ -518,26 +510,6 @@ const styles = StyleSheet.create({
         fontWeight: '900',
         marginTop: 18,
         letterSpacing: 1,
-    },
-    accuracyWarning: {
-        position: 'absolute',
-        top: 25,
-        flexDirection: 'row',
-        alignItems: 'center',
-        gap: 6,
-        backgroundColor: 'rgba(251, 191, 36, 0.1)',
-        paddingHorizontal: 10,
-        paddingVertical: 4,
-        borderRadius: 20,
-        borderWidth: 1,
-        borderColor: 'rgba(251, 191, 36, 0.2)',
-        zIndex: 30,
-    },
-    accuracyText: {
-        fontSize: 10,
-        fontWeight: '700',
-        color: '#fbbf24',
-        textTransform: 'uppercase',
     },
     flatReminder: {
         position: 'absolute',

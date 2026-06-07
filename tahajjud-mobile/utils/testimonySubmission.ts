@@ -1,5 +1,5 @@
 import {
-    collection, doc, getDoc, getDocs, addDoc, setDoc, deleteDoc,
+    collection, doc, getDoc, getDocs, addDoc, setDoc, deleteDoc, updateDoc, increment,
     query, where, orderBy, serverTimestamp,
 } from 'firebase/firestore';
 import { getFirebaseAuth, getFirebaseDb } from './firebase';
@@ -135,6 +135,7 @@ export const TestimonySubmission = {
                 location: submission.location,
                 tags: submission.tags,
                 reactions: 0,
+                authorId: submission.submitterId, // server-only — for like notifications, never displayed
                 createdAt: Date.now(),
             });
             // 2. Delete from queue
@@ -154,6 +155,78 @@ export const TestimonySubmission = {
             return true;
         } catch (e) {
             console.error('[Testimony] reject error', e);
+            return false;
+        }
+    },
+
+    /**
+     * Toggle a like (reaction) on a published testimony. Persists to Firestore
+     * and is idempotent per (user, testimony) via a marker doc. Returns the new
+     * liked state. Liking increments `reactions` which the Cloud Function watches
+     * to send milestone notifications to the author.
+     */
+    async toggleReaction(testimonyId: string): Promise<{ liked: boolean; count: number | null }> {
+        const user = getFirebaseAuth()?.currentUser;
+        if (!user) return { liked: false, count: null };
+        const db = getFirebaseDb();
+        const markerRef = doc(db, 'testimony-reactions', `${user.uid}_${testimonyId}`);
+        const docRef = doc(db, 'community', testimonyId);
+        try {
+            const existing = await getDoc(markerRef);
+            const liked = !existing.exists();
+            if (liked) {
+                await Promise.all([
+                    setDoc(markerRef, { userId: user.uid, testimonyId, createdAt: serverTimestamp() }),
+                    updateDoc(docRef, { reactions: increment(1) }),
+                ]);
+                this.maybeNotifyTestimonyMilestone(testimonyId).catch(() => {});
+            } else {
+                await Promise.all([
+                    deleteDoc(markerRef),
+                    updateDoc(docRef, { reactions: increment(-1) }),
+                ]);
+            }
+            // Read back the authoritative count so the UI never drifts from the server
+            let count: number | null = null;
+            try {
+                const fresh = await getDoc(docRef);
+                if (fresh.exists()) count = (fresh.data() as any).reactions ?? null;
+            } catch { /* count stays null — UI keeps its optimistic value */ }
+            return { liked, count };
+        } catch (e) {
+            console.error('[Testimony] toggleReaction error', e);
+            return { liked: false, count: null };
+        }
+    },
+
+    /**
+     * After a like increment, re-read the testimony and notify the author if
+     * the reaction count just landed on a milestone. Fire-and-forget.
+     */
+    async maybeNotifyTestimonyMilestone(testimonyId: string): Promise<void> {
+        const db = getFirebaseDb();
+        const snap = await getDoc(doc(db, 'community', testimonyId));
+        if (!snap.exists()) return;
+        const d = snap.data() as any;
+        if (!d.authorId) return;
+        const c = d.reactions ?? 0;
+        const { isMilestone, sendMilestonePush } = await import('./communityNotify');
+        if (!isMilestone(c)) return;
+        const body = c === 1
+            ? 'Someone was moved by your story ❤️'
+            : `${c} people have been moved by your story ❤️`;
+        await sendMilestonePush(d.authorId, 'Your story is inspiring others', body, 'testimony_milestone');
+    },
+
+    /** Has the current user already liked this testimony? */
+    async hasReacted(testimonyId: string): Promise<boolean> {
+        const user = getFirebaseAuth()?.currentUser;
+        if (!user) return false;
+        try {
+            const db = getFirebaseDb();
+            const snap = await getDoc(doc(db, 'testimony-reactions', `${user.uid}_${testimonyId}`));
+            return snap.exists();
+        } catch {
             return false;
         }
     },

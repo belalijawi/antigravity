@@ -178,10 +178,42 @@ export const DuaWall = {
                     ameenCount: increment(1),
                 }),
             ]);
+            // Milestone notification to the dua's author (client-side, free-plan)
+            this.maybeNotifyDuaMilestone(duaId, 'ameen').catch(() => {});
             return true;
         } catch (e) {
             console.error('[DuaWall] ameen error', e);
             return false;
+        }
+    },
+
+    /**
+     * After an Ameen/pray increment, re-read the dua and notify the author if
+     * the count just landed on a milestone. Safe to fire-and-forget.
+     */
+    async maybeNotifyDuaMilestone(duaId: string, kind: 'ameen' | 'pray'): Promise<void> {
+        const db = getFirebaseDb();
+        const snap = await getDoc(doc(db, 'public-duas', duaId));
+        if (!snap.exists()) return;
+        const d = snap.data() as any;
+        const authorId = d.authorId;
+        if (!authorId) return;
+
+        const { isMilestone, sendMilestonePush } = await import('./communityNotify');
+        if (kind === 'ameen') {
+            const c = d.ameenCount ?? 0;
+            if (!isMilestone(c)) return;
+            const body = c === 1
+                ? 'Someone said Ameen to your dua 🤲'
+                : `${c} people have said Ameen to your dua 🤲`;
+            await sendMilestonePush(authorId, 'Your dua is being heard', body, 'dua_milestone');
+        } else {
+            const c = d.prayCount ?? 0;
+            if (!isMilestone(c)) return;
+            const body = c === 1
+                ? 'Someone is praying for you 🤲'
+                : `${c} people are praying for you 🤲`;
+            await sendMilestonePush(authorId, 'You are in their prayers', body, 'dua_milestone');
         }
     },
 
@@ -210,6 +242,8 @@ export const DuaWall = {
                     prayCount: increment(1),
                 }),
             ]);
+            // Milestone notification to the dua's author (client-side, free-plan)
+            this.maybeNotifyDuaMilestone(duaId, 'pray').catch(() => {});
             return true;
         } catch (e) {
             console.error('[DuaWall] prayingFor error', e);

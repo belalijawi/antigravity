@@ -84,7 +84,9 @@ export function track(event: string, properties?: Record<string, any>): void {
 export function trackScreen(name: string): void {
     if (!client) return;
     try {
-        client.screen(name);
+        // PostHog v4 removed the dedicated screen() method — screen views are
+        // captured as a "$screen" event with a $screen_name property.
+        client.capture('$screen', { $screen_name: name });
     } catch { /* ignore */ }
 }
 

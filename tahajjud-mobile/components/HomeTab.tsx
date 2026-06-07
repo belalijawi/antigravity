@@ -22,6 +22,12 @@ import { SettingsScreen } from './SettingsScreen';
 import { GlobalTahajjudMap } from './GlobalTahajjudMap';
 import { logTahajjudToMap, subscribeDailyTotal } from '../utils/tahajjudMap';
 import { Globe } from 'lucide-react-native';
+import { DiscoverCard } from './DiscoverCard';
+import { WhatsNewModal, WHATS_NEW_VERSION } from './WhatsNewModal';
+import {
+    FeatureId, markFeatureUsed,
+    shouldShowWhatsNew, markWhatsNewSeen,
+} from '../utils/featureDiscovery';
 import { LinearGradient } from 'expo-linear-gradient';
 import { BlurView } from 'expo-blur';
 import Animated, {
@@ -51,7 +57,7 @@ import { usePurchases } from '../context/PurchasesContext';
 export function HomeTab() {
     const { colors, userName, cardBg, cardBorder, blurIntensity } = useTheme();
     const scrollRef = useRef<ScrollView>(null);
-    const { openPaywall } = usePurchases();
+    const { openPaywall, isPremium } = usePurchases();
     const [isSettingsVisible, setIsSettingsVisible] = useState(false);
     const [showSearch, setShowSearch] = useState(false);
 
@@ -70,6 +76,74 @@ export function HomeTab() {
         const unsub = subscribeDailyTotal(setMapDailyTotal);
         return () => unsub();
     }, []);
+
+    // "What's New" after a version update — shown once per version
+    useEffect(() => {
+        let cancelled = false;
+        let timer: ReturnType<typeof setTimeout> | undefined;
+        (async () => {
+            const wn = await shouldShowWhatsNew(WHATS_NEW_VERSION).catch(() => false);
+            if (cancelled) return;
+            if (wn) timer = setTimeout(() => { if (!cancelled) setShowWhatsNew(true); }, 1200);
+        })();
+        return () => { cancelled = true; if (timer) clearTimeout(timer); };
+    }, []);
+
+    // Route a discovery-card tap to the right place, then mark it discovered
+    const handleDiscoverNavigate = (id: FeatureId) => {
+        // Lazy require avoids the App ↔ HomeTab circular import at module load
+        const switchToTab = require('../App').switchToTab as (t: string) => void;
+        switch (id) {
+            case 'dua_wall':
+            case 'night_journal':
+                switchToTab('Duas'); break;
+            case 'testimonies':
+                switchToTab('Guide'); DeviceEventEmitter.emit('guide:openStories'); break;
+            case 'hifz_mode':
+                switchToTab('Quran'); DeviceEventEmitter.emit('quran:openHifz'); break;
+            case 'prayer_analytics':
+                switchToTab('Prayers'); DeviceEventEmitter.emit('prayers:openSubTab', 'stats'); break;
+            case 'qibla':
+                switchToTab('Prayers'); DeviceEventEmitter.emit('prayers:openSubTab', 'qibla'); break;
+            case 'mosque_timetable':
+                setIsSettingsVisible(true); break;
+            case 'global_map':
+                setShowMap(true); break;
+            case 'accountability_partner':
+            case 'tasbeeh_stats':
+            case 'challenges':
+                // These live on the Home screen — scroll to top so they're visible
+                scrollRef.current?.scrollTo({ y: 0, animated: true });
+                break;
+        }
+        markFeatureUsed(id).catch(() => {});
+    };
+
+    // Weekly paywall for free users — re-surfaces premium on a gentle cadence
+    // so casual users who never tap a locked feature still see the offer.
+    useEffect(() => {
+        if (isPremium) return;
+        let cancelled = false;
+        let timer: ReturnType<typeof setTimeout> | undefined;
+        (async () => {
+            const { recordAppOpen, shouldShowWeeklyPaywall, markWeeklyPaywallShown } =
+                await import('../utils/paywallScheduler');
+            await recordAppOpen();
+            // Don't stack the paywall on top of What's New — if it's going to
+            // appear this session, skip the paywall.
+            const wn = await shouldShowWhatsNew(WHATS_NEW_VERSION).catch(() => false);
+            if (wn) return;
+            const show = await shouldShowWeeklyPaywall();
+            if (show && !cancelled) {
+                timer = setTimeout(() => {
+                    if (cancelled) return;
+                    markWeeklyPaywallShown();
+                    openPaywall();
+                }, 2500);
+            }
+        })();
+        return () => { cancelled = true; if (timer) clearTimeout(timer); };
+    }, [isPremium]);
     const [nightCalc, setNightCalc] = useState<NightCalculation | null>(null);
     const [prayerTimes, setPrayerTimes] = useState<PrayerTimes | null>(null);
     const [currentTime, setCurrentTime] = useState(new Date());
@@ -82,6 +156,7 @@ export function HomeTab() {
     const [openedDuringLastThird, setOpenedDuringLastThird] = useState(false);
     const [showMap, setShowMap] = useState(false);
     const [mapDailyTotal, setMapDailyTotal] = useState(0);
+    const [showWhatsNew, setShowWhatsNew] = useState(false);
     useEffect(() => {
         if (nightCalc && isInTahajjudWindow(nightCalc, new Date())) {
             setOpenedDuringLastThird(true);
@@ -124,6 +199,9 @@ export function HomeTab() {
 
             // Add anonymous dot to global map
             logTahajjudToMap().catch(() => {});
+
+            // Streak is safe tonight — cancel the at-risk reminder
+            import('../utils/streakReminder').then(m => m.cancelStreakAtRisk()).catch(() => {});
 
             // Tally toward the 40-night challenge (idempotent for today)
             const { TahajjudChallenge } = await import('../utils/tahajjudChallenge');
@@ -492,6 +570,11 @@ export function HomeTab() {
                         </Animated.View>
                     )}
 
+                    {/* Feature discovery — surfaces one unused feature, rotates over time */}
+                    <Animated.View entering={fadeIn(340)}>
+                        <DiscoverCard onNavigate={handleDiscoverNavigate} />
+                    </Animated.View>
+
                     {/* Accountability Partner */}
                     <Animated.View entering={fadeIn(350)}>
                         <AccountabilityPartnerCard />
@@ -501,7 +584,7 @@ export function HomeTab() {
                     {mapDailyTotal >= 50 && <Animated.View entering={fadeIn(370)}>
                         <TouchableOpacity
                             style={[styles.mapCard, { borderColor: colors.accent + '33' }]}
-                            onPress={() => setShowMap(true)}
+                            onPress={() => { setShowMap(true); markFeatureUsed('global_map').catch(() => {}); }}
                             activeOpacity={0.8}
                         >
                             <BlurView intensity={Math.round(20 * blurIntensity)} tint="dark" style={StyleSheet.absoluteFill} />
@@ -598,6 +681,15 @@ export function HomeTab() {
             <GlobalTahajjudMap
                 visible={showMap}
                 onClose={() => setShowMap(false)}
+            />
+
+            {/* What's New (after an update) */}
+            <WhatsNewModal
+                visible={showWhatsNew}
+                onClose={() => {
+                    setShowWhatsNew(false);
+                    markWhatsNewSeen(WHATS_NEW_VERSION).catch(() => {});
+                }}
             />
 
             <Modal

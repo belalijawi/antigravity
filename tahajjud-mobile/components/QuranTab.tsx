@@ -1,7 +1,7 @@
 import * as React from 'react';
 import { useEffect, useState, useRef } from 'react';
 import { HifzTab } from './HifzTab';
-import { Brain, BookOpen as BookOpenIcon, Radio } from 'lucide-react-native';
+import { Brain, BookOpen as BookOpenIcon, Radio, Lock } from 'lucide-react-native';
 import { View, Text, FlatList, StyleSheet, TouchableOpacity, ActivityIndicator, TextInput, Alert, DeviceEventEmitter, Platform } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { QuranService, SurahMeta } from '../services/QuranService';
@@ -289,6 +289,7 @@ export function QuranTab() {
                     >
                         <Brain size={14} color={activeSubTab === 'hifz' ? colors.accent : '#475569'} />
                         <Text style={[styles.subTabText, activeSubTab === 'hifz' && { color: colors.accent }]}>Hifz</Text>
+                        {!isPremium && <Lock size={9} color="#f59e0b" />}
                     </TouchableOpacity>
                     <TouchableOpacity
                         style={[styles.subTab, activeSubTab === 'radio' && { backgroundColor: colors.accent + '22', borderColor: colors.accent + '66' }]}
@@ -300,6 +301,7 @@ export function QuranTab() {
                     >
                         <Radio size={14} color={activeSubTab === 'radio' ? colors.accent : '#475569'} />
                         <Text style={[styles.subTabText, activeSubTab === 'radio' && { color: colors.accent }]}>Radio</Text>
+                        {!isPremium && <Lock size={9} color="#f59e0b" />}
                     </TouchableOpacity>
                 </View>
 

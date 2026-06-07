@@ -192,6 +192,13 @@ export function Tracker() {
             setStreaks(prev => ({ ...prev, tahajjud: streak }));
             setGraceUsedToday(usedNow);
             setFreezeAvailable(freezeOk);
+            // Streak-at-risk reminder: if they have a streak but haven't prayed
+            // tonight yet, remind them this evening so they don't lose it.
+            const prayedTonight = isLoggedToday(h.tahajjud);
+            import('../utils/streakReminder').then(m => {
+                if (streak >= 2 && !prayedTonight) m.scheduleStreakAtRisk(streak);
+                else m.cancelStreakAtRisk();
+            }).catch(() => {});
         }).catch(() => {});
     };
 
@@ -340,6 +347,8 @@ export function Tracker() {
             }).catch(() => {});
             // Log for accountability partner
             AccountabilityPartner.logTahajjudForPartner().catch(() => {});
+            // Streak is safe tonight — cancel the at-risk reminder
+            import('../utils/streakReminder').then(m => m.cancelStreakAtRisk()).catch(() => {});
             // Add anonymous dot to global map
             logTahajjudToMap().catch(() => {});
             // Refresh the Friday digest so it reflects this week's count

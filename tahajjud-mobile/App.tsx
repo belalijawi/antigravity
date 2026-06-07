@@ -330,6 +330,11 @@ function MainApp() {
     // Schedule Islamic calendar event notifications (Ashura, Arafah, Ramadan etc.)
     scheduleIslamicEventNotifications().catch(() => {});
 
+    // Gentle weekly nudge toward a feature the user hasn't tried yet
+    import('./utils/featureDiscovery')
+        .then(m => m.maybeScheduleFeatureNudge())
+        .catch(() => {});
+
     // On first launch, auto-pick the prayer calculation method that's most
     // commonly used in the user's country. No-op once they've picked one.
     import('./utils/recommendPrayerMethod')

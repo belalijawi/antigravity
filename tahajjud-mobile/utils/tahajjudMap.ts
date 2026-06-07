@@ -15,9 +15,13 @@
  *   }
  */
 
-import { collection, addDoc, query, where,
+import { collection, addDoc, query, where, limit,
          onSnapshot, Timestamp, serverTimestamp } from 'firebase/firestore';
 import { getFirebaseDb } from './firebase';
+
+// Hard caps so a large collection can never blow the Firestore read quota.
+const MAP_DOT_LIMIT = 500;   // dots rendered on the live map
+const COUNT_LIMIT = 1000;    // ceiling for the "today" counter
 import * as Location from 'expo-location';
 
 export interface MapDot {
@@ -59,17 +63,16 @@ export function subscribeTahajjudMap(
 
         // Initial cutoff — also filtered client-side so the window stays accurate
         const cutoff = Timestamp.fromDate(new Date(Date.now() - 90 * 60 * 1000));
-        const q = query(collection(db, COLLECTION), where('ts', '>=', cutoff));
+        const q = query(collection(db, COLLECTION), where('ts', '>=', cutoff), limit(MAP_DOT_LIMIT));
 
         return onSnapshot(q, snap => {
             const windowStart = Date.now() - 90 * 60 * 1000; // re-evaluated on each update
             const dots: MapDot[] = snap.docs
                 .filter(d => d.data().ts?.toMillis() >= windowStart)
-                .map(d => ({
-                    id:  d.id,
-                    lat: d.data().lat,
-                    lng: d.data().lng,
-                }));
+                .map(d => ({ id: d.id, lat: d.data().lat, lng: d.data().lng }))
+                // Drop malformed docs — undefined/NaN coords crash react-native-maps
+                .filter(dot => typeof dot.lat === 'number' && typeof dot.lng === 'number'
+                    && !isNaN(dot.lat) && !isNaN(dot.lng));
             onUpdate(dots, dots.length);
         }, () => onUpdate([], 0));
     } catch {
@@ -85,7 +88,7 @@ export function subscribeDailyTotal(onUpdate: (total: number) => void): () => vo
         if (!db) { onUpdate(0); return () => {}; }
 
         const cutoff = Timestamp.fromDate(new Date(Date.now() - 24 * 60 * 60 * 1000));
-        const q = query(collection(db, COLLECTION), where('ts', '>=', cutoff));
+        const q = query(collection(db, COLLECTION), where('ts', '>=', cutoff), limit(COUNT_LIMIT));
 
         return onSnapshot(q, snap => onUpdate(snap.size), () => onUpdate(0));
     } catch { onUpdate(0); return () => {}; }

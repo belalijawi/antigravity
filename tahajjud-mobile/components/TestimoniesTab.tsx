@@ -12,6 +12,7 @@ import { collection, query, where, getDocs } from 'firebase/firestore';
 import { useTheme } from '../context/ThemeContext';
 import { haptic } from '../utils/haptic';
 import { initialTestimonies, Testimony, storyTopics } from '../data/testimonies';
+import { TestimonySubmission } from '../utils/testimonySubmission';
 import { captureRef } from 'react-native-view-shot';
 import { QuoteShareCard } from './QuoteShareCard';
 import { checkAchievements } from '../utils/achievements';
@@ -20,14 +21,44 @@ import { checkAchievements } from '../utils/achievements';
 const TestimonyCard = ({ item, onShare }: { item: Testimony, onShare: (item: Testimony) => void }) => {
     const [liked, setLiked] = useState(false);
     const [count, setCount] = useState(item.reactions);
+    const [reacting, setReacting] = useState(false);
 
-    const handleReact = () => {
-        if (!liked) {
-            setLiked(true);
-            setCount(c => c + 1);
-        } else {
-            setLiked(false);
-            setCount(c => c - 1);
+    // Real Firestore testimonies have 20-char auto-generated ids; seed
+    // testimonies use short ids ('1', 'c2'…) and can't be liked server-side.
+    const isServerTestimony = typeof item.id === 'string' && String(item.id).length >= 12;
+
+    // Restore the user's previous like state from Firestore
+    useEffect(() => {
+        if (!isServerTestimony) return;
+        TestimonySubmission.hasReacted(String(item.id)).then(setLiked).catch(() => {});
+    }, [item.id]);
+
+    const handleReact = async () => {
+        if (reacting) return;
+        // Seed/local testimonies can't persist — fall back to local toggle
+        if (!isServerTestimony) {
+            setLiked(l => !l);
+            setCount(c => liked ? c - 1 : c + 1);
+            haptic.light();
+            return;
+        }
+        setReacting(true);
+        // Optimistic update
+        const wasLiked = liked;
+        setLiked(!wasLiked);
+        setCount(c => wasLiked ? c - 1 : c + 1);
+        haptic.light();
+        try {
+            const { liked: nowLiked, count } = await TestimonySubmission.toggleReaction(String(item.id));
+            // Trust the server's authoritative values to prevent any drift
+            setLiked(nowLiked);
+            if (count !== null) setCount(count);
+        } catch {
+            // Revert on failure
+            setLiked(wasLiked);
+            setCount(c => wasLiked ? c + 1 : c - 1);
+        } finally {
+            setReacting(false);
         }
     };
 

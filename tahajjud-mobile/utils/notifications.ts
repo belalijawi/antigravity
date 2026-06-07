@@ -28,8 +28,12 @@ export function ensureNotificationHandler() {
             // Always show Tahajjud alarms and prayer reminders even when app is open —
             // iOS silently swallows them otherwise, meaning the user misses their alarm.
             const isPrayer = dataType === 'tahajjud' || dataType === 'prayer' ||
-                             dataType === 'islamic_event';
-            const shouldShow = isPartner || isPrayer;
+                             dataType === 'islamic_event' || dataType === 'streak_at_risk';
+            // Community reactions — warm, welcome to show in foreground
+            const isCommunity = dataType === 'dua_milestone' || dataType === 'testimony_milestone';
+            // Feature nudge — informational, fine to show in foreground
+            const isNudge = dataType === 'feature_nudge';
+            const shouldShow = isPartner || isPrayer || isCommunity || isNudge;
             return {
                 shouldShowAlert: shouldShow,
                 shouldPlaySound: shouldShow,

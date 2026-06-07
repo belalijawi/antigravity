@@ -23,8 +23,10 @@ type Step = 'idle' | 'processing' | 'preview' | 'success' | 'error';
 
 const MONTH_NAMES = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 
-function fmt24(t: string): string {
-    // Convert "HH:MM" 24h to "H:MM am/pm"
+function fmt24(t: string | undefined): string {
+    // Convert "HH:MM" 24h to "H:MM am/pm". Guard against missing/partial times
+    // (the AI extraction can return days with some prayers absent).
+    if (!t || !/^\d{1,2}:\d{2}$/.test(t)) return '--:--';
     const [h, m] = t.split(':').map(Number);
     const ampm = h >= 12 ? 'pm' : 'am';
     const hour = h % 12 || 12;
@@ -141,6 +143,7 @@ export function MosqueImportModal({ visible, onClose }: Props) {
             setExistingTimetable(preview);
             setStep('success');
             DeviceEventEmitter.emit('mosqueTimetableUpdated');
+            import('../utils/featureDiscovery').then(m => m.markFeatureUsed('mosque_timetable')).catch(() => {});
         } catch {
             Alert.alert('Save failed', 'Could not save the timetable. Please try again.');
         }

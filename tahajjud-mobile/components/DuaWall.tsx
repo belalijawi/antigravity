@@ -110,6 +110,7 @@ export function DuaWallModal({ visible, onClose }: Props) {
         haptic.light();
         // Optimistic flip — heart turns red immediately.
         setAmeened(prev => new Set(prev).add(id));
+        import('../utils/analytics').then(m => m.track('dua_ameen')).catch(() => {});
         // Seed duas don't write to Firestore; the local flip is the whole thing.
         if (id.startsWith('seed-')) return;
         const ok = await DuaWall.ameen(id);
@@ -180,6 +181,8 @@ export function DuaWallModal({ visible, onClose }: Props) {
         haptic.success();
         setComposeText('');
         setShowCompose(false);
+        import('../utils/featureDiscovery').then(m => m.markFeatureUsed('dua_wall')).catch(() => {});
+        import('../utils/analytics').then(m => m.track('dua_posted')).catch(() => {});
         Alert.alert('Published 🌙', 'May Allah accept your dua.');
     };
 

@@ -780,9 +780,12 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ onClose }) => {
                         {/* Mosque timetable import — premium only */}
                         <View style={[styles.cardItem, { borderTopWidth: 1, borderTopColor: 'rgba(255,255,255,0.06)', flexWrap: 'wrap', gap: 8 }]}>
                             <View style={[styles.cardTextContainer, { flex: 1 }]}>
-                                <Text style={[styles.cardLabel, { color: colors.primaryText }]}>
-                                    Mosque Timetable{!isPremium ? ' ⭐' : ''}
-                                </Text>
+                                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                                    <Text style={[styles.cardLabel, { color: colors.primaryText }]}>
+                                        Mosque Timetable
+                                    </Text>
+                                    {!isPremium && <Lock size={11} color="#f59e0b" />}
+                                </View>
                                 <Text style={[styles.cardSub, { color: (() => {
                                         if (!isPremium) return colors.secondaryText;
                                         if (!mosqueTimetable) return colors.secondaryText;
@@ -862,8 +865,8 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ onClose }) => {
                                         </Text>
                                     </View>
                                     {isLocked ? (
-                                        <View style={[reciterStyles.checkWrap, { backgroundColor: 'rgba(255,255,255,0.08)' }]}>
-                                            <Lock size={11} color="#94a3b8" />
+                                        <View style={[reciterStyles.checkWrap, { backgroundColor: '#f59e0b22' }]}>
+                                            <Lock size={11} color="#f59e0b" />
                                         </View>
                                     ) : selected && (
                                         <View style={[reciterStyles.checkWrap, { backgroundColor: colors.accent }]}>

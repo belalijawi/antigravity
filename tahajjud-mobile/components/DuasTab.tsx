@@ -470,6 +470,7 @@ export function DuasTab() {
             Speech.stop();
             clearWordTimer();
             setPlayingDuaId(dua.id);
+            import('../utils/analytics').then(m => m.track('dua_played', { dua: dua.id })).catch(() => {});
 
             const words = dua.arabic ? dua.arabic.split(' ') : [];
             const wordDurations = words.map(w => Math.max(220, (280 + w.length * 30) / 0.85));
@@ -734,6 +735,7 @@ export function DuasTab() {
                             <TouchableOpacity
                                 onPress={async () => {
                                     if (!isPremium) { openPaywall(); return; }
+                                    import('../utils/featureDiscovery').then(m => m.markFeatureUsed('night_journal')).catch(() => {});
                                     const ok = await requireBiometric({ prompt: 'Unlock your night journal' });
                                     if (ok) setShowJournalHistory(true);
                                 }}
@@ -744,7 +746,10 @@ export function DuasTab() {
                                     <Moon size={16} color={colors.accent} />
                                 </View>
                                 <View style={{ flex: 1 }}>
-                                    <Text style={styles.journalBannerTitle}>Night Journal</Text>
+                                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                                        <Text style={styles.journalBannerTitle}>Night Journal</Text>
+                                        {!isPremium && <Lock size={11} color="#f59e0b" />}
+                                    </View>
                                     <Text style={styles.journalBannerSub}>
                                         {isPremium
                                             ? (journalEntries.length > 0

@@ -11,7 +11,7 @@ import {
     Alert,
     Linking,
 } from 'react-native';
-import { X, Check, Star, Moon, CalendarDays, WifiOff, Brain, Users, MapPin } from 'lucide-react-native';
+import { X, Check, Star, Moon, CalendarDays, WifiOff, Brain, Users, MapPin, BellRing } from 'lucide-react-native';
 import { BlurView } from 'expo-blur';
 import RevenueCatService, { ENTITLEMENT_ID } from '../services/revenueCat';
 import { usePurchases } from '../context/PurchasesContext';
@@ -60,6 +60,17 @@ const Paywall: React.FC<PaywallProps> = ({ onClose }) => {
             const customerInfo = await RevenueCatService.purchasePackage(pkg);
             if (customerInfo) {
                 track('purchase_completed', { package: pkg.identifier });
+                // If this was a free-trial purchase, schedule the "trial ends soon"
+                // reminder so the paywall's promise is genuinely kept.
+                const intro: any = (pkg.product as any).introPrice;
+                if (intro && intro.price === 0) {
+                    const n = intro.periodNumberOfUnits ?? 1;
+                    const unitDays: Record<string, number> = { DAY: 1, WEEK: 7, MONTH: 30, YEAR: 365 };
+                    const perUnit = unitDays[intro.periodUnit] ?? 7; // default to a week if unknown
+                    const trialDays = n * perUnit;
+                    const { scheduleTrialEndingReminder } = await import('../utils/trialReminder');
+                    scheduleTrialEndingReminder(trialDays).catch(() => {});
+                }
                 await checkPremiumStatus();
                 onClose();
                 Alert.alert('Welcome to Tahajjud+', 'Your premium features are now active. JazakAllah Khair for your support!');
@@ -161,7 +172,7 @@ const Paywall: React.FC<PaywallProps> = ({ onClose }) => {
                     <Star color={colors.accent} size={48} fill={colors.accent} style={styles.heroIcon} />
                     <Text style={styles.heroTitle}>You're building something real.</Text>
                     <Text style={styles.heroSubtitle}>Unlock the tools to go deeper — journal your nights, track your full history, and pray with your circle.</Text>
-                    <Text style={[styles.heroTrial, { color: colors.accent }]}>7 days free · cancel anytime</Text>
+                    <Text style={[styles.heroTrial, { color: colors.accent }]}>Free for 7 days · cancel anytime, no charge</Text>
                 </View>
 
                 <View style={styles.featuresList}>
@@ -175,6 +186,14 @@ const Paywall: React.FC<PaywallProps> = ({ onClose }) => {
                         </View>
                     ))}
                     <Text style={styles.andMore}>+ premium themes, stacked reminders & more</Text>
+                </View>
+
+                {/* Trust reassurance — removes the #1 fear of free trials */}
+                <View style={[styles.reassureBox, { borderColor: colors.accent + '33', backgroundColor: colors.accent + '0d' }]}>
+                    <BellRing size={18} color={colors.accent} />
+                    <Text style={styles.reassureText}>
+                        We'll remind you 2 days before your trial ends — so you're never charged by surprise.
+                    </Text>
                 </View>
 
                 <View style={styles.pricingSection}>
@@ -223,7 +242,7 @@ const Paywall: React.FC<PaywallProps> = ({ onClose }) => {
                                     disabled={purchasing}
                                 >
                                     <View style={styles.packageInfo}>
-                                        <Text style={styles.packageTitle}>{pkg.product.title.split(' (')[0]}</Text>
+                                        <Text style={styles.packageTitle}>{(pkg.product.title ?? 'Premium').split(' (')[0]}</Text>
                                         {isFreeTrial ? (
                                             <Text style={[styles.packageDesc, { color: colors.accent }]}>
                                                 {trialLabel}, then {pkg.product.priceString}
@@ -243,7 +262,7 @@ const Paywall: React.FC<PaywallProps> = ({ onClose }) => {
                                     </View>
                                     <View style={[styles.priceBadge, { backgroundColor: colors.accent }]}>
                                         <Text style={styles.priceText}>
-                                            {isFreeTrial ? 'Try Free' : pkg.product.priceString}
+                                            {isFreeTrial ? 'Start Free' : pkg.product.priceString}
                                         </Text>
                                         {!isFreeTrial && isAnnual && <Text style={styles.priceSubText}>/ year</Text>}
                                     </View>
@@ -260,6 +279,13 @@ const Paywall: React.FC<PaywallProps> = ({ onClose }) => {
 
                     <TouchableOpacity onPress={handleRestore} style={styles.restoreButton} disabled={purchasing}>
                         <Text style={styles.restoreText}>Already a member? Restore Purchases</Text>
+                    </TouchableOpacity>
+
+                    {/* Clear, obvious way to continue without subscribing —
+                        especially important when the paywall is the last
+                        onboarding step. Also App Store compliant. */}
+                    <TouchableOpacity onPress={onClose} style={styles.maybeLaterButton} disabled={purchasing}>
+                        <Text style={styles.maybeLaterText}>Maybe later</Text>
                     </TouchableOpacity>
                 </View>
 
@@ -352,6 +378,23 @@ const styles = StyleSheet.create({
     },
     featuresList: {
         marginBottom: 12,
+    },
+    reassureBox: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 12,
+        borderRadius: 14,
+        borderWidth: 1,
+        paddingVertical: 14,
+        paddingHorizontal: 16,
+        marginBottom: 16,
+    },
+    reassureText: {
+        flex: 1,
+        color: '#cbd5e1',
+        fontSize: 13,
+        fontWeight: '600',
+        lineHeight: 18,
     },
     andMore: {
         color: '#475569',
@@ -458,6 +501,16 @@ const styles = StyleSheet.create({
         color: '#94a3b8',
         fontSize: 14,
         textDecorationLine: 'underline',
+    },
+    maybeLaterButton: {
+        alignItems: 'center',
+        marginTop: 18,
+        paddingVertical: 10,
+    },
+    maybeLaterText: {
+        color: '#cbd5e1',
+        fontSize: 15,
+        fontWeight: '700',
     },
     footer: {
         alignItems: 'center',

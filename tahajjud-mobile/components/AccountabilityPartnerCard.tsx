@@ -5,7 +5,7 @@ import {
     TouchableWithoutFeedback, Keyboard, ScrollView,
 } from 'react-native';
 import { BlurView } from 'expo-blur';
-import { Users, Moon, X, Copy, CheckCircle, UserPlus } from 'lucide-react-native';
+import { Users, Moon, X, Copy, CheckCircle, UserPlus, Lock } from 'lucide-react-native';
 import { useTheme } from '../context/ThemeContext';
 import { usePurchases } from '../context/PurchasesContext';
 import { AccountabilityPartner, PartnerData, PartnerEntry } from '../utils/accountabilityPartner';
@@ -133,6 +133,7 @@ export function AccountabilityPartnerCard() {
             setShowModal(false);
             setCodeInput('');
             setNameInput('');
+            import('../utils/featureDiscovery').then(m => m.markFeatureUsed('accountability_partner')).catch(() => {});
         } else {
             Alert.alert('Not found', "That code doesn't match any account. Double-check and try again.");
         }
@@ -238,6 +239,7 @@ export function AccountabilityPartnerCard() {
                         >
                             <UserPlus size={14} color={colors.accent} />
                             <Text style={[styles.addBtnText, { color: colors.accent }]}>Add</Text>
+                            {!isPremium && <Lock size={10} color="#f59e0b" />}
                         </TouchableOpacity>
                     </View>
 
