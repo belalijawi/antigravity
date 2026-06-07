@@ -310,36 +310,37 @@ function MainApp() {
   const BAR_MARGIN = 10;
 
   useEffect(() => {
-    // Request notification permission on first launch (iOS shows prompt once;
-    // subsequent calls are no-ops if already granted or denied)
-    requestNotificationPermissions();
-
-    // Schedule the weekly Friday digest in the background — re-runs each
-    // launch to keep the body text fresh with this week's stats.
-    refreshWeeklyDigest().catch(() => {});
-
-    // Initialize analytics (no-op if no API key configured)
-    initAnalytics().then(() => track('app_launched')).catch(() => {});
-
+    // ── Critical at launch: RTL must apply before first paint ──
     // Mirror UI for RTL locales (Arabic, Urdu, Persian, Hebrew)
     applyRtlIfNeeded().catch(() => {});
 
-    // Drain any prayer logs queued from Siri/Shortcuts while the app was closed
-    drainPendingPrayerLogs().catch(() => {});
+    // ── Deferred startup work ──
+    // Everything below is non-critical background work. We defer it off the
+    // initial render/Hermes-init window so the burst of async work + native
+    // module access can't destabilise launch. Staggered so they don't all
+    // fire at once.
+    const t1 = setTimeout(() => {
+      // Notification permission + analytics first (most important)
+      requestNotificationPermissions();
+      initAnalytics().then(() => track('app_launched')).catch(() => {});
+      drainPendingPrayerLogs().catch(() => {});
+    }, 1200);
 
-    // Schedule Islamic calendar event notifications (Ashura, Arafah, Ramadan etc.)
-    scheduleIslamicEventNotifications().catch(() => {});
+    const t2 = setTimeout(() => {
+      // Notification scheduling (clears + re-schedules — heavier work)
+      refreshWeeklyDigest().catch(() => {});
+      scheduleIslamicEventNotifications().catch(() => {});
+      import('./utils/recommendPrayerMethod')
+          .then(m => m.autoPickMethodIfNeeded())
+          .catch(() => {});
+    }, 2500);
 
-    // Gentle weekly nudge toward a feature the user hasn't tried yet
-    import('./utils/featureDiscovery')
-        .then(m => m.maybeScheduleFeatureNudge())
-        .catch(() => {});
-
-    // On first launch, auto-pick the prayer calculation method that's most
-    // commonly used in the user's country. No-op once they've picked one.
-    import('./utils/recommendPrayerMethod')
-        .then(m => m.autoPickMethodIfNeeded())
-        .catch(() => {});
+    const t3 = setTimeout(() => {
+      // Lowest-priority: feature nudge notification
+      import('./utils/featureDiscovery')
+          .then(m => m.maybeScheduleFeatureNudge())
+          .catch(() => {});
+    }, 4000);
 
     // Preload Quran data silently after the app has settled
     const timer = setTimeout(() => {
@@ -370,6 +371,9 @@ function MainApp() {
     }).catch(() => {});
 
     return () => {
+      clearTimeout(t1);
+      clearTimeout(t2);
+      clearTimeout(t3);
       clearTimeout(timer);
       responseSub?.remove();
     };
