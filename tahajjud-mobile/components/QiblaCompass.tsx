@@ -2,7 +2,7 @@ import React, { useEffect, useState, useRef } from 'react';
 import { View, Text, StyleSheet, Platform, Animated, ActivityIndicator, Linking } from 'react-native';
 import * as Location from 'expo-location';
 import { LinearGradient } from 'expo-linear-gradient';
-import { BlurView } from 'expo-blur';
+import { GlassBg as BlurView } from './GlassBg';
 import { Smartphone } from 'lucide-react-native';
 import { calculateQibla, getCompassDirection } from '../utils/qiblaCalculator';
 import { useTheme } from '../context/ThemeContext';

@@ -4,7 +4,7 @@ import {
     ScrollView, Platform, Vibration, Modal, TextInput,
     KeyboardAvoidingView, Alert,
 } from 'react-native';
-import { BlurView } from 'expo-blur';
+import { GlassBg as BlurView } from './GlassBg';
 import { LinearGradient } from 'expo-linear-gradient';
 import Animated, {
     useSharedValue, useAnimatedStyle, withSpring, withSequence,

@@ -7,7 +7,7 @@ import { StreakMilestoneModal } from './StreakMilestoneModal';
 import { AccountabilityPartner } from '../utils/accountabilityPartner';
 import { Flame, Trophy, AlertCircle, Star, Sunrise, ShieldCheck, Moon, PenTool, MessageSquarePlus, Snowflake } from "lucide-react-native";
 import { LinearGradient } from 'expo-linear-gradient';
-import { BlurView } from 'expo-blur';
+import { GlassBg as BlurView } from './GlassBg';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { subDays } from "date-fns";
 import { useTheme } from '../context/ThemeContext';

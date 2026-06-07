@@ -5,7 +5,7 @@ import { View, Text, StyleSheet, ActivityIndicator, TouchableOpacity, Modal, Fla
 // status bar was overlapping the SurahReader header.
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { ArrowLeft, Globe, X, Check, Bookmark, Play, Pause, SkipBack, SkipForward, Volume2, Timer, WifiOff, Brain, Repeat, Lock } from 'lucide-react-native';
-import { BlurView } from 'expo-blur';
+import { GlassBg as BlurView } from './GlassBg';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { QuranService, SurahDetail, Edition, Ayah } from '../services/QuranService';
 import TrackPlayer, { useProgress, Event, State } from 'react-native-track-player';

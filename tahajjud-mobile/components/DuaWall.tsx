@@ -106,35 +106,49 @@ export function DuaWallModal({ visible, onClose }: Props) {
                     : `${duas.length} tonight`;
 
     const handleAmeen = async (id: string) => {
-        if (ameened.has(id)) return;
         haptic.light();
-        // Optimistic flip — heart turns red immediately.
-        setAmeened(prev => new Set(prev).add(id));
-        import('../utils/analytics').then(m => m.track('dua_ameen')).catch(() => {});
-        // Seed duas don't write to Firestore; the local flip is the whole thing.
+        const wasAmeened = ameened.has(id);
+        // Optimistic toggle
+        setAmeened(prev => {
+            const next = new Set(prev);
+            if (wasAmeened) next.delete(id); else next.add(id);
+            return next;
+        });
+        if (!wasAmeened) {
+            import('../utils/analytics').then(m => m.track('dua_ameen')).catch(() => {});
+        }
+        // Seed duas don't write to Firestore; the local toggle is the whole thing.
         if (id.startsWith('seed-')) return;
-        const ok = await DuaWall.ameen(id);
+        const ok = wasAmeened ? await DuaWall.unameen(id) : await DuaWall.ameen(id);
         if (!ok) {
-            // Rollback on backend failure so the user can retry.
+            // Rollback on backend failure
             setAmeened(prev => {
                 const next = new Set(prev);
-                next.delete(id);
+                if (wasAmeened) next.add(id); else next.delete(id);
                 return next;
             });
         }
     };
 
     const handlePraying = async (id: string) => {
-        if (praying.has(id)) return;
         haptic.light();
-        // Seed duas don't write to Firestore — just track locally so the
-        // button still reflects the tap. Real duas hit the backend.
-        if (id.startsWith('seed-')) {
-            setPraying(prev => new Set(prev).add(id));
-            return;
+        const wasPraying = praying.has(id);
+        // Optimistic toggle
+        setPraying(prev => {
+            const next = new Set(prev);
+            if (wasPraying) next.delete(id); else next.add(id);
+            return next;
+        });
+        if (id.startsWith('seed-')) return;
+        const ok = wasPraying ? await DuaWall.unpray(id) : await DuaWall.prayingFor(id);
+        if (!ok) {
+            // Rollback on backend failure
+            setPraying(prev => {
+                const next = new Set(prev);
+                if (wasPraying) next.add(id); else next.delete(id);
+                return next;
+            });
         }
-        const ok = await DuaWall.prayingFor(id);
-        if (ok) setPraying(prev => new Set(prev).add(id));
     };
 
     const handleReport = (id: string) => {
@@ -239,6 +253,10 @@ export function DuaWallModal({ visible, onClose }: Props) {
                     keyExtractor={d => d.id}
                     contentContainerStyle={styles.list}
                     showsVerticalScrollIndicator={false}
+                    initialNumToRender={6}
+                    maxToRenderPerBatch={6}
+                    windowSize={7}
+                    removeClippedSubviews={Platform.OS === 'android'}
                     ListEmptyComponent={
                         <Animated.View entering={FadeIn.delay(200).duration(500)} style={styles.empty}>
                             <View style={[styles.emptyOrb, { borderColor: colors.accent + '33' }]}>
@@ -355,7 +373,10 @@ export function DuaWallModal({ visible, onClose }: Props) {
 }
 
 // ── Dua card with stagger entry + heart spring animation ──
-function DuaCard({
+// Memoised so tapping Ameen/Praying on one card doesn't re-render the whole
+// list. The comparator ignores callback identity (the parent passes fresh inline
+// callbacks each render) and only re-renders when something visible changes.
+const DuaCard = React.memo(function DuaCard({
     dua, index, userTapped, userPraying, accent, onAmeen, onPraying, onReport, isSeed,
 }: {
     dua: PublicDua;
@@ -374,12 +395,14 @@ function DuaCard({
     }));
 
     const tap = () => {
-        if (userTapped) return;
-        heartScale.value = withSequence(
-            withSpring(1.4, { damping: 6, stiffness: 200 }),
-            withSpring(1.0, { damping: 8 }),
-        );
-        onAmeen();
+        // Animate the satisfying pop only when adding an Ameen, not when undoing
+        if (!userTapped) {
+            heartScale.value = withSequence(
+                withSpring(1.4, { damping: 6, stiffness: 200 }),
+                withSpring(1.0, { damping: 8 }),
+            );
+        }
+        onAmeen(); // toggles (add or undo) — handled in the parent
     };
 
     return (
@@ -401,11 +424,10 @@ function DuaCard({
             <Text style={styles.duaText}>{dua.text}</Text>
 
             <View style={styles.cardFooter}>
-                <Text style={styles.timeText}>
-                    {isSeed ? 'A community staple' : `${formatDistanceToNowStrict(dua.createdAt)} ago`}
-                </Text>
-
-                <View style={styles.cardActions}>
+                <View style={styles.footerTop}>
+                    <Text style={styles.timeText}>
+                        {isSeed ? 'A community staple' : `${formatDistanceToNowStrict(dua.createdAt)} ago`}
+                    </Text>
                     <TouchableOpacity
                         onPress={onReport}
                         style={styles.flagBtn}
@@ -415,13 +437,14 @@ function DuaCard({
                     >
                         <Flag size={12} color="#475569" />
                     </TouchableOpacity>
+                </View>
 
+                <View style={styles.cardActions}>
                     {/* "Praying for you" — a personal-commitment reaction
                         complementary to Ameen. Ameen affirms the dua;
                         Praying signals "I'll personally pray for this."  */}
                     <TouchableOpacity
                         onPress={onPraying}
-                        disabled={userPraying}
                         activeOpacity={0.85}
                         style={[
                             styles.ameenBtn,
@@ -448,7 +471,6 @@ function DuaCard({
 
                     <TouchableOpacity
                         onPress={tap}
-                        disabled={userTapped}
                         activeOpacity={0.85}
                         style={[
                             styles.ameenBtn,
@@ -487,7 +509,18 @@ function DuaCard({
             </View>
         </Animated.View>
     );
-}
+}, (prev, next) =>
+    // Skip re-render unless something visible to THIS card changed. Callback
+    // identity is intentionally ignored (parent re-creates them each render).
+    prev.userTapped === next.userTapped &&
+    prev.userPraying === next.userPraying &&
+    prev.isSeed === next.isSeed &&
+    prev.accent === next.accent &&
+    prev.dua.id === next.dua.id &&
+    prev.dua.ameenCount === next.dua.ameenCount &&
+    prev.dua.prayCount === next.dua.prayCount &&
+    prev.dua.text === next.dua.text
+);
 
 const styles = StyleSheet.create({
     root: { flex: 1, backgroundColor: '#040714' },
@@ -567,6 +600,10 @@ const styles = StyleSheet.create({
         marginBottom: 14,
     },
     cardFooter: {
+        flexDirection: 'column',
+        gap: 12,
+    },
+    footerTop: {
         flexDirection: 'row',
         justifyContent: 'space-between',
         alignItems: 'center',
@@ -576,14 +613,17 @@ const styles = StyleSheet.create({
         fontSize: 11,
         fontWeight: '600',
     },
-    cardActions: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+    // Full-width row; the two reaction buttons flex equally so they always
+    // fit inside the card and never overflow the edge.
+    cardActions: { flexDirection: 'row', alignItems: 'center', gap: 10 },
     flagBtn: {
-        width: 32, height: 32, borderRadius: 16,
+        width: 28, height: 28, borderRadius: 14,
         alignItems: 'center', justifyContent: 'center',
     },
     ameenBtn: {
-        flexDirection: 'row', alignItems: 'center', gap: 6,
-        paddingLeft: 12, paddingRight: 10, paddingVertical: 7,
+        flex: 1,
+        flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
+        paddingVertical: 9,
         borderRadius: 16, borderWidth: 1,
     },
     ameenText: { fontSize: 12, fontWeight: '700' },

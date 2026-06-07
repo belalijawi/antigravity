@@ -44,7 +44,7 @@ try { AppleAuthentication = require('expo-apple-authentication'); } catch (_) { 
 try { const gs = require('@react-native-google-signin/google-signin'); GoogleSignin = gs.GoogleSignin; statusCodes = gs.statusCodes; } catch (_) { }
 import { syncLocalToCloud, deleteCloudData } from '../utils/syncService';
 import { getFirebaseAuth, resetToAnonymous } from '../utils/firebase';
-import { BlurView } from 'expo-blur';
+import { GlassBg as BlurView } from './GlassBg';
 import { LinearGradient } from 'expo-linear-gradient';
 import Animated, { FadeInDown, FadeInUp } from 'react-native-reanimated';
 import { useTheme, ThemeType, PREMIUM_THEMES, THEME_LABELS } from '../context/ThemeContext';

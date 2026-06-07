@@ -7,7 +7,7 @@
 
 import React, { useEffect, useState } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
-import { BlurView } from 'expo-blur';
+import { GlassBg as BlurView } from './GlassBg';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Sparkles, ChevronRight, X, Lock } from 'lucide-react-native';
 import { useTheme } from '../context/ThemeContext';

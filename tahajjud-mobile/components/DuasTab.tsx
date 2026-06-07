@@ -19,7 +19,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { supabase } from '../utils/supabase';
 import { fetchCloudData } from '../utils/syncService';
 import { getFirebaseAuth } from '../utils/firebase';
-import { BlurView } from 'expo-blur';
+import { GlassBg as BlurView } from './GlassBg';
 import { LinearGradient } from 'expo-linear-gradient';
 import Animated, { FadeInDown, FadeInUp } from 'react-native-reanimated';
 import { useTheme } from '../context/ThemeContext';
@@ -262,9 +262,12 @@ export function DuasTab() {
         loadVoice();
         loadPersonalDuasData();
         checkLockStatus();
+        // Deep-link from feature discovery → open the Dua Wall directly
+        const wallSub = DeviceEventEmitter.addListener('duas:openWall', () => setShowDuaWall(true));
         return () => {
             Speech.stop();
             clearWordTimer();
+            wallSub.remove();
         };
     }, []);
 

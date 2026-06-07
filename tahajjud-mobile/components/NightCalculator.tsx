@@ -2,7 +2,7 @@ import React, { useEffect, useState } from "react";
 import Animated, { useSharedValue, useAnimatedStyle, withRepeat, withSequence, withTiming, cancelAnimation, Easing } from 'react-native-reanimated';
 import { View, Text, ActivityIndicator, StyleSheet, TouchableOpacity, Alert, AppState, AppStateStatus, Linking, DeviceEventEmitter, Modal, TextInput, KeyboardAvoidingView, Platform } from "react-native";
 import * as Location from "expo-location";
-import { BlurView } from 'expo-blur';
+import { GlassBg as BlurView } from './GlassBg';
 import { getPrayerTimes } from "../lib/api";
 import { calculateLastThird, NightCalculation, PrayerTimes } from "../lib/prayer-times";
 import { Moon, Bell, BellOff, Plus, X, Lock } from "lucide-react-native";

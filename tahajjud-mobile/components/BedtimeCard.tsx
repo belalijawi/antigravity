@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, ActivityIndicator, DeviceEventEmitter } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
-import { BlurView } from 'expo-blur';
+import { GlassBg as BlurView } from './GlassBg';
 import { Bed, Moon } from 'lucide-react-native';
 import { format, differenceInMinutes } from 'date-fns';
 import Animated, { FadeInDown } from 'react-native-reanimated';

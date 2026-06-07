@@ -7,7 +7,7 @@
  */
 import React, { useEffect, useState, useCallback } from 'react';
 import { View, Text, StyleSheet, DeviceEventEmitter } from 'react-native';
-import { BlurView } from 'expo-blur';
+import { GlassBg as BlurView } from './GlassBg';
 import { Trophy, CheckCircle2 } from 'lucide-react-native';
 import Animated, { FadeInDown } from 'react-native-reanimated';
 import { useTheme } from '../context/ThemeContext';

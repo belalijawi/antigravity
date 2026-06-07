@@ -413,13 +413,13 @@ function MainApp() {
                 borderWidth: 1,
                 borderColor: colors.accent + '35',
               }}>
-                {/* Theme-tinted dark base — Android needs higher opacity since BlurView is iOS-only */}
-                <View pointerEvents="none" style={[StyleSheet.absoluteFillObject, { backgroundColor: Platform.OS === 'android' ? colors.background : colors.background + 'EE' }]} />
+                {/* Solid theme-tinted base. We dropped the live BlurView here —
+                    it was composited every frame behind the always-visible bar
+                    and hurt tab-switch responsiveness for no real visual gain
+                    (it sat over a near-opaque base anyway). */}
+                <View pointerEvents="none" style={[StyleSheet.absoluteFillObject, { backgroundColor: colors.background + 'F2' }]} />
                 {/* Subtle accent glow layer */}
                 <View pointerEvents="none" style={[StyleSheet.absoluteFillObject, { backgroundColor: colors.accent + '14' }]} />
-                {Platform.OS === 'ios' && (
-                  <BlurView pointerEvents="none" intensity={70} tint="dark" style={StyleSheet.absoluteFillObject} />
-                )}
                 <BottomTabBar {...props} style={{
                   backgroundColor: 'transparent',
                   borderTopWidth: 0,

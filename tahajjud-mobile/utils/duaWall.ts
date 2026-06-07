@@ -251,6 +251,46 @@ export const DuaWall = {
         }
     },
 
+    /** Undo an Ameen — delete the marker and decrement the count. */
+    async unameen(duaId: string): Promise<boolean> {
+        const user = getFirebaseAuth()?.currentUser;
+        if (!user) return false;
+        const db = getFirebaseDb();
+        const ameenRef = doc(db, 'ameens', `${user.uid}_${duaId}`);
+        try {
+            const existing = await getDoc(ameenRef);
+            if (!existing.exists()) return true; // nothing to undo — already idempotent
+            await Promise.all([
+                deleteDoc(ameenRef),
+                updateDoc(doc(db, 'public-duas', duaId), { ameenCount: increment(-1) }),
+            ]);
+            return true;
+        } catch (e) {
+            console.error('[DuaWall] unameen error', e);
+            return false;
+        }
+    },
+
+    /** Undo a "praying for" — delete the marker and decrement the count. */
+    async unpray(duaId: string): Promise<boolean> {
+        const user = getFirebaseAuth()?.currentUser;
+        if (!user) return false;
+        const db = getFirebaseDb();
+        const prayRef = doc(db, 'prays', `${user.uid}_${duaId}`);
+        try {
+            const existing = await getDoc(prayRef);
+            if (!existing.exists()) return true;
+            await Promise.all([
+                deleteDoc(prayRef),
+                updateDoc(doc(db, 'public-duas', duaId), { prayCount: increment(-1) }),
+            ]);
+            return true;
+        } catch (e) {
+            console.error('[DuaWall] unpray error', e);
+            return false;
+        }
+    },
+
     /**
      * Report a dua — also idempotent per (user, dua) so a single user can't
      * push past the report threshold by spamming. Flagged duas auto-hide

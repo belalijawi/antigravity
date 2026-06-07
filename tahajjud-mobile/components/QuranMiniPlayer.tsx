@@ -3,7 +3,7 @@ import {
     View, Text, TouchableOpacity, StyleSheet,
     ActivityIndicator, Platform,
 } from 'react-native';
-import { BlurView } from 'expo-blur';
+import { GlassBg as BlurView } from './GlassBg';
 import { Play, Pause, SkipBack, SkipForward, X, Volume2 } from 'lucide-react-native';
 import Animated, { FadeInDown, FadeOutDown } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';

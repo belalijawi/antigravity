@@ -3,7 +3,7 @@ import { View, Text, FlatList, TouchableOpacity, StyleSheet, Linking, Share, Scr
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Heart, Send, Share2, BookHeart, Sparkles, PenLine } from 'lucide-react-native';
 import { SubmitTestimonyModal } from './SubmitTestimonyModal';
-import { BlurView } from 'expo-blur';
+import { GlassBg as BlurView } from './GlassBg';
 import { LinearGradient } from 'expo-linear-gradient';
 import Animated, { FadeInDown, FadeIn } from 'react-native-reanimated';
 import AsyncStorage from '@react-native-async-storage/async-storage';

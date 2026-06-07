@@ -114,28 +114,35 @@ service cloud.firestore {
 
     // ─── Ameen markers (idempotency) ────────────────────────────────
     match /ameens/{ameenId} {
-      allow read: if request.auth != null && resource != null
-        && resource.data.userId == request.auth.uid;
+      // resource == null allows the idempotency getDoc() on a marker that
+      // doesn't exist yet (the normal case for a first Ameen). Without this,
+      // that read is denied → the whole Ameen write fails and the UI reverts.
+      allow read: if request.auth != null
+        && (resource == null || resource.data.userId == request.auth.uid);
       allow create: if request.auth != null
         && request.resource.data.userId == request.auth.uid;
-      allow update, delete: if false;
+      // Allow deleting your OWN marker (undo Ameen). No updates.
+      allow delete: if request.auth != null && resource.data.userId == request.auth.uid;
+      allow update: if false;
     }
 
     // ─── "Praying for you" markers (idempotency) ───────────────────
     // Same pattern as ameens — one marker doc per (user, dua) so users
     // can't double-increment the prayCount by re-tapping.
     match /prays/{prayId} {
-      allow read: if request.auth != null && resource != null
-        && resource.data.userId == request.auth.uid;
+      allow read: if request.auth != null
+        && (resource == null || resource.data.userId == request.auth.uid);
       allow create: if request.auth != null
         && request.resource.data.userId == request.auth.uid;
-      allow update, delete: if false;
+      // Allow deleting your OWN marker (undo Praying). No updates.
+      allow delete: if request.auth != null && resource.data.userId == request.auth.uid;
+      allow update: if false;
     }
 
     // ─── Report markers ─────────────────────────────────────────────
     match /reports/{reportId} {
-      allow read: if request.auth != null && resource != null
-        && resource.data.userId == request.auth.uid;
+      allow read: if request.auth != null
+        && (resource == null || resource.data.userId == request.auth.uid);
       allow create: if request.auth != null
         && request.resource.data.userId == request.auth.uid;
       allow update, delete: if false;

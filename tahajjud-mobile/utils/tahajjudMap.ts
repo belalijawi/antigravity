@@ -15,7 +15,7 @@
  *   }
  */
 
-import { collection, addDoc, query, where, limit,
+import { collection, addDoc, query, where, limit, getCountFromServer,
          onSnapshot, Timestamp, serverTimestamp } from 'firebase/firestore';
 import { getFirebaseDb } from './firebase';
 
@@ -90,6 +90,14 @@ export function subscribeDailyTotal(onUpdate: (total: number) => void): () => vo
         const cutoff = Timestamp.fromDate(new Date(Date.now() - 24 * 60 * 60 * 1000));
         const q = query(collection(db, COLLECTION), where('ts', '>=', cutoff), limit(COUNT_LIMIT));
 
-        return onSnapshot(q, snap => onUpdate(snap.size), () => onUpdate(0));
+        // One-time server-side count instead of a permanent onSnapshot listener.
+        // The map card is only a passive indicator (hidden until 50+), so a live
+        // listener that re-renders the heavy Home screen on every change isn't
+        // worth the cost. getCountFromServer is a single cheap aggregation query.
+        let cancelled = false;
+        getCountFromServer(q)
+            .then(snap => { if (!cancelled) onUpdate(snap.data().count); })
+            .catch(() => { if (!cancelled) onUpdate(0); });
+        return () => { cancelled = true; };
     } catch { onUpdate(0); return () => {}; }
 }

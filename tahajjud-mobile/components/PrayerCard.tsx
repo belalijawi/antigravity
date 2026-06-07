@@ -1,6 +1,6 @@
 import { View, Text, StyleSheet } from "react-native";
 import { LinearGradient } from 'expo-linear-gradient';
-import { BlurView } from 'expo-blur';
+import { GlassBg as BlurView } from './GlassBg';
 
 interface PrayerCardProps {
     name: string;

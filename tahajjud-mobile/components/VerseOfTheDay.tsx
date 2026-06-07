@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, Linking } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
-import { BlurView } from 'expo-blur';
+import { GlassBg as BlurView } from './GlassBg';
 import { BookOpen, Sparkles, ChevronRight } from 'lucide-react-native';
 import { useTheme } from '../context/ThemeContext';
 import { QuranService } from '../services/QuranService';

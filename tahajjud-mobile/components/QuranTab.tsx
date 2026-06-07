@@ -8,7 +8,7 @@ import { QuranService, SurahMeta } from '../services/QuranService';
 import { SurahReader } from './SurahReader';
 import { Search, Bookmark, BookOpen, Download, CheckCircle, Wifi, Trash2 } from 'lucide-react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { BlurView } from 'expo-blur';
+import { GlassBg as BlurView } from './GlassBg';
 import { LinearGradient } from 'expo-linear-gradient';
 import Animated, { FadeInDown } from 'react-native-reanimated';
 import { useTheme } from '../context/ThemeContext';
@@ -84,6 +84,10 @@ export function QuranTab() {
             setSelectedAyah(payload.ayahNumber ?? null);
             setSelectedSurah(payload.surahNumber);
         });
+        // Deep-link from feature discovery → open the Hifz sub-tab
+        const hifzSub = DeviceEventEmitter.addListener('quran:openHifz', () => {
+            if (isPremium) setActiveSubTab('hifz');
+        });
         // Flush any request that arrived before this screen mounted (lazy-mounted
         // tabs miss the initial emit).
         const { consumePendingOpen } = require('../App');
@@ -97,6 +101,7 @@ export function QuranTab() {
         return () => {
             scrollSub.remove();
             openSub.remove();
+            hifzSub.remove();
             reciterSub();
         };
     }, []);

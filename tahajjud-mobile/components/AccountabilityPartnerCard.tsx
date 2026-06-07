@@ -4,7 +4,7 @@ import {
     Modal, KeyboardAvoidingView, Platform, Alert, Share, Clipboard,
     TouchableWithoutFeedback, Keyboard, ScrollView,
 } from 'react-native';
-import { BlurView } from 'expo-blur';
+import { GlassBg as BlurView } from './GlassBg';
 import { Users, Moon, X, Copy, CheckCircle, UserPlus, Lock } from 'lucide-react-native';
 import { useTheme } from '../context/ThemeContext';
 import { usePurchases } from '../context/PurchasesContext';

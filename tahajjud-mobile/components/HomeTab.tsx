@@ -29,7 +29,7 @@ import {
     shouldShowWhatsNew, markWhatsNewSeen,
 } from '../utils/featureDiscovery';
 import { LinearGradient } from 'expo-linear-gradient';
-import { BlurView } from 'expo-blur';
+import { GlassBg as BlurView } from './GlassBg';
 import Animated, {
     FadeInUp, FadeInDown,
     useSharedValue, useAnimatedStyle,
@@ -95,6 +95,10 @@ export function HomeTab() {
         const switchToTab = require('../App').switchToTab as (t: string) => void;
         switch (id) {
             case 'dua_wall':
+                switchToTab('Duas');
+                // Give the tab a moment to mount its listener before opening the wall
+                setTimeout(() => DeviceEventEmitter.emit('duas:openWall'), 350);
+                break;
             case 'night_journal':
                 switchToTab('Duas'); break;
             case 'testimonies':
