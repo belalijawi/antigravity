@@ -10,4 +10,9 @@ export async function PlaybackService() {
     TrackPlayer.addEventListener(Event.RemoteNext, () => TrackPlayer.skipToNext());
     TrackPlayer.addEventListener(Event.RemotePrevious, () => TrackPlayer.skipToPrevious());
     TrackPlayer.addEventListener(Event.RemoteStop, () => TrackPlayer.reset());
+    // Handles the lock-screen / Control Centre scrubber drag.
+    // Without this, Capability.SeekTo is declared but the seek is silently ignored.
+    TrackPlayer.addEventListener(Event.RemoteSeek, ({ position }) => {
+        TrackPlayer.seekTo(position);
+    });
 }

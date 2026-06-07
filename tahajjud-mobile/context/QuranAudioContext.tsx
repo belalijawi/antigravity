@@ -156,6 +156,7 @@ export function QuranAudioProvider({ children }: { children: ReactNode }) {
                         Capability.SkipToNext,
                         Capability.SkipToPrevious,
                         Capability.Stop,
+                        Capability.SeekTo,   // enables the lock-screen scrubber
                     ],
                     compactCapabilities: [
                         Capability.Play,

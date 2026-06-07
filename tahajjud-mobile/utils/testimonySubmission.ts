@@ -1,5 +1,5 @@
 import {
-    collection, doc, getDoc, getDocs, addDoc, setDoc, deleteDoc, updateDoc, increment,
+    collection, doc, getDoc, getDocFromServer, getDocs, addDoc, setDoc, deleteDoc, updateDoc, increment,
     query, where, orderBy, serverTimestamp,
 } from 'firebase/firestore';
 import { getFirebaseAuth, getFirebaseDb } from './firebase';
@@ -204,18 +204,21 @@ export const TestimonySubmission = {
      * the reaction count just landed on a milestone. Fire-and-forget.
      */
     async maybeNotifyTestimonyMilestone(testimonyId: string): Promise<void> {
-        const db = getFirebaseDb();
-        const snap = await getDoc(doc(db, 'community', testimonyId));
-        if (!snap.exists()) return;
-        const d = snap.data() as any;
-        if (!d.authorId) return;
-        const c = d.reactions ?? 0;
-        const { isMilestone, sendMilestonePush } = await import('./communityNotify');
-        if (!isMilestone(c)) return;
-        const body = c === 1
-            ? 'Someone was moved by your story ❤️'
-            : `${c} people have been moved by your story ❤️`;
-        await sendMilestonePush(d.authorId, 'Your story is inspiring others', body, 'testimony_milestone');
+        try {
+            const db = getFirebaseDb();
+            // Force server read to get the committed reaction count, not stale cache
+            const snap = await getDocFromServer(doc(db, 'community', testimonyId));
+            if (!snap.exists()) return;
+            const d = snap.data() as any;
+            if (!d.authorId) return;
+            const c = d.reactions ?? 0;
+            const { isMilestone, sendMilestonePush } = await import('./communityNotify');
+            if (!isMilestone(c)) return;
+            const body = c === 1
+                ? 'Someone was moved by your story ❤️'
+                : `${c} people have been moved by your story ❤️`;
+            await sendMilestonePush(d.authorId, 'Your story is inspiring others', body, 'testimony_milestone');
+        } catch { /* never block the reaction over a notification failure */ }
     },
 
     /** Has the current user already liked this testimony? */

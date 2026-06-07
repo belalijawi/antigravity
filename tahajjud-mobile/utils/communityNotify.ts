@@ -1,32 +1,34 @@
 /**
  * Client-side community milestone notifications.
  *
- * When a user's dua hits an Ameen / "praying for" milestone, or their testimony
- * hits a likes milestone, we notify the author. This is done client-side (the
- * reactor's device sends the push) because the project is on Firebase's free
- * Spark plan, which can't run Cloud Functions. This matches the existing
- * accountability-partner wake-up pattern, which already sends Expo pushes
- * directly from the client.
+ * When a user's dua receives an Ameen / "praying for", or their testimony
+ * gets a like, we notify the author. This is done client-side (the reactor's
+ * device sends the push) because the project is on Firebase's free Spark plan
+ * which can't run Cloud Functions — same trust model as partner wake-ups.
  *
- * Privacy/safety: author IDs and push tokens are already readable by any
- * authenticated user (same trust model as partner wake-ups). We never notify
- * a user about their own reaction.
+ * Rate-limiting: we cap at one notification per (author, type) per 60 seconds
+ * so rapid Ameens from multiple users don't spam the author's lock screen.
  */
 
 import { doc, getDoc } from 'firebase/firestore';
 import { getFirebaseAuth, getFirebaseDb } from './firebase';
 
-// Reaction counts that trigger a notification — feels special, never spammy.
+// Milestones used by testimony submissions (still milestone-gated).
 const MILESTONES = [1, 10, 25, 50, 100, 250, 500];
-
 export function isMilestone(count: number): boolean {
     return MILESTONES.includes(count);
 }
 
+// In-memory rate-limit: track the last time we sent a push for each author+type.
+// Resets on app restart, which is fine — we just want to avoid a burst.
+const lastSentAt = new Map<string, number>();
+const RATE_LIMIT_MS = 60_000; // one notification per author per 60 seconds
+
 /**
- * Sends a milestone push to `authorId`. No-ops if:
+ * Sends a push to `authorId`. No-ops if:
  *  - the author is the current user (don't notify yourself)
  *  - the author has no stored push token
+ *  - a notification for this author+type was sent within the last 60 seconds
  */
 export async function sendMilestonePush(
     authorId: string,
@@ -38,6 +40,12 @@ export async function sendMilestonePush(
         const me = getFirebaseAuth()?.currentUser;
         if (!me || me.uid === authorId) return; // never notify self
 
+        // Rate-limit: skip if we already sent one recently for this author+type
+        const rateKey = `${authorId}_${type}`;
+        const last = lastSentAt.get(rateKey) ?? 0;
+        if (Date.now() - last < RATE_LIMIT_MS) return;
+        lastSentAt.set(rateKey, Date.now());
+
         const db = getFirebaseDb();
         const snap = await getDoc(doc(db, 'push_tokens', authorId));
         const token = snap.exists() ? (snap.data() as any).token : null;
@@ -45,7 +53,7 @@ export async function sendMilestonePush(
 
         const controller = new AbortController();
         const tid = setTimeout(() => controller.abort(), 10000);
-        await fetch('https://exp.host/--/api/v2/push/send', {
+        const res = await fetch('https://exp.host/--/api/v2/push/send', {
             method: 'POST',
             signal: controller.signal,
             headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
@@ -54,6 +62,13 @@ export async function sendMilestonePush(
                 sound: 'default', priority: 'high',
                 data: { type },
             }),
-        }).finally(() => clearTimeout(tid));
+        });
+        clearTimeout(tid);
+        if (__DEV__) {
+            const json = await res.json().catch(() => null);
+            if (json?.data?.status === 'error') {
+                console.warn('[communityNotify] Expo push error:', json.data.message, 'token:', token?.slice(0, 20));
+            }
+        }
     } catch { /* never block the reaction over a notification */ }
 }

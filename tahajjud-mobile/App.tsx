@@ -2,7 +2,7 @@ import 'react-native-gesture-handler';
 // Platform must be imported BEFORE Sentry.init — it's used in tracesSampleRate
 // at module-evaluation time (line ~45). Importing after would leave Platform
 // undefined when Sentry.init runs, causing a crash at startup.
-import { Platform, View, Text, Pressable, StatusBar, LogBox, StyleSheet, Dimensions, Modal, DeviceEventEmitter, Animated as RNAnimated } from 'react-native';
+import { Platform, View, Text, TouchableOpacity, StatusBar, LogBox, StyleSheet, Dimensions, Modal, DeviceEventEmitter, Animated as RNAnimated } from 'react-native';
 import * as Sentry from '@sentry/react-native';
 import React, { useEffect, useState } from 'react';
 import Constants from 'expo-constants';
@@ -170,22 +170,28 @@ export function consumePendingOpen<K extends PendingOpen['kind']>(
   return undefined;
 }
 
-// Custom tab bar button — replaces the default TouchableWithoutFeedback so
-// that holding a finger on a tab (long press) still navigates to it.
-// React Navigation fires onLongPress separately from onPress, meaning a slow
-// press never triggers navigation with the default button.
-function TabBarButton({ onPress, onLongPress, children, style, ...rest }: any) {
+// Custom tab bar button — fires instantly on any touch (quick tap, slow tap,
+// long press). The default TouchableWithoutFeedback has an internal press
+// delay and drops the onPress if the finger lifts after the long-press
+// threshold (~500ms), meaning slow presses silently do nothing.
+// TouchableOpacity with delayPressIn={0} registers the touch the instant the
+// finger lands, eliminating the need to double-tap.
+function TabBarButton({ onPress, children, style, accessibilityRole, accessibilityState, accessibilityLabel, testID }: any) {
   return (
-    <Pressable
-      {...rest}
-      style={style}
+    <TouchableOpacity
+      activeOpacity={0.7}
+      delayPressIn={0}
       onPress={onPress}
-      onLongPress={onPress}   // treat long press exactly like a normal press
-      delayLongPress={200}    // fire after 200ms hold, not the default 500ms
-      android_ripple={null}
+      onLongPress={onPress}        // slow press → navigate, not scroll-to-top
+      delayLongPress={300}
+      style={style}
+      accessibilityRole={accessibilityRole}
+      accessibilityState={accessibilityState}
+      accessibilityLabel={accessibilityLabel}
+      testID={testID}
     >
       {children}
-    </Pressable>
+    </TouchableOpacity>
   );
 }
 
@@ -528,15 +534,35 @@ function AppNavigator() {
     import('./utils/notifications')
       .then(m => m.ensureNotificationHandler())
       .catch(() => { /* ignore */ });
-    // Refresh Expo push token on every cold start. Stale tokens are the #1
-    // reason accountability-partner wake-up notifications silently fail.
-    // We import lazily to avoid pulling Firebase into the startup bundle if
-    // the user is offline / hasn't signed in yet.
-    setTimeout(() => {
+    // Refresh Expo push token on every cold start AND on auth-state change.
+    // Stale / missing tokens are why Dua Wall + partner notifications fail
+    // silently. The auth listener handles new sign-ins (including the initial
+    // anonymous sign-in on first launch) so the token is always in Firestore
+    // before the user can post a dua or receive an Ameen.
+    // Save Expo push token whenever Firebase auth settles (sign-in, anonymous
+    // auth on first launch, etc.) so the token is always in Firestore before
+    // the user can post a dua or receive an Ameen/testimony notification.
+    let authUnsub: (() => void) | undefined;
+    import('./utils/firebase').then(({ getFirebaseAuth }) => {
+      const auth = getFirebaseAuth();
+      if (!auth) return;
+      authUnsub = auth.onAuthStateChanged((user) => {
+        if (!user) return; // signed out — nothing to save
+        import('./utils/accountabilityPartner')
+          .then(m => m.saveExpoPushToken())
+          .catch(() => {});
+      });
+    }).catch(() => {});
+    // Also refresh 3s after cold start to catch any race with auth settling
+    const tokenTimer = setTimeout(() => {
       import('./utils/accountabilityPartner')
         .then(m => m.saveExpoPushToken())
         .catch(() => { /* ignore — best-effort */ });
-    }, 3000); // small delay so Firebase auth can settle
+    }, 3000);
+    return () => {
+      authUnsub?.();
+      clearTimeout(tokenTimer);
+    };
   }, []);
 
   const setupAudio = async () => {
