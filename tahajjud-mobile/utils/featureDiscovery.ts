@@ -14,6 +14,7 @@
  */
 
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { Platform } from 'react-native';
 
 export type FeatureId =
     | 'mosque_timetable'
@@ -197,7 +198,6 @@ export async function maybeScheduleFeatureNudge(): Promise<void> {
         fireDate.setDate(fireDate.getDate() + 2);
         fireDate.setHours(19, 0, 0, 0); // early evening
 
-        const { Platform } = await import('react-native');
         await Notifications.scheduleNotificationAsync({
             content: {
                 title: `Have you tried ${pick.label}?`,

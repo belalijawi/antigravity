@@ -212,7 +212,9 @@ export function HomeTab() {
             track('prayer_logged', { prayer: 'tahajjud', source: 'night_mode' });
 
             // Emit so HistoryCalendar and PrayerAnalytics refresh
-            const { DeviceEventEmitter } = await import('react-native');
+            // (DeviceEventEmitter is imported statically at the top — never use a
+            //  dynamic import('react-native'), it enumerates deprecated exports
+            //  like PushNotificationIOS and crashes the app)
             DeviceEventEmitter.emit('prayerLogged');
         }
 
