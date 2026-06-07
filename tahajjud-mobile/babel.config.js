@@ -13,8 +13,10 @@ module.exports = function (api) {
 
     return {
         presets: [
-            ["babel-preset-expo", { jsxImportSource: "nativewind" }],
-            "nativewind/babel",
+            // Standard Expo preset — nativewind removed (zero className usage
+            // in the codebase; its Babel transform was running on every file
+            // for no benefit and injecting its runtime into the bundle).
+            "babel-preset-expo",
         ],
         plugins: [
             "react-native-reanimated/plugin",

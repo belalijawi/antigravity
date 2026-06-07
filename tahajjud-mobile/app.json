@@ -17,7 +17,7 @@
       "supportsTablet": true,
       "bundleIdentifier": "com.tahajjudplus.app",
       "appStoreUrl": "https://apps.apple.com/app/id6759176533",
-      "buildNumber": "30",
+      "buildNumber": "31",
       "googleServicesFile": "./GoogleService-Info.plist",
       "entitlements": {
         "com.apple.developer.usernotifications.time-sensitive": true
