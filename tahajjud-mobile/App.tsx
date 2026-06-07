@@ -2,7 +2,7 @@ import 'react-native-gesture-handler';
 // Platform must be imported BEFORE Sentry.init — it's used in tracesSampleRate
 // at module-evaluation time (line ~45). Importing after would leave Platform
 // undefined when Sentry.init runs, causing a crash at startup.
-import { Platform, View, Text, StatusBar, LogBox, StyleSheet, Dimensions, Modal, DeviceEventEmitter, Animated as RNAnimated } from 'react-native';
+import { Platform, View, Text, Pressable, StatusBar, LogBox, StyleSheet, Dimensions, Modal, DeviceEventEmitter, Animated as RNAnimated } from 'react-native';
 import * as Sentry from '@sentry/react-native';
 import React, { useEffect, useState } from 'react';
 import Constants from 'expo-constants';
@@ -168,6 +168,25 @@ export function consumePendingOpen<K extends PendingOpen['kind']>(
     return v as Extract<PendingOpen, { kind: K }>;
   }
   return undefined;
+}
+
+// Custom tab bar button — replaces the default TouchableWithoutFeedback so
+// that holding a finger on a tab (long press) still navigates to it.
+// React Navigation fires onLongPress separately from onPress, meaning a slow
+// press never triggers navigation with the default button.
+function TabBarButton({ onPress, onLongPress, children, style, ...rest }: any) {
+  return (
+    <Pressable
+      {...rest}
+      style={style}
+      onPress={onPress}
+      onLongPress={onPress}   // treat long press exactly like a normal press
+      delayLongPress={200}    // fire after 200ms hold, not the default 500ms
+      android_ripple={null}
+    >
+      {children}
+    </Pressable>
+  );
 }
 
 // Animated tab icon — scales up + shows a glowing dot when its tab is the
@@ -381,6 +400,10 @@ function MainApp() {
                 // issue where a slightly-off press isn't registered.
                 paddingVertical: 4,
               },
+              // Custom button so long-press still navigates (React Navigation's
+              // default fires onLongPress instead of onPress on a slow tap,
+              // so holding a finger too long silently does nothing).
+              tabBarButton: (props) => <TabBarButton {...props} />,
             }}
             screenListeners={({ navigation, route }) => ({
               tabPress: () => {

@@ -324,8 +324,12 @@ const styles = StyleSheet.create({
     skipText: { color: '#475569', fontSize: 13, fontWeight: '600' },
 });
 
-// Re-export so HomeTab gating logic is co-located
+// Re-export so HomeTab gating logic is co-located.
+// Returns true during the last third AND during a 3-hour grace window after
+// Fajr, so the "Did you pray?" prompt (and log button) stays available for
+// users who prayed at 3 AM but only open the app at 7 AM.
 export function isInTahajjudWindow(nightCalc: NightCalculation | null, now: Date): boolean {
     if (!nightCalc) return false;
-    return now >= nightCalc.lastThirdStart && now < nightCalc.nightEnd;
+    const graceEnd = new Date(nightCalc.nightEnd.getTime() + 3 * 60 * 60 * 1000);
+    return now >= nightCalc.lastThirdStart && now < graceEnd;
 }

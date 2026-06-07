@@ -94,14 +94,19 @@ export async function loadPrayerStartTimes(): Promise<PrayerStartTimes | null> {
             asr:     new Date(j.asr),
             maghrib: new Date(j.maghrib),
             isha:    new Date(j.isha),
-            // Only allow Tahajjud after Isha. Exception: before Fajr (midnight–Fajr)
-            // the user is in the active Tahajjud window — last night's Isha has
-            // already passed so we use epoch (always enabled) for that window.
+            // Tahajjud unlock window: from Isha time until 3 hours after Fajr.
+            // The 3-hour grace handles the common case where someone prays at
+            // 3 AM but only remembers to log when they wake up at 7–8 AM.
+            // Before Fajr: always unlocked (epoch = always in the past).
+            // After Fajr: unlocked until fajr + 3 h, then locked for the day.
             tahajjud: (() => {
                 const now = new Date();
                 const fajr = new Date(j.fajr);
                 const isha = new Date(j.isha);
-                return now < fajr ? new Date(0) : isha;
+                const graceEnd = new Date(fajr.getTime() + 3 * 60 * 60 * 1000);
+                if (now < fajr) return new Date(0);          // pre-Fajr: always open
+                if (now < graceEnd) return new Date(0);      // grace window: still open
+                return isha;                                  // past grace: locked (isha is in the past → button greys out)
             })(),
         };
     } catch { return null; }
