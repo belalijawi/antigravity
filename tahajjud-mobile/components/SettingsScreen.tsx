@@ -175,44 +175,24 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ onClose }) => {
     useEffect(() => {
         loadSettings();
 
-        // Use the auth listener for more reliable state tracking
-        const check = async () => {
-            const authInstance = getFirebaseAuth();
-            if (authInstance) {
-                const unsubscribe = authInstance.onAuthStateChanged((firebaseUser) => {
-                    if (firebaseUser) {
-                        setUser({
-                            id: firebaseUser.uid,
-                            email: firebaseUser.email
-                        });
-                        setIsSyncEnabled(true);
-                    } else {
-                        setUser(null);
-                        setIsSyncEnabled(false);
-                    }
-                });
-                return unsubscribe;
+        // Synchronous setup — onAuthStateChanged is NOT async so we can
+        // subscribe immediately and return the unsubscriber directly, avoiding
+        // the async gap where the listener fires before we've stored the unsub.
+        const authInstance = getFirebaseAuth();
+        if (!authInstance) {
+            checkUser();
+            return;
+        }
+        const unsubscribe = authInstance.onAuthStateChanged((firebaseUser) => {
+            if (firebaseUser) {
+                setUser({ id: firebaseUser.uid, email: firebaseUser.email });
+                setIsSyncEnabled(true);
             } else {
-                // Fallback to manual check if listener can't be attached yet
-                checkUser();
-            }
-        };
-
-        let unmount: (() => void) | undefined;
-        let active = true;
-        check().then(u => {
-            if (!active) {
-                // Component already unmounted — unsubscribe immediately
-                if (u) u();
-            } else {
-                unmount = u;
+                setUser(null);
+                setIsSyncEnabled(false);
             }
         });
-
-        return () => {
-            active = false;
-            if (unmount) unmount();
-        };
+        return () => unsubscribe();
     }, []);
 
     const loadSettings = async () => {
@@ -759,9 +739,18 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ onClose }) => {
                                             !isSelected && isRecommended && { borderColor: colors.accent + '88', borderWidth: 1.5 },
                                         ]}
                                     >
-                                        {isRecommended && !isSelected && (
-                                            <View style={[styles.methodBadge, { backgroundColor: colors.accent }]}>
-                                                <Text style={styles.methodBadgeText}>★ RECOMMENDED</Text>
+                                        {/* Always show the Recommended badge so users can
+                                            identify it even after selecting it */}
+                                        {isRecommended && (
+                                            <View style={[
+                                                styles.methodBadge,
+                                                // When selected: dark badge so it shows on the accent bg
+                                                { backgroundColor: isSelected ? 'rgba(0,0,0,0.25)' : colors.accent },
+                                            ]}>
+                                                <Text style={[
+                                                    styles.methodBadgeText,
+                                                    { color: isSelected ? '#0f172a' : '#fff' },
+                                                ]}>★ RECOMMENDED</Text>
                                             </View>
                                         )}
                                         <Text style={[

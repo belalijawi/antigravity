@@ -5,7 +5,6 @@ import {
     Animated as RNAnimated,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
-import { BlurView } from 'expo-blur';
 import { X, Heart, Flag, PenLine, Moon, Sparkles } from 'lucide-react-native';
 import { SEED_DUAS, isSeedDua } from '../utils/duaWallSeeds';
 import Animated, { FadeInDown, FadeIn, ZoomIn, useSharedValue, useAnimatedStyle, withSequence, withSpring } from 'react-native-reanimated';
@@ -69,6 +68,12 @@ export function DuaWallModal({ visible, onClose }: Props) {
     const [publishing, setPublishing] = useState(false);
     const [ameened, setAmeened] = useState<Set<string>>(new Set());
     const [praying, setPraying] = useState<Set<string>>(new Set());
+    // Guard against setState on unmounted modal (Firestore writes can outlive the modal)
+    const duaWallMountedRef = React.useRef(true);
+    React.useEffect(() => {
+        duaWallMountedRef.current = true;
+        return () => { duaWallMountedRef.current = false; };
+    }, []);
 
     useEffect(() => {
         if (!visible) return;
@@ -120,7 +125,7 @@ export function DuaWallModal({ visible, onClose }: Props) {
         // Seed duas don't write to Firestore; the local toggle is the whole thing.
         if (id.startsWith('seed-')) return;
         const ok = wasAmeened ? await DuaWall.unameen(id) : await DuaWall.ameen(id);
-        if (!ok) {
+        if (!ok && duaWallMountedRef.current) {
             // Rollback on backend failure
             setAmeened(prev => {
                 const next = new Set(prev);
@@ -141,7 +146,7 @@ export function DuaWallModal({ visible, onClose }: Props) {
         });
         if (id.startsWith('seed-')) return;
         const ok = wasPraying ? await DuaWall.unpray(id) : await DuaWall.prayingFor(id);
-        if (!ok) {
+        if (!ok && duaWallMountedRef.current) {
             // Rollback on backend failure
             setPraying(prev => {
                 const next = new Set(prev);
@@ -179,6 +184,7 @@ export function DuaWallModal({ visible, onClose }: Props) {
         }
         setPublishing(true);
         const result = await DuaWall.publish(composeText);
+        if (!duaWallMountedRef.current) return;
         setPublishing(false);
         if (!result.ok) {
             const messages: Record<string, string> = {
@@ -193,8 +199,10 @@ export function DuaWallModal({ visible, onClose }: Props) {
             return;
         }
         haptic.success();
-        setComposeText('');
-        setShowCompose(false);
+        if (duaWallMountedRef.current) {
+            setComposeText('');
+            setShowCompose(false);
+        }
         import('../utils/featureDiscovery').then(m => m.markFeatureUsed('dua_wall')).catch(() => {});
         import('../utils/analytics').then(m => m.track('dua_posted')).catch(() => {});
         Alert.alert('Published 🌙', 'May Allah accept your dua.');

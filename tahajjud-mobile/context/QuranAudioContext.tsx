@@ -292,28 +292,37 @@ export function QuranAudioProvider({ children }: { children: ReactNode }) {
             setQueueTotal(ayahs.length);
             setQueueIndex(0);
 
-            // Download all ayahs in background — populate cache and silently
-            // swap upcoming tracks to local files as each one finishes.
-            ayahs.forEach((a, i) => {
-                downloadAyahToCache(a.url, reciterId, surahNumber, a.ayahNumber)
-                    .then(async (localUri) => {
-                        if (!localUri || !localUri.startsWith(AYAH_CACHE_DIR)) return;
-                        try {
-                            const activeIdx = await TrackPlayer.getActiveTrackIndex();
-                            if (typeof activeIdx !== 'number' || i <= activeIdx) return;
-                            await TrackPlayer.remove([i]);
-                            await TrackPlayer.add({
-                                url: localUri,
-                                title: tracks[i].title,
-                                artist: tracks[i].artist,
-                                album: tracks[i].album,
-                                artwork: tracks[i].artwork,
-                                surahNumber,
-                                ayahNumber: tracks[i].ayahNumber,
-                            }, i);
-                        } catch { /* race condition — fine */ }
-                    }).catch(() => {});
-            });
+            // Download ayahs in background with capped concurrency — populate
+            // cache and silently swap upcoming tracks to local files as each
+            // finishes. We cap at 4 parallel downloads to avoid saturating the
+            // JS bridge (Al-Baqarah has 286 ayahs; firing all at once hangs the UI).
+            const CACHE_CONCURRENCY = 4;
+            const processAyah = async (a: AyahTrack, i: number) => {
+                const localUri = await downloadAyahToCache(a.url, reciterId, surahNumber, a.ayahNumber)
+                    .catch(() => null);
+                if (!localUri || !localUri.startsWith(AYAH_CACHE_DIR)) return;
+                try {
+                    const activeIdx = await TrackPlayer.getActiveTrackIndex();
+                    if (typeof activeIdx !== 'number' || i <= activeIdx) return;
+                    await TrackPlayer.remove([i]);
+                    await TrackPlayer.add({
+                        url: localUri,
+                        title: tracks[i].title,
+                        artist: tracks[i].artist,
+                        album: tracks[i].album,
+                        artwork: tracks[i].artwork,
+                        surahNumber,
+                        ayahNumber: tracks[i].ayahNumber,
+                    }, i);
+                } catch { /* race condition — fine */ }
+            };
+            (async () => {
+                for (let b = 0; b < ayahs.length; b += CACHE_CONCURRENCY) {
+                    await Promise.all(
+                        ayahs.slice(b, b + CACHE_CONCURRENCY).map((a, j) => processAyah(a, b + j))
+                    );
+                }
+            })().catch(() => {});
         } catch (e) {
             console.error('[QuranAudio] startAyahQueue error:', e);
         }

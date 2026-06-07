@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useRef } from "react";
 import Animated, { useSharedValue, useAnimatedStyle, withRepeat, withSequence, withTiming, cancelAnimation, Easing } from 'react-native-reanimated';
 import { View, Text, ActivityIndicator, StyleSheet, TouchableOpacity, Alert, AppState, AppStateStatus, Linking, DeviceEventEmitter, Modal, TextInput, KeyboardAvoidingView, Platform } from "react-native";
 import * as Location from "expo-location";
@@ -21,6 +21,11 @@ export function NightCalculator({ onNightCalcReady, onPrayerTimesReady, refreshK
     const { colors } = useTheme();
     const { isPremium, openPaywall } = usePurchases();
     const [location, setLocation] = useState<{ lat: number; lng: number } | null>(null);
+    // Ref tracks previous location so applyNewLocation can compare without
+    // capturing stale state in a closure (the effect has [] deps).
+    const prevLocRef = useRef<{ lat: number; lng: number } | null>(null);
+    // Unmount guard — prevents setState on unmounted component from async location callbacks
+    const ncMountedRef = useRef(true);
     const [prayerTimes, setPrayerTimes] = useState<PrayerTimes | null>(null);
     const [nightCalc, setNightCalc] = useState<NightCalculation | null>(null);
     const [loading, setLoading] = useState<boolean>(true);
@@ -207,6 +212,7 @@ export function NightCalculator({ onNightCalcReady, onPrayerTimesReady, refreshK
         });
 
         return () => {
+            ncMountedRef.current = false;
             subscription.remove();
             watchSub?.remove();
         };
@@ -281,9 +287,9 @@ export function NightCalculator({ onNightCalcReady, onPrayerTimesReady, refreshK
             if (tahajjudNights.length > 0) await scheduleFutureTahajjudNotifications(tahajjudNights);
             if (futurePrayers.length > 0)  await scheduleFuturePrayerNotifications(futurePrayers);
 
-            console.log(`[DEBUG] Pre-scheduled ${tahajjudNights.length} Tahajjud + ${futurePrayers.length} daily prayers for next 6 days`);
+            if (__DEV__) console.log(`[DEBUG] Pre-scheduled ${tahajjudNights.length} Tahajjud + ${futurePrayers.length} daily prayers for next 6 days`);
         } catch (err) {
-            console.warn('[DEBUG] prefetchFutureNights failed (non-critical):', err);
+            if (__DEV__) console.warn('[DEBUG] prefetchFutureNights failed (non-critical):', err);
         }
     };
 
@@ -310,7 +316,10 @@ export function NightCalculator({ onNightCalcReady, onPrayerTimesReady, refreshK
     };
 
     const applyNewLocation = async (lat: number, lng: number) => {
-        const prevLoc = location;
+        if (!ncMountedRef.current) return;
+        // Use ref (not state) for previous location so this function always
+        // sees the latest value even when captured in a [] effect closure.
+        const prevLoc = prevLocRef.current;
 
         // Round to ~111m precision (3 decimal places of lat/lng). Without this,
         // every AppState foreground event (frequent on Android, fires on keyboard
@@ -330,16 +339,19 @@ export function NightCalculator({ onNightCalcReady, onPrayerTimesReady, refreshK
             ? distanceKm(prevLoc.lat, prevLoc.lng, lat, lng) > 30
             : false;
 
+        prevLocRef.current = { lat, lng };
+        if (!ncMountedRef.current) return;
         setLocation({ lat, lng });
 
         // Reverse geocode city name
         const city = await resolveCityName(lat, lng);
+        if (!ncMountedRef.current) return;
         setCityName(city);
 
         // If user travelled >30 km, force notification reschedule for new location
         if (movedFar) {
             setLastScheduledKey(null);
-            console.log(`[DEBUG] Significant location change detected (>30km). Rescheduling notifications.`);
+            if (__DEV__) console.log(`[DEBUG] Significant location change detected (>30km). Rescheduling notifications.`);
         }
     };
 
@@ -476,7 +488,7 @@ export function NightCalculator({ onNightCalcReady, onPrayerTimesReady, refreshK
                         targetTime: new Date(calc.lastThirdStart)
                     });
                     setLastScheduledKey(currentKey);
-                    console.log(`[DEBUG] Unified notifications scheduled for ${today.toDateString()}`);
+                    if (__DEV__) console.log(`[DEBUG] Unified notifications scheduled for ${today.toDateString()}`);
 
                     // Pre-fetch + schedule the next 6 nights so the alarm fires even if
                     // the user doesn't open the app every day.

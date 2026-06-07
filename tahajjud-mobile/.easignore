@@ -89,3 +89,19 @@ web-build/
 
 # ───── Worktree metadata (this repo is checked out via git worktree) ───
 .claude/
+
+# ───── EAS / build log artefacts (debug output, never part of the app) ─
+builds.json
+builds_utf8.json
+refreshed_builds.json
+refreshed_builds_utf8.json
+recent_builds.json
+build_history.json
+android_failures.json
+android_failures_utf8.json
+build_status.json
+build_*.json
+current_build_status.json
+latest_build_check.json
+computed_config.json
+new_build.json

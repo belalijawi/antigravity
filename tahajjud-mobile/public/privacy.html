@@ -90,7 +90,7 @@
     </nav>
 
     <h1>Privacy Policy</h1>
-    <div class="updated">Last updated: May 17, 2026</div>
+    <div class="updated">Last updated: June 7, 2026</div>
 
     <div class="callout">
         <p>Most of what you do in Tahajjud+ stays on your device. The few things that don't are listed below, explicitly.</p>
@@ -129,17 +129,29 @@
 
     <h3>Dua Wall</h3>
     <p>If you tap "Publish" on the Dua Wall, your dua text appears anonymously to other users. We store your Firebase user ID server-side to enforce rate limits and respond to reports — but it is <strong>never displayed alongside the dua</strong>.</p>
-    <p>When you tap <strong>Ameen</strong> or <strong>Pray for</strong> on a community dua, we record an idempotency marker (your user ID + the dua ID) in Firestore so the count can't be inflated. This marker is not shown to anyone.</p>
+    <p>When you tap <strong>Ameen</strong> or <strong>Pray for</strong> on a community dua, we record an idempotency marker (your user ID + the dua ID) in Firestore so the count can't be inflated. This marker is not shown to anyone. You can undo an Ameen or Pray, which deletes your marker.</p>
     <p>If you tap <strong>Report</strong> on a dua, we store the report (your user ID + the dua ID + auto-hide threshold) so moderators can review. Reporters are never disclosed to the author.</p>
+
+    <h3>Global Tahajjud Map</h3>
+    <p>If you tap "I'm praying now" on the Global Map, a single anonymous dot appears at your approximate city level. We store only a rounded latitude/longitude (imprecise enough to cover a several-kilometre radius) and a UTC timestamp — <strong>no user ID, name, or precise coordinates</strong> are stored. The dot disappears automatically after 24 hours and cannot be traced back to you.</p>
 
     <h3>Testimony submissions</h3>
     <p>Stories you submit through "Share Your Story" go to a moderation queue. If approved, they appear in the community feed under whatever author name you entered ("Anonymous", a first name, etc.) — never your account information.</p>
 
-    <h2>4. Biometric authentication (Face ID / Touch ID)</h2>
+    <h2>4. Mosque timetable import (AI photo scan)</h2>
+    <p>The Mosque Timetable feature lets you photograph your mosque's printed prayer schedule so the app can use those times instead of the calculated ones.</p>
+    <p>The photo is sent to <a href="https://anthropic.com" target="_blank">Anthropic's Claude API</a> for text extraction — this is the only time an image leaves your device in this feature.</p>
+    <ul>
+        <li><strong>What Anthropic receives:</strong> the image pixels, processed to extract prayer times. Per Anthropic's API data policy, they do not store the image or use it to train models.</li>
+        <li><strong>What we receive:</strong> the extracted prayer times as plain text strings. The image itself is never sent to or stored on our servers.</li>
+    </ul>
+    <p>The extracted times are saved locally on your device. You can remove them at any time in Settings → Prayer Times → Mosque Timetable.</p>
+
+    <h2>5. Biometric authentication (Face ID / Touch ID)</h2>
     <p>You can optionally protect your private writings (Letters to Allah, the Night Journal) with biometric authentication. When enabled, iOS prompts you for Face ID or Touch ID before opening these screens.</p>
     <p>The biometric match happens entirely inside iOS's Secure Enclave. <strong>We never receive your fingerprint or face data</strong> — we only receive a boolean "yes/no" from the operating system.</p>
 
-    <h2>5. Push notifications</h2>
+    <h2>6. Push notifications</h2>
     <p>Tahajjud+ uses push notifications for:</p>
     <ul>
         <li><strong>Prayer reminders</strong> — scheduled locally on your device. iOS handles delivery without any server.</li>
@@ -148,15 +160,15 @@
     </ul>
     <p>You can disable any notification in iOS Settings → Tahajjud+ → Notifications.</p>
 
-    <h2>6. Apple Health (sleep data)</h2>
+    <h2>7. Apple Health (sleep data)</h2>
     <p>If you enable <strong>Bedtime Intelligence</strong> in Settings, we read your past 14 days of sleep duration from Apple Health to suggest an optimal bedtime for Tahajjud.</p>
     <p>This data is processed <strong>entirely on your device</strong>. Your raw sleep timestamps are never transmitted to our servers, to any analytics service, or to anyone. Computation happens in the app; the result (a suggested bedtime) is shown only to you.</p>
 
-    <h2>7. Location (prayer times only)</h2>
+    <h2>8. Location (prayer times only)</h2>
     <p>We request location access to calculate accurate prayer times and Qibla direction for your area. Your coordinates are processed on your device. We do <strong>not</strong> transmit your location to our servers.</p>
     <p>You can disable location at any time in iOS Settings → Tahajjud+ → Location. The app will then ask you to set a manual location.</p>
 
-    <h2>8. Crash reporting (Sentry)</h2>
+    <h2>9. Crash reporting (Sentry)</h2>
     <p>When the app crashes, we send anonymized crash details to <a href="https://sentry.io" target="_blank">Sentry</a> so we can fix the bug. This includes:</p>
     <ul>
         <li>Stack trace</li>
@@ -166,15 +178,16 @@
     </ul>
     <p>We <strong>explicitly do NOT send</strong>: the content of your journal entries, letters, dua text, or any spiritual content. Our code filters these out before transmission. We also do not send your name, email, or location.</p>
 
-    <h2>9. Anonymous usage analytics (PostHog)</h2>
-    <p>We track anonymous events like "app launched", "tab switched", "paywall viewed" via <a href="https://posthog.com" target="_blank">PostHog</a> so we know which features get used. This helps us improve the app.</p>
-    <p>We <strong>explicitly do NOT track</strong>: which verses you read, what you write in your journal, what duas you publish, your name, email, location, or any other content. We use only an anonymous random identifier — never something tied to your identity.</p>
+    <h2>10. Anonymous usage analytics (PostHog)</h2>
+    <p>We use <a href="https://posthog.com" target="_blank">PostHog</a> (EU-hosted, Frankfurt) to track anonymous events so we know which features are used and where we can improve. Events include things like: prayer logged, Quran tab opened, tasbeeh session completed, dua played, tab switched, paywall viewed.</p>
+    <p>We <strong>explicitly do NOT track</strong>: which specific verses you read, the content of your journal or letters, what duas you publish or search for, your name, email, precise location, or any personal content whatsoever. All events are tied only to a random anonymous identifier — never to your account or identity.</p>
+    <p>Data is stored in the EU and subject to GDPR. To opt out, email us — we will add your anonymous ID to a deny-list within 5 business days.</p>
 
-    <h2>10. Payments and subscriptions</h2>
+    <h2>11. Payments and subscriptions</h2>
     <p>Premium subscriptions are processed by Apple's App Store. We <strong>never see your credit card or Apple ID password</strong>. We use <a href="https://www.revenuecat.com" target="_blank">RevenueCat</a> as middleware to verify your subscription status — RevenueCat sees anonymized purchase receipts.</p>
     <p>Manage or cancel subscriptions in iOS Settings → Apple ID → Subscriptions.</p>
 
-    <h2>11. Quran content sources</h2>
+    <h2>12. Quran content sources</h2>
     <p>Quran translations and audio recitations are fetched from public APIs:</p>
     <ul>
         <li><strong>alquran.cloud</strong> — text, Tanzil-verified (30+ translations)</li>
@@ -183,7 +196,7 @@
     </ul>
     <p>These APIs receive HTTP requests for surah numbers. They do not receive any of your personal data.</p>
 
-    <h2>12. Your rights</h2>
+    <h2>13. Your rights</h2>
 
     <h3>Delete local data</h3>
     <p>Uninstall the app, or in iOS Settings → Tahajjud+ → "Delete App."</p>
@@ -197,13 +210,13 @@
     <h3>Request a copy of your data</h3>
     <p>Email us with the email tied to your account. We respond within 30 days.</p>
 
-    <h2>13. Children's privacy</h2>
+    <h2>14. Children's privacy</h2>
     <p>Tahajjud+ does not knowingly collect personal information from children under the age of 13. If you believe a child has provided us with personal data, please contact us and we will delete it.</p>
 
-    <h2>14. Changes to this policy</h2>
+    <h2>15. Changes to this policy</h2>
     <p>We update this policy when we change what we collect. <strong>Major changes are announced in-app</strong> with a banner you must acknowledge before continuing. Minor wording changes are posted here with a new "Last updated" date.</p>
 
-    <h2>15. Contact</h2>
+    <h2>16. Contact</h2>
     <p>Questions, requests, or concerns:<br>
         <a href="mailto:tahajjud.letters@gmail.com">tahajjud.letters@gmail.com</a>
     </p>

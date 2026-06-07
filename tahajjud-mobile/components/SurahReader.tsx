@@ -369,7 +369,7 @@ export function SurahReader({ surahNumber: initialSurahNumber, edition = 'en.sah
         TrackPlayer.setVolume(1.0).catch(() => {});
     };
 
-    const cycleSleepTimer = () => {
+    const cycleSleepTimer = useCallback(() => {
         clearSleepTimer();
         const next = sleepTimerMins === 0 ? 15 : sleepTimerMins === 15 ? 30 : sleepTimerMins === 30 ? 60 : 0;
         if (next === 0) return;
@@ -397,7 +397,7 @@ export function SurahReader({ surahNumber: initialSurahNumber, edition = 'en.sah
                 } catch (_) {}
             }
         }, 1000);
-    };
+    }, [sleepTimerMins, clearSleepTimer]);
 
     // Cleanup sleep timer on unmount
     useEffect(() => {
@@ -456,14 +456,16 @@ export function SurahReader({ surahNumber: initialSurahNumber, edition = 'en.sah
     // (preserving position) — this just keeps our cached URL list fresh so
     // future playAyah() calls build the queue with the new voice.
     useEffect(() => {
+        let active = true;
         const unsub = subscribeReciter(async (newReciterId) => {
             try {
                 const fresh = await QuranService.getAudioRecitation(activeSurahNumber, newReciterId);
+                if (!active) return; // component unmounted while fetch was in flight
                 setAudioAyahs(fresh);
                 audioAyahsRef.current = fresh;
             } catch { /* ignore */ }
         });
-        return () => unsub();
+        return () => { active = false; unsub(); };
     }, [activeSurahNumber]);
 
     // Bumped each time loadSurah is called. Stored on a ref so async callbacks
@@ -712,12 +714,13 @@ export function SurahReader({ surahNumber: initialSurahNumber, edition = 'en.sah
 
     const renderAudioControlsContent = () => (
         <>
-            {/* Main controls row: speed | skip back | play | skip forward */}
+            {/* Main controls row — centered, with speed pill floating left */}
             <View style={styles.audioControls}>
+                {/* Speed pill — leftmost */}
                 <Pressable
                     onPress={handleSpeedChange}
                     android_ripple={{ color: colors.accent + '40', borderless: false }}
-                    hitSlop={6}
+                    hitSlop={8}
                     style={({ pressed }) => [
                         styles.sleepTimerBtn,
                         playbackSpeed !== 1 && { backgroundColor: colors.accent + '33', borderColor: colors.accent + '66' },
@@ -729,45 +732,51 @@ export function SurahReader({ surahNumber: initialSurahNumber, edition = 'en.sah
                     </Text>
                 </Pressable>
 
+                {/* Skip back */}
                 <Pressable
                     onPress={handlePrevAyah}
-                    android_ripple={{ color: 'rgba(255,255,255,0.2)', borderless: true, radius: 24 }}
+                    android_ripple={{ color: 'rgba(255,255,255,0.2)', borderless: true, radius: 28 }}
                     hitSlop={10}
                     style={({ pressed }) => [styles.controlButton, pressed && { opacity: 0.6 }]}
                 >
-                    <SkipBack size={20} color="#fff" />
+                    <SkipBack size={22} color="#fff" />
                 </Pressable>
 
+                {/* Play / Pause — centre button, accent-coloured with glow */}
                 <Pressable
                     onPress={handlePlayPause}
-                    android_ripple={{ color: 'rgba(0,0,0,0.2)', borderless: true, radius: 32 }}
+                    android_ripple={{ color: 'rgba(0,0,0,0.2)', borderless: true, radius: 34 }}
                     hitSlop={10}
                     style={({ pressed }) => [
                         styles.playPauseButton,
-                        { backgroundColor: colors.accent },
-                        pressed && { opacity: 0.85 },
+                        {
+                            backgroundColor: colors.accent,
+                            shadowColor: colors.accent,
+                        },
+                        pressed && { opacity: 0.8 },
                     ]}
                 >
                     {audioLoading ? (
-                        <ActivityIndicator size="small" color="#000" />
+                        <ActivityIndicator size="small" color="#020617" />
                     ) : isPlaying ? (
-                        <Pause size={24} color="#000" fill="#000" />
+                        <Pause size={26} color="#020617" fill="#020617" />
                     ) : (
-                        <Play size={24} color="#000" fill="#000" style={{ marginLeft: 2 }} />
+                        <Play size={26} color="#020617" fill="#020617" style={{ marginLeft: 3 }} />
                     )}
                 </Pressable>
 
+                {/* Skip forward */}
                 <Pressable
                     onPress={handleNextAyah}
-                    android_ripple={{ color: 'rgba(255,255,255,0.2)', borderless: true, radius: 24 }}
+                    android_ripple={{ color: 'rgba(255,255,255,0.2)', borderless: true, radius: 28 }}
                     hitSlop={10}
                     style={({ pressed }) => [styles.controlButton, pressed && { opacity: 0.6 }]}
                 >
-                    <SkipForward size={20} color="#fff" />
+                    <SkipForward size={22} color="#fff" />
                 </Pressable>
 
-                {/* Placeholder to balance the speed button on the left */}
-                <View style={{ width: 42 }} />
+                {/* Mirror of speed pill width so play stays centred */}
+                <View style={styles.speedMirror} />
             </View>
 
             {/* Footer: ayah counter row */}
@@ -975,6 +984,7 @@ export function SurahReader({ surahNumber: initialSurahNumber, edition = 'en.sah
                             setHifzVisible(true);
                         }}
                         style={styles.hifzButton}
+                        hitSlop={{ top: 10, bottom: 10, left: 6, right: 6 }}
                     >
                         <Brain color={colors.accent} size={20} />
                         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 3, marginTop: 2 }}>
@@ -983,7 +993,11 @@ export function SurahReader({ surahNumber: initialSurahNumber, edition = 'en.sah
                         </View>
                     </TouchableOpacity>
 
-                    <TouchableOpacity onPress={openLanguageModal} style={styles.langButton}>
+                    <TouchableOpacity
+                        onPress={openLanguageModal}
+                        style={styles.langButton}
+                        hitSlop={{ top: 10, bottom: 10, left: 6, right: 6 }}
+                    >
                         <Globe color="#cbd5e1" size={22} />
                         <Text style={styles.langLabel}>Language</Text>
                     </TouchableOpacity>
@@ -994,7 +1008,7 @@ export function SurahReader({ surahNumber: initialSurahNumber, edition = 'en.sah
             <FlatList
                 ref={flatListRef}
                 data={surah.ayahs}
-                keyExtractor={(item) => item.number.toString()}
+                keyExtractor={(item) => item.numberInSurah.toString()}
                 onViewableItemsChanged={onViewableItemsChanged}
                 viewabilityConfig={viewabilityConfig}
                 initialNumToRender={8}
@@ -1447,17 +1461,24 @@ const styles = StyleSheet.create({
     audioControls: {
         flexDirection: 'row',
         alignItems: 'center',
-        gap: 32,
+        justifyContent: 'center',
+        width: '100%',
+        gap: 28,
     },
     controlButton: {
-        padding: 8,
+        padding: 10,
     },
     playPauseButton: {
-        width: 56,
-        height: 56,
-        borderRadius: 28,
+        width: 60,
+        height: 60,
+        borderRadius: 30,
         justifyContent: 'center',
         alignItems: 'center',
+        // Glow so the button pops against any dark background
+        shadowOpacity: 0.6,
+        shadowRadius: 14,
+        shadowOffset: { width: 0, height: 0 },
+        elevation: 8,
     },
     audioFooter: {
         flexDirection: 'row',
@@ -1498,6 +1519,12 @@ const styles = StyleSheet.create({
         borderColor: 'rgba(255,255,255,0.15)',
         backgroundColor: 'rgba(255,255,255,0.06)',
         minWidth: 42,
+    },
+    // Invisible mirror of the speed pill so the play button stays centred
+    // when justifyContent:'center' distributes the row items.
+    speedMirror: {
+        minWidth: 42,
+        height: 1,
     },
     sleepTimerText: {
         color: '#94a3b8',

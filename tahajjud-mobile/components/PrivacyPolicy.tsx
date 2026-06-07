@@ -5,7 +5,7 @@ import {
     X, Shield, Lock, Eye, Database, MapPin, CreditCard, Cloud, Heart,
     BarChart3, AlertCircle, Mail,
 } from 'lucide-react-native';
-import { BlurView } from 'expo-blur';
+import { GlassBg as BlurView } from './GlassBg';
 import { useTheme } from '../context/ThemeContext';
 import { APP_URLS } from '../utils/urls';
 
@@ -117,10 +117,29 @@ export function PrivacyPolicy({ onClose }: Props) {
                         Some features are intentionally public when you opt in:
                     </P>
                     <P>{'\n'}
-                        <Text style={styles.bold}>Dua Wall.</Text> If you tap "Publish" on the Dua Wall, your dua text appears anonymously to other users. We store your Firebase user ID server-side to enforce rate limits and respond to reports — but it's NEVER displayed alongside the dua.
+                        <Text style={styles.bold}>Dua Wall.</Text> If you tap "Publish" on the Dua Wall, your dua text appears anonymously to other users. We store your Firebase user ID server-side to enforce rate limits and respond to reports — but it is NEVER displayed alongside the dua. When you tap Ameen or "Praying for," we store an idempotency marker (your user ID + dua ID) to prevent duplicate counts — this is never shown to anyone.
+                    </P>
+                    <P>{'\n'}
+                        <Text style={styles.bold}>Global Tahajjud Map.</Text> If you tap "I'm praying now" on the map, a single anonymous dot appears at your approximate city level. No user ID, name, or precise coordinates are stored — only a rounded lat/lng and a timestamp. The dot disappears automatically after 24 hours.
                     </P>
                     <P>{'\n'}
                         <Text style={styles.bold}>Testimony submissions.</Text> Stories you submit through "Share Your Story" go to a moderation queue. If approved, they appear in the community feed under whatever author name you entered ("Anonymous", a first name, etc.) — never your account info.
+                    </P>
+                </Section>
+
+                {/* ── Mosque timetable AI ──────────────────────── */}
+                <Section icon={MapPin} title="Mosque timetable import (AI photo scan)">
+                    <P>
+                        The Mosque Timetable feature lets you photograph your mosque's printed prayer schedule. The photo is sent to Anthropic's Claude API for text extraction — this is the only time an image leaves your device.
+                    </P>
+                    <P>{'\n'}
+                        <Text style={styles.bold}>What Anthropic receives:</Text> the image pixels, processed to extract prayer times. Anthropic does not store the image or use it to train models (per their API data policy).
+                    </P>
+                    <P>{'\n'}
+                        <Text style={styles.bold}>What we receive:</Text> the extracted prayer times as plain text. The image itself is never stored on our servers.
+                    </P>
+                    <P>{'\n'}
+                        The extracted times are saved locally on your device and used only to override the calculated prayer schedule in the app. You can delete them at any time in Settings → Prayer Times → Mosque Timetable.
                     </P>
                 </Section>
 
@@ -157,10 +176,13 @@ export function PrivacyPolicy({ onClose }: Props) {
                 {/* ── Analytics ────────────────────────────────── */}
                 <Section icon={BarChart3} title="Anonymous usage analytics (PostHog)">
                     <P>
-                        We track anonymous events like "app launched", "tab switched", "paywall viewed" so we know which features get used. This helps us improve the app.
+                        We use PostHog (EU-hosted, Frankfurt) to track anonymous events so we know which features get used and can improve the app. Events include things like: prayer logged, Quran opened, tasbeeh session completed, dua played, tab switched, paywall viewed.
                     </P>
                     <P>{'\n'}
-                        We explicitly DO NOT track: which verses you read, what you write in your journal, what duas you publish, your name, email, location, or any other content. We use only an anonymous random identifier — never something tied to your identity.
+                        We explicitly DO NOT track: which specific verses you read, what you write in your journal or letters, what duas you publish, your name, email, precise location, or any personal content. All events are tied only to a random anonymous ID — never to your identity or account.
+                    </P>
+                    <P>{'\n'}
+                        Data is stored in the EU and subject to GDPR. Email us to opt out — we will add your anonymous ID to a deny-list.
                     </P>
                 </Section>
 
@@ -218,7 +240,7 @@ export function PrivacyPolicy({ onClose }: Props) {
 
                 <View style={styles.footer}>
                     <Text style={[styles.footerText, { color: colors.secondaryText }]}>
-                        Last Updated: May 2026{'\n'}
+                        Last Updated: June 2026{'\n'}
                         We update this policy when we change what we collect. Major changes are announced in-app.{'\n\n'}
                         Full Privacy Policy:{'\n'}
                         <Text

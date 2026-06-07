@@ -9,7 +9,7 @@ import {
     Platform, Animated,
 } from 'react-native';
 import MapView, { Circle, PROVIDER_DEFAULT, Region } from 'react-native-maps';
-import { BlurView } from 'expo-blur';
+import { GlassBg as BlurView } from './GlassBg';
 import { X, Moon, Plus, Minus, Globe } from 'lucide-react-native';
 import { useTheme } from '../context/ThemeContext';
 import { subscribeTahajjudMap, MapDot } from '../utils/tahajjudMap';

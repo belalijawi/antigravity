@@ -174,14 +174,19 @@ class OfflineQuranService {
                     surahNumber, reciterId, status: 'downloaded', progress: 1, localUri: result.uri,
                 });
                 await this.persist();
-                // Pre-cache the user's current translation for this surah so
-                // it loads instantly offline (in addition to the audio). Run
-                // in the background — the audio is already done by this point.
+                // Pre-cache the user's non-bundled translation for this surah
+                // so it loads instantly offline. Arabic (quran-uthmani) and
+                // English (en.sahih) are bundled locally — no network needed.
+                // Run in the background — the audio is already done.
                 this.prefetchTranslation(surahNumber).catch(() => {});
-                // Pre-cache per-ayah audio files too, so the SurahReader's
-                // tap-to-play / karaoke mode works fully offline (not just
-                // the continuous playlist-style playback).
-                this.prefetchAyahAudio(surahNumber, reciterId).catch(() => {});
+                // NOTE: we intentionally do NOT prefetch individual per-ayah
+                // audio files here. The offline fallback in QuranAudioContext
+                // already handles the "no ayah cache" case by playing the
+                // whole-surah MP3 we just downloaded — which is far smaller
+                // (1 file vs up to 286 per surah) and gives identical
+                // continuous-playback quality. Per-ayah files are only needed
+                // for the tap-to-play karaoke mode, which requires a live
+                // connection anyway for word-level timing data.
                 return true;
             }
 
@@ -221,51 +226,17 @@ class OfflineQuranService {
     private async prefetchTranslation(surahNumber: number): Promise<void> {
         try {
             const edition = (await AsyncStorage.getItem('reader_translation_edition_v1')) ?? 'en.sahih';
-            await QuranService.getSurah(surahNumber, edition);
-            // Also pre-fetch the Arabic Mushaf since most users want both
-            await QuranService.getSurah(surahNumber, 'quran-uthmani');
+            // Arabic (quran-uthmani), English (en.sahih), and the 5 bundled
+            // translations are already in the JS bundle — calling getSurah on
+            // them is instant and involves no network I/O, so skip them here.
+            const LOCAL_EDITIONS = new Set([
+                'quran-uthmani', 'en.sahih',
+                'ur.kanzuliman', 'id.indonesian', 'tr.diyanet', 'bn.bengali', 'fr.hamidullah',
+            ]);
+            if (!LOCAL_EDITIONS.has(edition)) {
+                await QuranService.getSurah(surahNumber, edition);
+            }
         } catch { /* offline — try again later */ }
-    }
-
-    /**
-     * Download all per-ayah audio files into the AyahCache directory so the
-     * SurahReader's tap-to-play / karaoke mode also works offline. The
-     * SurahReader uses a different audio source than the whole-surah MP3
-     * (separate per-ayah URLs from the API for word-level highlighting),
-     * so without this the offline download alone wouldn't let users tap
-     * individual ayahs offline.
-     *
-     * Best-effort: failures are silent. The whole-surah fallback in
-     * QuranAudioContext catches anything that slips through.
-     */
-    private async prefetchAyahAudio(surahNumber: number, reciterId: string): Promise<void> {
-        try {
-            const audioAyahs = await QuranService.getAudioRecitation(surahNumber, reciterId);
-            if (!audioAyahs || audioAyahs.length === 0) return;
-            const cacheDir = `${FileSystem.cacheDirectory}ayah-audio-cache/`;
-            const dirInfo = await FileSystem.getInfoAsync(cacheDir);
-            if (!dirInfo.exists) {
-                await FileSystem.makeDirectoryAsync(cacheDir, { intermediates: true });
-            }
-            // Cache key MUST match what QuranAudioContext's cachePathFor builds:
-            //   `${reciterId}_${surahNumber}_${ayahNumber}`.replace(/[^a-zA-Z0-9_]/g, '_')
-            // e.g. "ar.alafasy_36_1" → "ar_alafasy_36_1.mp3"
-            // Sequential to avoid hammering the CDN
-            for (const ayah of audioAyahs) {
-                const safe = `${reciterId}_${surahNumber}_${ayah.numberInSurah}`.replace(/[^a-zA-Z0-9_]/g, '_');
-                const localPath = `${cacheDir}${safe}.mp3`;
-                const existing = await FileSystem.getInfoAsync(localPath);
-                if (existing.exists && existing.size && existing.size > 1024) continue;
-                try {
-                    const r = await FileSystem.downloadAsync(ayah.text, localPath);
-                    if (r.status < 200 || r.status >= 300) {
-                        await FileSystem.deleteAsync(localPath, { idempotent: true });
-                    }
-                } catch {
-                    try { await FileSystem.deleteAsync(localPath, { idempotent: true }); } catch { /* ignore */ }
-                }
-            }
-        } catch { /* network gone or API down — try next time */ }
     }
 
     private set(surahNumber: number, reciterId: string, info: DownloadInfo) {

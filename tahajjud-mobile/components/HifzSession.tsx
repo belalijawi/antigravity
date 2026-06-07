@@ -12,6 +12,7 @@ import { QuranTimingService, AyahAudioData, getWordAtTime } from '../services/Qu
 import { QuranWordService, AyahWords } from '../services/QuranWordService';
 import { getCurrentReciterId, subscribeReciter } from '../utils/reciters';
 import { useTheme } from '../context/ThemeContext';
+import { NebulaBackground } from './NebulaBackground';
 import {
     HifzAyah, HifzRating, StreakData, SavedSession,
     HIDE_FRACTION, getAllHifzData, recordReview, initAyah, getDueReviewsForSurah,
@@ -212,6 +213,17 @@ export function HifzSession({ surahNumber, surahName, surahNameTranslation, tota
     const [ayahWords, setAyahWords] = useState<AyahWords[]>([]);
     // Audio URLs from alquran.cloud (same reliable source as SurahReader)
     const audioUrlMapRef = useRef<Record<number, string>>({}); // ayahNumber → URL
+    // In-flight promise for the background extras load (audio/timing/words).
+    // Lets playback wait for audio if the user taps play during initial load.
+    const extrasLoadingRef = useRef<Promise<void> | null>(null);
+    // Guard against calling setState on an unmounted component (the Modal
+    // fully unmounts when closed, so an in-flight background load would
+    // otherwise try to set state on a dead component tree).
+    const mountedRef = useRef(true);
+    // Prevents double-tap on rating/advance buttons from corrupting the SR schedule
+    const ratingInProgressRef = useRef(false);
+    // Tracks ayahs currently being preloaded to prevent duplicate Sound objects
+    const preloadingRef = useRef<Set<number>>(new Set());
     const [playbackPos, setPlaybackPos] = useState(0);
     const [playbackDur, setPlaybackDur] = useState(1);
     const [playingGroupIdx, setPlayingGroupIdx] = useState(0);
@@ -275,6 +287,7 @@ export function HifzSession({ surahNumber, surahName, surahNameTranslation, tota
         });
 
         return () => {
+            mountedRef.current = false; // stop any in-flight background setState
             unsubReciter();
             soundRef.current?.unloadAsync().catch(() => {});
             // Release all preloaded sounds
@@ -286,39 +299,37 @@ export function HifzSession({ surahNumber, surahName, surahNameTranslation, tota
     }, []);
 
     const loadData = async (editionOverride?: string) => {
+        if (!mountedRef.current) return;
         setLoading(true);
-        // Ensure audio cache directory exists
-        await FileSystem.makeDirectoryAsync(AUDIO_CACHE_DIR, { intermediates: true }).catch(() => {});
+        // Ensure audio cache directory exists (non-blocking — only needed before playback)
+        FileSystem.makeDirectoryAsync(AUDIO_CACHE_DIR, { intermediates: true }).catch(() => {});
 
         // Load stored translation edition preference
         const storedEdition = editionOverride ?? await AsyncStorage.getItem(TRANSLATION_EDITION_KEY).catch(() => null) ?? 'en.sahih';
+        if (!mountedRef.current) return;
         setTranslationEdition(storedEdition);
 
-        const [surahData, audioAyahs, translationData, timingData, wordsData, allHifz, streak, goal, progress] = await Promise.all([
+        // ── Essential data only ──────────────────────────────────────────
+        // Arabic (quran-uthmani) and the default English are bundled/local —
+        // instant. The hifz/streak/goal/progress reads are local AsyncStorage.
+        // We block ONLY on these so the screen appears immediately. The
+        // network-backed extras (audio URLs, word timing, word-by-word) are
+        // loaded in the background below — they're only needed for playback.
+        const [surahData, translationData, allHifz, streak, goal, progress] = await Promise.all([
             QuranService.getSurah(surahNumber, 'quran-uthmani'),
-            // Use the user's selected reciter (not hardcoded Alafasy).
-            QuranService.getAudioRecitation(surahNumber, getCurrentReciterId()),
             QuranService.getSurah(surahNumber, storedEdition),
-            QuranTimingService.getSurahAudioData(surahNumber),
-            QuranWordService.getSurahWords(surahNumber),
             getAllHifzData(),
             getStreakData(),
             getDailyGoal(),
             getTodayProgress(),
         ]);
+        if (!mountedRef.current) return;
         setSurah(surahData);
         surahRef.current = surahData;
-        // Build ayahNumber → audio URL map from the reliable alquran.cloud source
-        const urlMap: Record<number, string> = {};
-        audioAyahs.forEach((a: any) => { urlMap[a.numberInSurah] = a.text; });
-        audioUrlMapRef.current = urlMap;
-        // Build ayahNumber → English translation map
+        // Build ayahNumber → translation map
         const transMap: Record<number, string> = {};
         translationData?.ayahs?.forEach((a: any) => { transMap[a.numberInSurah] = a.text; });
         translationMapRef.current = transMap;
-        setAyahAudioData(timingData);
-        ayahAudioDataRef.current = timingData;
-        setAyahWords(wordsData);
         setHifzData(allHifz);
         setStreakData(streak);
         setDailyGoalState(goal);
@@ -328,12 +339,40 @@ export function HifzSession({ surahNumber, surahName, surahNameTranslation, tota
             getHardestAyahs(surahNumber, 5),
             loadSession(surahNumber),
         ]);
+        if (!mountedRef.current) return;
         setDueReviews(due);
         setHardestAyahs(hardest);
         setSavedSession(saved);
+
+        // ✅ Screen is ready — reveal it now (cached surahs: instant).
         setLoading(false);
-        // Kick off preloading for due reviews so first play is instant
-        due.slice(0, 3).forEach(a => preloadAyah(a.ayahNumber));
+
+        // ── Background: network-backed extras (cached after first open) ───
+        // These power audio playback, word highlighting and word-by-word mode.
+        // Playback is resilient to these not being ready yet (getAudioUri
+        // returns null → no-op), so loading them after paint is safe.
+        extrasLoadingRef.current = (async () => {
+            try {
+                const [audioAyahs, timingData, wordsData] = await Promise.all([
+                    // Use the user's selected reciter (not hardcoded Alafasy).
+                    QuranService.getAudioRecitation(surahNumber, getCurrentReciterId()),
+                    QuranTimingService.getSurahAudioData(surahNumber),
+                    QuranWordService.getSurahWords(surahNumber),
+                ]);
+                // Build ayahNumber → audio URL map from the reliable source
+                const urlMap: Record<number, string> = {};
+                audioAyahs.forEach((a: any) => { urlMap[a.numberInSurah] = a.text; });
+                audioUrlMapRef.current = urlMap;
+                // Only update state if the modal is still mounted
+                if (!mountedRef.current) return;
+                setAyahAudioData(timingData);
+                ayahAudioDataRef.current = timingData;
+                setAyahWords(wordsData);
+                // Kick off preloading for due reviews so first play is instant
+                due.slice(0, 3).forEach(a => preloadAyah(a.ayahNumber));
+            } catch { /* extras are non-critical for display */ }
+        })();
+
         // Auto-show guide on first ever open
         const seen = await AsyncStorage.getItem('hifz_guide_seen_v1');
         if (!seen) setGuideVisible(true);
@@ -357,6 +396,11 @@ export function HifzSession({ surahNumber, surahName, surahNameTranslation, tota
     // ── Offline-first audio cache ───────────────────────────────────
 
     const getAudioUri = useCallback(async (ayahNum: number): Promise<string | null> => {
+        // If the user taps play before the background audio load finishes,
+        // wait for it rather than silently failing.
+        if (!audioUrlMapRef.current[ayahNum] && extrasLoadingRef.current) {
+            await extrasLoadingRef.current;
+        }
         const remoteUrl = audioUrlMapRef.current[ayahNum];
         if (!remoteUrl) return null;
         const localPath = AUDIO_CACHE_DIR + `${surahNumber}_${ayahNum}.mp3`;
@@ -372,16 +416,21 @@ export function HifzSession({ surahNumber, surahName, surahNameTranslation, tota
     // ── Preloading ──────────────────────────────────────────────────
 
     const preloadAyah = useCallback(async (ayahNum: number) => {
-        if (preloadMapRef.current[ayahNum]) return; // already buffered
-        const uri = await getAudioUri(ayahNum);
-        if (!uri) return;
+        // Guard both the already-buffered case AND any in-flight preload for
+        // the same ayah to prevent two Sound objects being created for one ayah
+        // (the second would overwrite the first in the map, leaking it).
+        if (preloadMapRef.current[ayahNum] || preloadingRef.current.has(ayahNum)) return;
+        preloadingRef.current.add(ayahNum);
         try {
+            const uri = await getAudioUri(ayahNum);
+            if (!uri) return;
             const { sound } = await Audio.Sound.createAsync(
                 { uri },
                 { shouldPlay: false, progressUpdateIntervalMillis: 50 }
             );
             preloadMapRef.current[ayahNum] = sound;
         } catch { /* silent — fallback will createAsync on demand */ }
+        finally { preloadingRef.current.delete(ayahNum); }
     }, [getAudioUri]);
 
     // Preload current item + next item whenever queue position changes
@@ -451,6 +500,8 @@ export function HifzSession({ surahNumber, surahName, surahNameTranslation, tota
     }, []);
 
     const onPlaybackStatus = useCallback((status: AVPlaybackStatus) => {
+        // Don't fire setState on a component that's already unmounted
+        if (!mountedRef.current) return;
         if (status.isLoaded) {
             setPlaybackPos(status.positionMillis ?? 0);
             setPlaybackDur(status.durationMillis ?? 1);
@@ -686,6 +737,10 @@ export function HifzSession({ surahNumber, surahName, surahNameTranslation, tota
 
     const handleAdvance = async (rating: HifzRating) => {
         if (!currentItem) return;
+        // Prevent double-tap from corrupting the spaced-repetition schedule
+        if (ratingInProgressRef.current) return;
+        ratingInProgressRef.current = true;
+        try {
 
         // Accumulation items practice in context but don't affect spaced repetition schedule
         if (!currentItem.isAccumulation) {
@@ -783,6 +838,9 @@ export function HifzSession({ surahNumber, surahName, surahNameTranslation, tota
         setPracticePhase('listening');
         setPlaybackPos(0);
         setPlaybackDur(1);
+        } finally {
+            ratingInProgressRef.current = false;
+        }
     };
 
     const handleUndo = async () => {
@@ -1824,6 +1882,8 @@ export function HifzSession({ surahNumber, surahName, surahNameTranslation, tota
                         <FlatList
                             data={surah?.ayahs ?? []}
                             keyExtractor={item => item.numberInSurah.toString()}
+                            getItemLayout={(_, index) => ({ length: 65, offset: 65 * index, index })}
+                            initialNumToRender={15}
                             contentContainerStyle={{ paddingBottom: 40 }}
                             renderItem={({ item }) => {
                                 const isAdded = alreadyAdded.has(item.numberInSurah);
@@ -1870,6 +1930,7 @@ export function HifzSession({ surahNumber, surahName, surahNameTranslation, tota
     if (loading) {
         return (
             <View style={styles.loadingContainer}>
+                <NebulaBackground />
                 <ActivityIndicator size="large" color="#f8fafc" />
                 <Text style={styles.loadingText}>Preparing Hifz...</Text>
             </View>
@@ -1878,6 +1939,7 @@ export function HifzSession({ surahNumber, surahName, surahNameTranslation, tota
 
     return (
         <View style={styles.container}>
+            <NebulaBackground />
             <SafeAreaView style={styles.headerSafeArea}>
                 <View style={styles.header}>
                     <TouchableOpacity
@@ -1972,8 +2034,8 @@ function ratingEmoji(r: HifzRating): string {
 }
 
 const styles = StyleSheet.create({
-    container: { flex: 1, backgroundColor: '#00080f' },
-    loadingContainer: { flex: 1, backgroundColor: '#00080f', alignItems: 'center', justifyContent: 'center', gap: 16 },
+    container: { flex: 1, backgroundColor: 'transparent' },
+    loadingContainer: { flex: 1, backgroundColor: 'transparent', alignItems: 'center', justifyContent: 'center', gap: 16 },
     loadingText: { color: '#94a3b8', fontSize: 16 },
     headerSafeArea: { backgroundColor: 'rgba(15,23,42,0.9)', borderBottomWidth: 1, borderColor: 'rgba(30,41,59,0.5)' },
     header: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingBottom: 16 },

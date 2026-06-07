@@ -565,11 +565,15 @@ export function DuasTab() {
         const getSearchTerms = (q: string): string[] => relatedTerms(q);
 
         const results = duaDatabase.filter(dua => {
-            // Filter by bookmarked
-            if (selectedCategory === 'Liked') {
-                if (!bookmarkedIds.includes(dua.id)) return false;
-            } else if (selectedCategory !== 'All') {
-                if (dua.category !== selectedCategory) return false;
+            // When the user is typing a search query, search across ALL duas
+            // regardless of the selected category pill — search takes priority.
+            // Only apply the category filter when there's no active search.
+            if (!searchQuery) {
+                if (selectedCategory === 'Liked') {
+                    if (!bookmarkedIds.includes(dua.id)) return false;
+                } else if (selectedCategory !== 'All') {
+                    if (dua.category !== selectedCategory) return false;
+                }
             }
 
             // Filter by search — fuzzy match across every searchable field,
@@ -697,6 +701,15 @@ export function DuasTab() {
                                         // push descenders past the fixed row height.
                                         maxFontSizeMultiplier={1.2}
                                     />
+                                    {searchQuery.length > 0 && (
+                                        <TouchableOpacity
+                                            onPress={() => setSearchQuery('')}
+                                            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                                            style={styles.searchClearBtn}
+                                        >
+                                            <X size={16} color="#64748b" />
+                                        </TouchableOpacity>
+                                    )}
                                 </View>
 
                                 {/* Category Pills */}
@@ -773,7 +786,7 @@ export function DuasTab() {
                                 style={[styles.journalWriteBtn, { backgroundColor: colors.accent, borderColor: colors.accent }]}
                                 activeOpacity={0.8}
                             >
-                                <PenLine size={13} color="#fff" />
+                                <PenLine size={13} color="#020617" />
                                 <Text style={styles.journalWriteBtnText}>Write</Text>
                             </TouchableOpacity>
                         </View>
@@ -975,6 +988,10 @@ const styles = StyleSheet.create({
     searchIcon: {
         marginRight: 12,
     },
+    searchClearBtn: {
+        marginLeft: 8,
+        padding: 2,
+    },
     searchInput: {
         flex: 1,
         color: '#ffffff',
@@ -1035,7 +1052,7 @@ const styles = StyleSheet.create({
         paddingHorizontal: 14, paddingVertical: 8,
         borderRadius: 20, borderWidth: 1,
     },
-    journalWriteBtnText: { color: '#fff', fontSize: 13, fontWeight: '700' },
+    journalWriteBtnText: { color: '#020617', fontSize: 13, fontWeight: '700' },
     emptyState: {
         paddingVertical: 80,
         alignItems: 'center',

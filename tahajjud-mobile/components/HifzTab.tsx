@@ -4,7 +4,7 @@ import {
     FlatList, Modal, TextInput,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { BlurView } from 'expo-blur';
+import { GlassBg as BlurView } from './GlassBg';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Brain, Flame, Target, Search, ChevronRight } from 'lucide-react-native';
 import { useFocusEffect } from '@react-navigation/native';

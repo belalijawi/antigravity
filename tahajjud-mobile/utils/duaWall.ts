@@ -369,7 +369,7 @@ export const DuaWall = {
             const db = getFirebaseDb();
             await updateDoc(doc(db, 'public-duas', duaId), {
                 hidden,
-                hiddenAt: hidden ? new Date() : null,
+                hiddenAt: hidden ? serverTimestamp() : null,
                 hiddenReason: hidden ? 'admin-manual' : null,
             });
             return true;
