@@ -74,7 +74,7 @@
           "icon": "./assets/adaptive-icon.png",
           "color": "#020617",
           "sounds": [
-            "./assets/sounds/tahajjud_alert.wav"
+            "./assets/sounds/tahajjud_alert.m4a"
           ]
         }
       ],

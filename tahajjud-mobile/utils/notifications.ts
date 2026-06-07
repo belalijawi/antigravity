@@ -72,7 +72,7 @@ export async function requestNotificationPermissions(): Promise<boolean> {
             importance: Notifications.AndroidImportance.MAX,
             vibrationPattern: [0, 2000, 1000, 2000],
             lightColor: '#4F46E5',
-            sound: 'tahajjud_alert.wav',
+            sound: 'tahajjud_alert.m4a',
             lockscreenVisibility: Notifications.AndroidNotificationVisibility.PUBLIC,
             bypassDnd: true,
         });
@@ -358,7 +358,7 @@ async function internalScheduleTahajjudNotification(targetTime: Date, bufferMinu
         content: {
             title,
             body,
-            sound: 'tahajjud_alert.wav',
+            sound: 'tahajjud_alert.m4a',
             priority: Notifications.AndroidNotificationPriority.MAX,
             vibrate: [0, 1000, 500, 1000, 500, 1000],
             // ── Time-sensitive: bypasses iOS Focus / Do Not Disturb ──
@@ -401,7 +401,7 @@ async function internalScheduleTahajjudNotificationRaw(targetTime: Date, bufferM
             content: {
                 title,
                 body,
-                sound: 'tahajjud_alert.wav',
+                sound: 'tahajjud_alert.m4a',
                 priority: Notifications.AndroidNotificationPriority.MAX,
                 vibrate: [0, 1000, 500, 1000, 500, 1000],
                 // Same time-sensitive escalation as tonight's reminder so

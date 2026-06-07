@@ -1,63 +1,39 @@
 /**
- * Locally-bundled Quran translations — major non-English languages that load
- * instantly without a network round-trip.
+ * Previously this file bundled 5 language translations (~6.3 MB of JSON)
+ * directly into the app for every user, regardless of their language.
  *
- * Each bundled file is a flat object: { "1": [ayah1, ayah2, ...], "2": [...] }
- * indexed by surah number (string keys 1–114).
+ * They are now fetched on-demand from alquran.cloud the first time a user
+ * selects that language, then cached permanently in AsyncStorage — identical
+ * offline behaviour after the first load, with ~6 MB saved for every user.
  *
- * Source: alquran.cloud /v1/quran/{edition}, downloaded once and compacted.
- * Same Tanzil-verified text as the API would return — guaranteed identical.
- *
- * Total bundle impact: ~6.3 MB across 5 languages.
+ * The only kept metadata is the display names, which are tiny.
  */
 
-// Each translation is required statically so Metro includes it in the JS bundle.
-// We don't lazy-load — the pay-as-you-go cost is read once + cached in memory.
-const BUNDLED: Record<string, () => any> = {
-    'ur.kanzuliman': () => require('../data/translations/ur.kanzuliman.json'),
-    'id.indonesian': () => require('../data/translations/id.indonesian.json'),
-    'tr.diyanet':    () => require('../data/translations/tr.diyanet.json'),
-    'bn.bengali':    () => require('../data/translations/bn.bengali.json'),
-    'fr.hamidullah': () => require('../data/translations/fr.hamidullah.json'),
-};
-
+// Metadata is still kept here (a few hundred bytes) so the language picker
+// can show native-script names without a network request.
 const META: Record<string, { name: string; englishName: string; language: string }> = {
-    'ur.kanzuliman': { name: 'کنزالایمان', englishName: 'Kanz ul Iman (Ahmed Raza Khan)', language: 'ur' },
-    'id.indonesian': { name: 'Bahasa Indonesia', englishName: 'Bahasa Indonesia', language: 'id' },
-    'tr.diyanet':    { name: 'Diyanet İşleri', englishName: 'Diyanet Isleri', language: 'tr' },
-    'bn.bengali':    { name: 'বাংলা', englishName: 'Zohurul Hoque', language: 'bn' },
-    'fr.hamidullah': { name: 'Muhammad Hamidullah', englishName: 'Muhammad Hamidullah', language: 'fr' },
+    'ur.kanzuliman': { name: 'کنزالایمان',       englishName: 'Kanz ul Iman (Ahmed Raza Khan)', language: 'ur' },
+    'id.indonesian': { name: 'Bahasa Indonesia',  englishName: 'Bahasa Indonesia',               language: 'id' },
+    'tr.diyanet':    { name: 'Diyanet İşleri',    englishName: 'Diyanet Isleri',                 language: 'tr' },
+    'bn.bengali':    { name: 'বাংলা',             englishName: 'Zohurul Hoque',                  language: 'bn' },
+    'fr.hamidullah': { name: 'Muhammad Hamidullah', englishName: 'Muhammad Hamidullah',          language: 'fr' },
 };
 
-const cache = new Map<string, Record<string, string[]>>();
-// Negative cache: editions we've already failed to load. Prevents repeated
-// require() calls (and repeated error logs) on every page navigation.
-const failedLoads = new Set<string>();
-
-/** True if this edition is bundled locally and can be served without network. */
-export function isBundledTranslation(edition: string): boolean {
-    return Object.prototype.hasOwnProperty.call(BUNDLED, edition);
+/**
+ * Previously returned true for 5 languages that were bundled as local JSON.
+ * Now always returns false — every non-English, non-Arabic edition is fetched
+ * from the API and cached in AsyncStorage on first use.
+ */
+export function isBundledTranslation(_edition: string): boolean {
+    return false;
 }
 
-/** Returns ayah texts for the given surah from the bundled translation, or null. */
-export function getBundledSurahText(edition: string, surahNumber: number): string[] | null {
-    if (!isBundledTranslation(edition)) return null;
-    if (failedLoads.has(edition)) return null;
-    if (!cache.has(edition)) {
-        try {
-            cache.set(edition, BUNDLED[edition]());
-        } catch (e) {
-            console.error('[BundledTranslations] failed to load', edition, e);
-            failedLoads.add(edition);
-            return null;
-        }
-    }
-    const data = cache.get(edition);
-    if (!data) return null;
-    return data[String(surahNumber)] ?? null;
+/** No longer used — kept for API compatibility, always returns null. */
+export function getBundledSurahText(_edition: string, _surahNumber: number): string[] | null {
+    return null;
 }
 
-/** Display metadata for a bundled edition (used in the API surah response shape). */
+/** Display metadata for a known edition identifier. */
 export function getBundledEditionMeta(edition: string) {
     return META[edition];
 }

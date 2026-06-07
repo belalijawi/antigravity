@@ -226,13 +226,10 @@ class OfflineQuranService {
     private async prefetchTranslation(surahNumber: number): Promise<void> {
         try {
             const edition = (await AsyncStorage.getItem('reader_translation_edition_v1')) ?? 'en.sahih';
-            // Arabic (quran-uthmani), English (en.sahih), and the 5 bundled
-            // translations are already in the JS bundle — calling getSurah on
-            // them is instant and involves no network I/O, so skip them here.
-            const LOCAL_EDITIONS = new Set([
-                'quran-uthmani', 'en.sahih',
-                'ur.kanzuliman', 'id.indonesian', 'tr.diyanet', 'bn.bengali', 'fr.hamidullah',
-            ]);
+            // Arabic (quran-uthmani) and English (en.sahih) are bundled in
+            // quran_en.json — instant, no network. Everything else is fetched
+            // from the API and cached in AsyncStorage on first use.
+            const LOCAL_EDITIONS = new Set(['quran-uthmani', 'en.sahih']);
             if (!LOCAL_EDITIONS.has(edition)) {
                 await QuranService.getSurah(surahNumber, edition);
             }
