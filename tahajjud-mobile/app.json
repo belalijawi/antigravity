@@ -2,7 +2,7 @@
   "expo": {
     "name": "Tahajjud+",
     "slug": "tahajjud-plus",
-    "version": "1.8.9",
+    "version": "1.9.0",
     "scheme": "tahajjud-plus",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
