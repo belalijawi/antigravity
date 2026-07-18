@@ -92,16 +92,21 @@ export function GlobalTahajjudMap({ visible, onClose, onLiveTotal }: Props) {
     const dotRadius  = Math.max(1500, region.latitudeDelta * 500);
     const glowRadius = dotRadius * 3;
 
+    // Latitude only spans -90..90 (180 total) — a latitudeDelta anywhere
+    // near/above that is an invalid MKCoordinateRegion and crashes the native
+    // map view on iOS, so 170 is as close to a full pole-to-pole view as it's
+    // safe to request. Longitude wraps a full 360, so it can go much wider —
+    // capping it at the same 170 as latitude was needlessly cropping the
+    // Americas out of the "whole globe" view.
+    const MAX_LAT_DELTA = 170;
+    const MAX_LNG_DELTA = 340;
+
     const zoom = (direction: 'in' | 'out') => {
         const factor = direction === 'in' ? 0.4 : 2.5;
-        // 150 was tighter than the native map's own minimum zoom, so "zoom
-        // out" repeatedly hit our clamp before ever reaching a full-globe
-        // view. 300 is comfortably past what a real device/tablet can need —
-        // the map provider's own minimum zoom is the real limit now.
         const next: Region = {
             ...region,
-            latitudeDelta:  Math.min(Math.max(region.latitudeDelta  * factor, 0.5), 300),
-            longitudeDelta: Math.min(Math.max(region.longitudeDelta * factor, 0.5), 300),
+            latitudeDelta:  Math.min(Math.max(region.latitudeDelta  * factor, 0.5), MAX_LAT_DELTA),
+            longitudeDelta: Math.min(Math.max(region.longitudeDelta * factor, 0.5), MAX_LNG_DELTA),
         };
         setRegion(next);
         mapRef.current?.animateToRegion(next, 300);
@@ -257,7 +262,15 @@ export function GlobalTahajjudMap({ visible, onClose, onLiveTotal }: Props) {
                         </TouchableOpacity>
                         <View style={styles.zoomDivider} />
                         <TouchableOpacity style={styles.zoomBtn} onPress={() => {
-                            const world = { latitude: 25, longitude: 20, latitudeDelta: 120, longitudeDelta: 120 };
+                            // Widest safe region in one tap, rather than relying on
+                            // repeated zoom-out presses — centered on the prime
+                            // meridian (not the app's usual lng 20) so the wide
+                            // span is balanced across all continents, not just
+                            // cropping extra off the Americas' side.
+                            const world: Region = {
+                                latitude: 15, longitude: 0,
+                                latitudeDelta: MAX_LAT_DELTA, longitudeDelta: MAX_LNG_DELTA,
+                            };
                             setRegion(world);
                             mapRef.current?.animateToRegion(world, 400);
                         }} activeOpacity={0.8}>
