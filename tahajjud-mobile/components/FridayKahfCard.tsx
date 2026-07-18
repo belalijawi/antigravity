@@ -7,6 +7,7 @@ import { BookOpen, X } from 'lucide-react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useTheme } from '../context/ThemeContext';
 import { haptic } from '../utils/haptic';
+import { t } from '../utils/i18n';
 
 interface Props {
     onOpenKahf: () => void;
@@ -68,23 +69,23 @@ export function FridayKahfCard({ onOpenKahf }: Props) {
                         <View style={[styles.iconWrap, { backgroundColor: '#facc1522', borderColor: '#facc1555' }]}>
                             <BookOpen size={14} color="#facc15" />
                         </View>
-                        <Text style={styles.kicker}>FRIDAY · SURAH AL-KAHF</Text>
+                        <Text style={styles.kicker}>{t('fridayCard.kicker')}</Text>
                         <TouchableOpacity onPress={handleDismiss} style={styles.dismissBtn} hitSlop={10}>
                             <X size={14} color={colors.secondaryText} />
                         </TouchableOpacity>
                     </View>
 
                     <Text style={styles.quote}>
-                        "Whoever reads Surah Al-Kahf on Friday, light shines for them between the two Fridays."
+                        {t('fridayCard.quote')}
                     </Text>
-                    <Text style={styles.attribution}>— Reported by al-Hakim · Sahih</Text>
+                    <Text style={styles.attribution}>{t('fridayCard.attribution')}</Text>
 
                     <TouchableOpacity
                         onPress={handleOpen}
                         activeOpacity={0.85}
                         style={[styles.openBtn, { backgroundColor: '#facc15' }]}
                     >
-                        <Text style={styles.openBtnText}>Read Al-Kahf</Text>
+                        <Text style={styles.openBtnText}>{t('fridayCard.readBtn')}</Text>
                     </TouchableOpacity>
                 </View>
             </View>

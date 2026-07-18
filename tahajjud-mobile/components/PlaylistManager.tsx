@@ -18,6 +18,7 @@ import { PlaylistBuilder } from './PlaylistBuilder';
 import { useTheme } from '../context/ThemeContext';
 import { usePurchases } from '../context/PurchasesContext';
 import { haptic } from '../utils/haptic';
+import { t } from '../utils/i18n';
 
 interface Props {
     visible: boolean;
@@ -54,12 +55,12 @@ export function PlaylistManager({ visible, onClose, onPlay }: Props) {
     const handleDelete = (playlist: QuranPlaylist) => {
         haptic.medium();
         Alert.alert(
-            'Delete Playlist',
-            `Delete "${playlist.name}"? This cannot be undone.`,
+            t('playlistMgr.deleteTitle'),
+            t('playlistMgr.deleteBody', { name: playlist.name }),
             [
-                { text: 'Cancel', style: 'cancel' },
+                { text: t('btn.cancel'), style: 'cancel' },
                 {
-                    text: 'Delete',
+                    text: t('btn.delete'),
                     style: 'destructive',
                     onPress: async () => {
                         await QuranPlaylists.delete(playlist.id);
@@ -123,7 +124,7 @@ export function PlaylistManager({ visible, onClose, onPlay }: Props) {
                             <TouchableOpacity onPress={onClose} style={styles.headerIconBtn}>
                                 <X size={22} color="#94a3b8" />
                             </TouchableOpacity>
-                            <Text style={styles.headerTitle}>My Playlists</Text>
+                            <Text style={styles.headerTitle}>{t('playlistMgr.myPlaylists')}</Text>
                             <View style={{ width: 36 }} />
                         </View>
 
@@ -131,15 +132,15 @@ export function PlaylistManager({ visible, onClose, onPlay }: Props) {
                             <View style={[styles.paywallIconWrap, { borderColor: colors.accent + '44', backgroundColor: colors.accent + '11' }]}>
                                 <Lock size={36} color={colors.accent} />
                             </View>
-                            <Text style={styles.paywallTitle}>Premium Feature</Text>
+                            <Text style={styles.paywallTitle}>{t('playlistMgr.premiumFeature')}</Text>
                             <Text style={styles.paywallBody}>
-                                Quran Playlists let you create custom sequences of surahs for continuous recitation. Upgrade to Premium to unlock.
+                                {t('playlistMgr.paywallBody')}
                             </Text>
                             <TouchableOpacity
-                                onPress={() => { onClose(); openPaywall(); }}
+                                onPress={() => { onClose(); openPaywall('feature_gate:playlists'); }}
                                 style={[styles.upgradeButton, { backgroundColor: colors.accent }]}
                             >
-                                <Text style={styles.upgradeButtonText}>Unlock Premium</Text>
+                                <Text style={styles.upgradeButtonText}>{t('playlistMgr.unlockPremium')}</Text>
                             </TouchableOpacity>
                         </View>
                     </SafeAreaView>
@@ -170,7 +171,7 @@ export function PlaylistManager({ visible, onClose, onPlay }: Props) {
             <View style={styles.cardBody}>
                 <Text style={styles.cardName} numberOfLines={1}>{item.name}</Text>
                 <Text style={styles.cardSubtitle} numberOfLines={1}>
-                    {item.surahNumbers.length} {item.surahNumbers.length === 1 ? 'surah' : 'surahs'} · {getSurahPreview(item.surahNumbers)}
+                    {item.surahNumbers.length === 1 ? t('playlistMgr.surahCount', { n: 1 }) : t('playlistMgr.surahCountPlural', { n: item.surahNumbers.length })} · {getSurahPreview(item.surahNumbers)}
                 </Text>
             </View>
 
@@ -203,13 +204,13 @@ export function PlaylistManager({ visible, onClose, onPlay }: Props) {
                         <TouchableOpacity onPress={onClose} style={styles.headerIconBtn}>
                             <X size={22} color="#94a3b8" />
                         </TouchableOpacity>
-                        <Text style={styles.headerTitle}>My Playlists</Text>
+                        <Text style={styles.headerTitle}>{t('playlistMgr.myPlaylists')}</Text>
                         <TouchableOpacity
                             onPress={handleNewPlaylist}
                             style={[styles.newButton, { borderColor: colors.accent + '55', backgroundColor: colors.accent + '15' }]}
                         >
                             <Plus size={14} color={colors.accent} strokeWidth={2.5} />
-                            <Text style={[styles.newButtonText, { color: colors.accent }]}>New</Text>
+                            <Text style={[styles.newButtonText, { color: colors.accent }]}>{t('playlistMgr.newBtn')}</Text>
                         </TouchableOpacity>
                     </View>
 
@@ -219,14 +220,14 @@ export function PlaylistManager({ visible, onClose, onPlay }: Props) {
                             <View style={[styles.emptyIconWrap, { borderColor: 'rgba(255,255,255,0.08)', backgroundColor: 'rgba(255,255,255,0.04)' }]}>
                                 <ListMusic size={40} color="#334155" />
                             </View>
-                            <Text style={styles.emptyTitle}>No playlists yet</Text>
-                            <Text style={styles.emptyBody}>Tap + New to create your first Quran playlist.</Text>
+                            <Text style={styles.emptyTitle}>{t('playlistMgr.noPlaylistsYet')}</Text>
+                            <Text style={styles.emptyBody}>{t('playlistMgr.emptyBody')}</Text>
                             <TouchableOpacity
                                 onPress={handleNewPlaylist}
                                 style={[styles.emptyCreateBtn, { backgroundColor: colors.accent }]}
                             >
                                 <Plus size={16} color="#000" strokeWidth={2.5} />
-                                <Text style={styles.emptyCreateText}>Create Playlist</Text>
+                                <Text style={styles.emptyCreateText}>{t('playlistMgr.createPlaylist')}</Text>
                             </TouchableOpacity>
                         </View>
                     ) : (

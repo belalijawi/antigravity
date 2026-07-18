@@ -74,26 +74,30 @@ export const getAchievements = async (): Promise<Achievement[]> => {
     }
 };
 
-export const checkAchievements = async (type: 'prayer' | 'dua' | 'story', count: number): Promise<Achievement | null> => {
+// Returns EVERY achievement newly unlocked by this call, in ACHIEVEMENTS
+// order. A single count update (e.g. a bulk history restore) can cross
+// several thresholds at once (1/3/7/30 nights) — callers must show all of
+// them, not just the last one, or earned badges go unnoticed by the user.
+export const checkAchievements = async (type: 'prayer' | 'dua' | 'story', count: number): Promise<Achievement[]> => {
     try {
         const stored = await AsyncStorage.getItem(STORAGE_KEY);
         const unlockedIds: Record<string, string> = stored ? JSON.parse(stored) : {};
-        let newlyUnlocked: Achievement | null = null;
+        const newlyUnlocked: Achievement[] = [];
 
         for (const achievement of ACHIEVEMENTS) {
             if (!unlockedIds[achievement.id] && achievement.criteria.type === type && count >= achievement.criteria.count) {
                 unlockedIds[achievement.id] = new Date().toISOString();
-                newlyUnlocked = { ...achievement, unlockedAt: unlockedIds[achievement.id] };
+                newlyUnlocked.push({ ...achievement, unlockedAt: unlockedIds[achievement.id] });
             }
         }
 
-        if (newlyUnlocked) {
+        if (newlyUnlocked.length > 0) {
             await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(unlockedIds));
         }
 
         return newlyUnlocked;
     } catch (e) {
         console.error('Failed to check achievements', e);
-        return null;
+        return [];
     }
 };

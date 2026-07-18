@@ -21,6 +21,7 @@ import { fuzzyMatch } from '../utils/fuzzy';
 import { QuranPlaylist } from '../utils/quranPlaylists';
 import { useTheme } from '../context/ThemeContext';
 import { haptic } from '../utils/haptic';
+import { t } from '../utils/i18n';
 
 interface Props {
     visible: boolean;
@@ -168,7 +169,7 @@ export function PlaylistBuilder({ visible, onClose, onSave, editPlaylist }: Prop
                                 <X size={22} color="#94a3b8" />
                             </TouchableOpacity>
                             <Text style={styles.headerTitle}>
-                                {isEditing ? 'Edit Playlist' : 'New Playlist'}
+                                {isEditing ? t('playlistBuilder.editPlaylist') : t('playlistBuilder.newPlaylist')}
                             </Text>
                             <TouchableOpacity
                                 onPress={handleSave}
@@ -181,7 +182,7 @@ export function PlaylistBuilder({ visible, onClose, onSave, editPlaylist }: Prop
                                 ]}
                             >
                                 <Text style={[styles.saveButtonText, canSave ? { color: '#000' } : { color: '#475569' }]}>
-                                    Save
+                                    {t('playlistBuilder.saveBtn')}
                                 </Text>
                             </TouchableOpacity>
                         </View>
@@ -195,7 +196,7 @@ export function PlaylistBuilder({ visible, onClose, onSave, editPlaylist }: Prop
                             />
                             <TextInput
                                 style={styles.nameInput}
-                                placeholder="Playlist name..."
+                                placeholder={t('playlistBuilder.namePlaceholder')}
                                 placeholderTextColor="rgba(255,255,255,0.2)"
                                 value={name}
                                 onChangeText={setName}
@@ -243,7 +244,7 @@ export function PlaylistBuilder({ visible, onClose, onSave, editPlaylist }: Prop
                             <Text style={styles.searchIcon}>🔍</Text>
                             <TextInput
                                 style={styles.searchInput}
-                                placeholder="Search surahs..."
+                                placeholder={t('playlistBuilder.searchSurahs')}
                                 placeholderTextColor="rgba(255,255,255,0.2)"
                                 value={searchQuery}
                                 onChangeText={handleSearch}

@@ -12,6 +12,7 @@ import { useQuranAudio } from '../context/QuranAudioContext';
 import { haptic } from '../utils/haptic';
 import { NightCalculation } from '../lib/prayer-times';
 import { todayStr, PrayerHistory, emptyHistory } from './Tracker';
+import { t } from '../utils/i18n';
 
 interface Props {
     nightCalc: NightCalculation;
@@ -79,7 +80,7 @@ export function NightHomeScreen({ nightCalc, onPrayedTahajjud, onSkip }: Props) 
             haptic.light();
             await audio.startPlaylist([67], 'Tahajjud — Surah Mulk');
         } catch {
-            Alert.alert('Audio error', 'Could not start playback. Check your connection.');
+            Alert.alert(t('nightHome.audioErrorTitle'), t('nightHome.audioErrorBody'));
         }
     };
 
@@ -110,9 +111,9 @@ export function NightHomeScreen({ nightCalc, onPrayedTahajjud, onSkip }: Props) 
                     <View style={styles.heroIcon}>
                         <Moon size={32} color={colors.accent} strokeWidth={1.5} />
                     </View>
-                    <Text style={styles.heroKicker}>LAST THIRD OF THE NIGHT</Text>
+                    <Text style={styles.heroKicker}>{t('nightHome.lastThirdKicker')}</Text>
                     <Text style={styles.heroSub}>
-                        Fajr in {minsToFajr < 60 ? `${minsToFajr} min` : `${Math.floor(minsToFajr / 60)}h ${minsToFajr % 60}m`}
+                        {t('nightHome.fajrIn', { time: minsToFajr < 60 ? `${minsToFajr} min` : `${Math.floor(minsToFajr / 60)}h ${minsToFajr % 60}m` })}
                     </Text>
                     <Text style={styles.heroFajr}>{fajrTime}</Text>
                 </View>
@@ -123,8 +124,8 @@ export function NightHomeScreen({ nightCalc, onPrayedTahajjud, onSkip }: Props) 
                 <View>
                     <Step
                         n={1}
-                        title="Awaken the heart"
-                        sub="Astaghfirullah · 10 times"
+                        title={t('nightHome.step1Title')}
+                        sub={t('nightHome.step1Sub', { n: 10 })}
                         done={istighfarCount >= 10}
                         accent={colors.accent}
                     />
@@ -144,7 +145,7 @@ export function NightHomeScreen({ nightCalc, onPrayedTahajjud, onSkip }: Props) 
                             </Text>
                         </View>
                         {istighfarCount < 10 && (
-                            <Text style={[styles.dhikrTap, { color: '#475569' }]}>tap to count</Text>
+                            <Text style={[styles.dhikrTap, { color: '#475569' }]}>{t('nightHome.tapToCount')}</Text>
                         )}
                     </TouchableOpacity>
                 </View>
@@ -153,8 +154,8 @@ export function NightHomeScreen({ nightCalc, onPrayedTahajjud, onSkip }: Props) 
                 <View>
                     <Step
                         n={2}
-                        title="Make wudu"
-                        sub={wuduDone ? 'Done — alhamdulillah' : 'Tap when complete'}
+                        title={t('nightHome.step2Title')}
+                        sub={wuduDone ? t('nightHome.step2SubDone') : t('nightHome.step2SubPending')}
                         done={wuduDone}
                         accent={colors.accent}
                     />
@@ -169,7 +170,7 @@ export function NightHomeScreen({ nightCalc, onPrayedTahajjud, onSkip }: Props) 
                     >
                         <Droplets size={20} color={wuduDone ? colors.accent : '#64748b'} />
                         <Text style={[styles.actionCardText, { color: wuduDone ? colors.accent : '#cbd5e1' }]}>
-                            {wuduDone ? "I've made wudu" : 'Mark wudu as done'}
+                            {wuduDone ? t('nightHome.wuduDoneBtn') : t('nightHome.wuduPendingBtn')}
                         </Text>
                         {wuduDone && <Check size={18} color={colors.accent} strokeWidth={3} />}
                     </TouchableOpacity>
@@ -179,8 +180,8 @@ export function NightHomeScreen({ nightCalc, onPrayedTahajjud, onSkip }: Props) 
                 <View>
                     <Step
                         n={3}
-                        title="Pray 2 rakats"
-                        sub="Suggested: Al-Fatiha + Al-Mulk"
+                        title={t('nightHome.step3Title')}
+                        sub={t('nightHome.step3Sub')}
                         done={false}
                         accent={colors.accent}
                     />
@@ -191,7 +192,7 @@ export function NightHomeScreen({ nightCalc, onPrayedTahajjud, onSkip }: Props) 
                     >
                         <BookOpen size={20} color={colors.accent} />
                         <Text style={[styles.actionCardText, { color: colors.accent }]}>
-                            Play Surah Al-Mulk recitation
+                            {t('nightHome.playMulkBtn')}
                         </Text>
                         <ChevronRight size={16} color={colors.accent} />
                     </TouchableOpacity>
@@ -202,8 +203,8 @@ export function NightHomeScreen({ nightCalc, onPrayedTahajjud, onSkip }: Props) 
                     <View>
                         <Step
                             n={4}
-                            title="Make dua"
-                            sub="Your most recent reflection"
+                            title={t('nightHome.step4Title')}
+                            sub={t('nightHome.step4Sub')}
                             done={false}
                             accent={colors.accent}
                         />
@@ -226,11 +227,11 @@ export function NightHomeScreen({ nightCalc, onPrayedTahajjud, onSkip }: Props) 
                         ]}
                     >
                         <Check size={18} color="#0a1228" strokeWidth={3} />
-                        <Text style={styles.logBtnText}>I prayed Tahajjud</Text>
+                        <Text style={styles.logBtnText}>{t('nightHome.logBtnText')}</Text>
                     </TouchableOpacity>
 
                     <TouchableOpacity onPress={onSkip} style={styles.skipBtn}>
-                        <Text style={styles.skipText}>Skip to normal home</Text>
+                        <Text style={styles.skipText}>{t('nightHome.skipToHome')}</Text>
                     </TouchableOpacity>
                 </View>
             </ScrollView>

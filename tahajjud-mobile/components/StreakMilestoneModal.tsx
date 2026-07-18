@@ -9,6 +9,7 @@ import { StreakMilestoneCard } from './StreakMilestoneCard';
 import { useTheme } from '../context/ThemeContext';
 import { haptic } from '../utils/haptic';
 import { usePurchases } from '../context/PurchasesContext';
+import { t } from '../utils/i18n';
 
 interface StreakMilestoneModalProps {
     visible: boolean;
@@ -37,7 +38,7 @@ export function StreakMilestoneModal({ visible, nights, onClose }: StreakMilesto
                 const uri = await captureRef(cardRef, { format: 'png', quality: 1.0 });
                 await Share.share({
                     url: uri,
-                    message: `${nights} nights of Tahajjud, by Allah's grace. اللهم تقبل`,
+                    message: t('streakModal.shareMsg', { n: nights }),
                 });
             }
         } catch (e) {
@@ -68,16 +69,16 @@ export function StreakMilestoneModal({ visible, nights, onClose }: StreakMilesto
                     </Animated.View>
 
                     <Text style={[styles.bigN, { color: colors.accent }]}>{nights}</Text>
-                    <Text style={styles.nightsLabel}>NIGHTS</Text>
+                    <Text style={styles.nightsLabel}>{t('streakModal.nightsLabel')}</Text>
                     <View style={[styles.divider, { backgroundColor: colors.accent }]} />
-                    <Text style={styles.title}>Alhamdulillah</Text>
+                    <Text style={styles.title}>{t('streakModal.alhamdulillah')}</Text>
                     <Text style={styles.body}>
-                        {nights} nights of standing before your Lord{'\n'}in the depth of the night.
+                        {t('streakModal.body', { n: nights })}
                     </Text>
 
                     <TouchableOpacity style={[styles.shareBtn, { backgroundColor: colors.accent }]} onPress={handleShare} disabled={sharing}>
                         <Share2 size={18} color="#0a0f1e" />
-                        <Text style={styles.shareTxt}>{sharing ? 'Preparing…' : 'Share milestone'}</Text>
+                        <Text style={styles.shareTxt}>{sharing ? t('streakModal.preparing') : t('streakModal.shareMilestone')}</Text>
                     </TouchableOpacity>
 
                     {/* Premium upsell — only for free users */}
@@ -85,24 +86,24 @@ export function StreakMilestoneModal({ visible, nights, onClose }: StreakMilesto
                         <Animated.View entering={FadeIn.delay(600)} style={styles.upsellBox}>
                             <Text style={styles.upsellText}>
                                 {nights >= 30
-                                    ? '30 nights. Your journey deserves to be seen in full.'
+                                    ? t('streakModal.upsell30')
                                     : nights >= 7
-                                        ? `${nights} nights of Tahajjud — unlock your full history to see every one.`
-                                        : 'Track every night, see your patterns, protect your streak.'}
+                                        ? t('streakModal.upsell7', { n: nights })
+                                        : t('streakModal.upsellDefault')}
                             </Text>
                             <TouchableOpacity
                                 style={[styles.upsellBtn, { backgroundColor: colors.accent }]}
-                                onPress={() => { onClose(); setTimeout(openPaywall, 300); }}
+                                onPress={() => { onClose(); setTimeout(() => openPaywall('streak_milestone_modal'), 300); }}
                                 activeOpacity={0.85}
                             >
                                 <Star size={14} color="#0a0f1e" fill="#0a0f1e" />
-                                <Text style={styles.upsellBtnTxt}>Unlock Premium</Text>
+                                <Text style={styles.upsellBtnTxt}>{t('playlistMgr.unlockPremium')}</Text>
                             </TouchableOpacity>
                         </Animated.View>
                     )}
 
                     <TouchableOpacity onPress={onClose} style={{ marginTop: isPremium ? 0 : 8 }}>
-                        <Text style={styles.dismissTxt}>Keep going</Text>
+                        <Text style={styles.dismissTxt}>{t('streakModal.keepGoing')}</Text>
                     </TouchableOpacity>
                 </Animated.View>
 

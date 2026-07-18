@@ -10,12 +10,13 @@ import { useTheme } from '../context/ThemeContext';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { TahajjudJournal, STATE_OPTIONS, SpiritualState, JournalEntry } from '../utils/tahajjudJournal';
 import { haptic } from '../utils/haptic';
+import { t } from '../utils/i18n';
 import { format, subDays } from 'date-fns';
 import Animated, { FadeInUp, ZoomIn, FadeIn } from 'react-native-reanimated';
 
 const RAKAT_OPTIONS = [2, 4, 6, 8, 10, 12];
 
-import { JOURNAL_PROMPTS, getPromptForDate } from '../utils/journalPrompts';
+import { getPromptForDate } from '../utils/journalPrompts';
 import { localDateStr } from '../utils/localDate';
 
 const MOOD_COLORS: Record<SpiritualState, string> = {
@@ -26,13 +27,24 @@ const MOOD_COLORS: Record<SpiritualState, string> = {
     connected:  '#fbbf24',
 };
 
-const DONE_MESSAGES: Record<SpiritualState, string> = {
-    tired:      'Praying while tired carries extra reward. Allah saw your effort.',
-    focused:    'A focused heart in sujood is a gift. May it be accepted.',
-    emotional:  "Tears in prayer are answered duas. Allah is Al-Sami'.",
-    distracted: 'Even a distracted prayer is better than none. Keep going.',
-    connected:  'May this connection to Allah last well beyond tonight.',
-};
+function doneMessage(state: SpiritualState): string {
+    switch (state) {
+        case 'tired': return t('journalModal.doneTired');
+        case 'focused': return t('journalModal.doneFocused');
+        case 'emotional': return t('journalModal.doneEmotional');
+        case 'distracted': return t('journalModal.doneDistracted');
+        case 'connected': return t('journalModal.doneConnected');
+    }
+}
+function moodLabel(key: SpiritualState): string {
+    switch (key) {
+        case 'tired': return t('journalState.tired');
+        case 'focused': return t('journalState.focused');
+        case 'emotional': return t('journalState.emotional');
+        case 'distracted': return t('journalState.distracted');
+        case 'connected': return t('journalState.connected');
+    }
+}
 
 const STARS = [
     { left: '8%',  top: 80,  size: 2,   opacity: 0.4 },
@@ -186,7 +198,7 @@ export function TahajjudJournalModal({ visible, onClose, initialEntry }: Props) 
                             disabled={saving}
                             style={[styles.saveBtn, { backgroundColor: colors.accent, shadowColor: colors.accent, shadowOpacity: 0.4, shadowRadius: 12, shadowOffset: { width: 0, height: 4 }, elevation: 8 }]}
                         >
-                            <Text style={styles.saveBtnText}>{saving ? 'Saving…' : 'Save'}</Text>
+                            <Text style={styles.saveBtnText}>{saving ? t('journalModal.saving') : t('playlistBuilder.saveBtn')}</Text>
                         </TouchableOpacity>
                     ) : (
                         <View style={{ width: 34 }} />
@@ -205,14 +217,14 @@ export function TahajjudJournalModal({ visible, onClose, initialEntry }: Props) 
                                 </View>
                                 <View style={styles.heroText}>
                                     <Text style={[styles.dateLabel, { color: colors.secondaryText + '70' }]}>{format(now, 'EEEE, MMMM d').toUpperCase()}</Text>
-                                    <Text style={[styles.heroTitle, { color: colors.primaryText }]}>Alhamdulillah 🤲</Text>
-                                    <Text style={[styles.heroSub, { color: colors.secondaryText + '90' }]}>You prayed Tahajjud. Take a moment to reflect.</Text>
+                                    <Text style={[styles.heroTitle, { color: colors.primaryText }]}>{t('journalModal.alhamdulillahEmoji')}</Text>
+                                    <Text style={[styles.heroSub, { color: colors.secondaryText + '90' }]}>{t('journalModal.heroSub')}</Text>
                                 </View>
                             </View>
 
                             {/* Rakats */}
                             <View style={[styles.card, { borderColor: cardBorder }]}>
-                                <Text style={[styles.cardLabel, { color: colors.secondaryText }]}>Rakats prayed</Text>
+                                <Text style={[styles.cardLabel, { color: colors.secondaryText }]}>{t('journalModal.rakatsPrayed')}</Text>
                                 <View style={styles.rakatRow}>
                                     {RAKAT_OPTIONS.map(r => {
                                         const sel = rakats === r;
@@ -234,7 +246,7 @@ export function TahajjudJournalModal({ visible, onClose, initialEntry }: Props) 
 
                             {/* Mood */}
                             <View style={[styles.card, { borderColor: cardBorder }]}>
-                                <Text style={[styles.cardLabel, { color: colors.secondaryText }]}>How did it feel?</Text>
+                                <Text style={[styles.cardLabel, { color: colors.secondaryText }]}>{t('journalModal.howDidItFeel')}</Text>
                                 <View style={styles.moodRow}>
                                     {STATE_OPTIONS.slice(0, 3).map(s => {
                                         const mc = MOOD_COLORS[s.key];
@@ -251,7 +263,7 @@ export function TahajjudJournalModal({ visible, onClose, initialEntry }: Props) 
                                                 >
                                                     {sel && <View style={[styles.moodDot, { backgroundColor: mc }]} />}
                                                     <Text style={styles.moodEmoji}>{s.emoji}</Text>
-                                                    <Text style={[styles.moodLabel, { color: sel ? mc : colors.secondaryText + '80' }]}>{s.label}</Text>
+                                                    <Text style={[styles.moodLabel, { color: sel ? mc : colors.secondaryText + '80' }]}>{moodLabel(s.key)}</Text>
                                                 </TouchableOpacity>
                                             </RNAnimated.View>
                                         );
@@ -273,7 +285,7 @@ export function TahajjudJournalModal({ visible, onClose, initialEntry }: Props) 
                                                 >
                                                     {sel && <View style={[styles.moodDot, { backgroundColor: mc }]} />}
                                                     <Text style={styles.moodEmoji}>{s.emoji}</Text>
-                                                    <Text style={[styles.moodLabel, { color: sel ? mc : colors.secondaryText + '80' }]}>{s.label}</Text>
+                                                    <Text style={[styles.moodLabel, { color: sel ? mc : colors.secondaryText + '80' }]}>{moodLabel(s.key)}</Text>
                                                 </TouchableOpacity>
                                             </RNAnimated.View>
                                         );
@@ -291,12 +303,12 @@ export function TahajjudJournalModal({ visible, onClose, initialEntry }: Props) 
                                     : { backgroundColor: 'rgba(255,255,255,0.05)' }
                                 ]}
                             >
-                                <Text style={[styles.continueBtnText, { color: mood ? '#fff' : colors.secondaryText + '50' }]}>Continue</Text>
+                                <Text style={[styles.continueBtnText, { color: mood ? '#fff' : colors.secondaryText + '50' }]}>{t('journalModal.continueBtn')}</Text>
                                 <ChevronRight size={18} color={mood ? '#fff' : colors.secondaryText + '50'} />
                             </TouchableOpacity>
 
                             <TouchableOpacity onPress={handleClose} style={styles.skipBtn}>
-                                <Text style={[styles.skipText, { color: colors.secondaryText + '60' }]}>Skip for now</Text>
+                                <Text style={[styles.skipText, { color: colors.secondaryText + '60' }]}>{t('journalModal.skipForNow')}</Text>
                             </TouchableOpacity>
                         </ScrollView>
                     </Animated.View>
@@ -326,7 +338,7 @@ export function TahajjudJournalModal({ visible, onClose, initialEntry }: Props) 
 
                                 {flashback && (
                                     <View style={styles.flashbackCard}>
-                                        <Text style={[styles.flashbackLabel, { color: colors.secondaryText + '70' }]}>🕰  This night last month…</Text>
+                                        <Text style={[styles.flashbackLabel, { color: colors.secondaryText + '70' }]}>{t('journalModal.flashbackLabel')}</Text>
                                         <Text style={[styles.flashbackText, { color: colors.secondaryText + '80' }]} numberOfLines={3}>{flashback.duaText}</Text>
                                     </View>
                                 )}
@@ -338,7 +350,7 @@ export function TahajjudJournalModal({ visible, onClose, initialEntry }: Props) 
                                 <TextInput
                                     ref={inputRef}
                                     style={[styles.writeInput, { color: colors.primaryText }]}
-                                    placeholder="Write whatever is on your heart…"
+                                    placeholder={t('journalModal.writePlaceholder')}
                                     placeholderTextColor={colors.secondaryText + '40'}
                                     multiline
                                     value={duaText}
@@ -348,13 +360,13 @@ export function TahajjudJournalModal({ visible, onClose, initialEntry }: Props) 
                                 />
 
                                 {wordCount > 0 && (
-                                    <Text style={[styles.wordCount, { color: colors.secondaryText + '50' }]}>{wordCount} word{wordCount !== 1 ? 's' : ''}</Text>
+                                    <Text style={[styles.wordCount, { color: colors.secondaryText + '50' }]}>{wordCount === 1 ? t('journalModal.wordCount', { n: wordCount }) : t('journalModal.wordCountPlural', { n: wordCount })}</Text>
                                 )}
                             </ScrollView>
                         </View>
 
                         <TouchableOpacity onPress={handleClose} style={styles.skipBtn}>
-                            <Text style={[styles.skipText, { color: colors.secondaryText + '60' }]}>Save without writing</Text>
+                            <Text style={[styles.skipText, { color: colors.secondaryText + '60' }]}>{t('journalModal.saveWithoutWriting')}</Text>
                         </TouchableOpacity>
                     </Animated.View>
                 )}
@@ -366,9 +378,9 @@ export function TahajjudJournalModal({ visible, onClose, initialEntry }: Props) 
                         <View style={styles.doneCircle}>
                             <Check size={44} color="#22c55e" />
                         </View>
-                        <Text style={[styles.doneTitle, { color: colors.primaryText }]}>Saved 🌙</Text>
+                        <Text style={[styles.doneTitle, { color: colors.primaryText }]}>{t('journalModal.savedMoon')}</Text>
                         <Text style={[styles.doneSub, { color: colors.secondaryText }]}>
-                            {mood ? DONE_MESSAGES[mood] : 'May Allah accept your Tahajjud'}
+                            {mood ? doneMessage(mood) : t('journalModal.mayAllahAccept')}
                         </Text>
                     </Animated.View>
                 )}

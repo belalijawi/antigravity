@@ -3,7 +3,7 @@ import { View, ScrollView, StyleSheet, Text, TouchableOpacity, Modal, DeviceEven
 import { SafeAreaView } from 'react-native-safe-area-context';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { SlidersHorizontal, Search } from 'lucide-react-native';
-import { t } from '../utils/i18n';
+import { t, isRTL } from '../utils/i18n';
 import { GlobalSearch } from './GlobalSearch';
 import { NightCalculator } from './NightCalculator';
 import { TasbeehCard } from './TasbeehCard';
@@ -21,9 +21,13 @@ import { LiveActivity } from '../utils/liveActivity';
 import { SettingsScreen } from './SettingsScreen';
 import { GlobalTahajjudMap } from './GlobalTahajjudMap';
 import { logTahajjudToMap, subscribeDailyTotal } from '../utils/tahajjudMap';
-import { Globe } from 'lucide-react-native';
+import { Globe, BookOpen, ChevronRight } from 'lucide-react-native';
 import { DiscoverCard } from './DiscoverCard';
 import { WhatsNewModal, WHATS_NEW_VERSION } from './WhatsNewModal';
+import { SupportModal } from './SupportModal';
+import { NotificationReAskModal } from './NotificationReAskModal';
+import { CancellationSurveyModal } from './CancellationSurveyModal';
+import { shouldShowNotificationReAsk, getNotificationReAskCount } from '../utils/notificationReAsk';
 import {
     FeatureId, markFeatureUsed,
     shouldShowWhatsNew, markWhatsNewSeen,
@@ -57,7 +61,11 @@ import { usePurchases } from '../context/PurchasesContext';
 export function HomeTab() {
     const { colors, userName, cardBg, cardBorder, blurIntensity } = useTheme();
     const scrollRef = useRef<ScrollView>(null);
-    const { openPaywall, isPremium } = usePurchases();
+    const sectionYRef = useRef<Record<string, number>>({});
+    const { openPaywall, isPremium, trialLapsing, trialEndsAt, showCancellationSurvey, dismissCancellationSurvey } = usePurchases();
+    // Session-scoped dismiss for the trial-save banner (it returns next launch
+    // while the lapsing state persists — deliberate, the stakes are real).
+    const [trialSaveDismissed, setTrialSaveDismissed] = useState(false);
     const [isSettingsVisible, setIsSettingsVisible] = useState(false);
     const [showSearch, setShowSearch] = useState(false);
 
@@ -65,8 +73,8 @@ export function HomeTab() {
         const scrollSub = DeviceEventEmitter.addListener('scrollToTop', (tab: string) => {
             if (tab === 'Home') scrollRef.current?.scrollTo({ y: 0, animated: true });
         });
-        const paywallSub = DeviceEventEmitter.addListener('openPaywall', () => {
-            openPaywall();
+        const paywallSub = DeviceEventEmitter.addListener('openPaywall', (payload?: { source?: string }) => {
+            openPaywall(payload?.source ?? 'streak_notification');
         });
         return () => { scrollSub.remove(); paywallSub.remove(); };
     }, [openPaywall]);
@@ -102,7 +110,9 @@ export function HomeTab() {
             case 'night_journal':
                 switchToTab('Duas'); break;
             case 'testimonies':
-                switchToTab('Guide'); DeviceEventEmitter.emit('guide:openStories'); break;
+                switchToTab('Guide');
+                setTimeout(() => DeviceEventEmitter.emit('guide:openStories'), 350);
+                break;
             case 'hifz_mode':
                 switchToTab('Quran'); DeviceEventEmitter.emit('quran:openHifz'); break;
             case 'prayer_analytics':
@@ -115,44 +125,79 @@ export function HomeTab() {
                 setShowMap(true); break;
             case 'accountability_partner':
             case 'tasbeeh_stats':
-            case 'challenges':
-                // These live on the Home screen — scroll to top so they're visible
-                scrollRef.current?.scrollTo({ y: 0, animated: true });
+            case 'challenges': {
+                const y = sectionYRef.current[id] ?? 0;
+                scrollRef.current?.scrollTo({ y, animated: true });
                 break;
+            }
         }
         markFeatureUsed(id).catch(() => {});
     };
 
-    // Weekly paywall for free users — re-surfaces premium on a gentle cadence
-    // so casual users who never tap a locked feature still see the offer.
+    // Periodic prompt — coffee support modal for premium users (every 10 days).
+    // The scheduled paywall popup for free users was retired: it generated 60%
+    // of paywall impressions at 0.7% conversion (feature gates convert 3×) and
+    // ~5k dismissals/month that trained users to swat the paywall away.
     useEffect(() => {
-        if (isPremium) return;
         let cancelled = false;
         let timer: ReturnType<typeof setTimeout> | undefined;
         (async () => {
-            const { recordAppOpen, shouldShowWeeklyPaywall, markWeeklyPaywallShown } =
-                await import('../utils/paywallScheduler');
+            const {
+                recordAppOpen,
+                shouldShowCoffeePrompt, markCoffeePromptShown,
+            } = await import('../utils/paywallScheduler');
             await recordAppOpen();
-            // Don't stack the paywall on top of What's New — if it's going to
-            // appear this session, skip the paywall.
+            if (!isPremium) return;
+            // Don't stack on top of What's New modal
             const wn = await shouldShowWhatsNew(WHATS_NEW_VERSION).catch(() => false);
             if (wn) return;
-            const show = await shouldShowWeeklyPaywall();
-            if (show && !cancelled) {
+
+            const showCoffee = await shouldShowCoffeePrompt();
+            if (showCoffee && !cancelled) {
                 timer = setTimeout(() => {
                     if (cancelled) return;
-                    markWeeklyPaywallShown();
-                    openPaywall();
+                    markCoffeePromptShown();
+                    setShowSupportModal(true);
                 }, 2500);
             }
         })();
         return () => { cancelled = true; if (timer) clearTimeout(timer); };
     }, [isPremium]);
+
+    // Notification permission re-ask — shown once, at the "early-riser"
+    // milestone (3 Tahajjud nights logged), only to users who don't already
+    // have notifications on. Staggered after What's New / coffee prompt so
+    // it never stacks on top of them.
+    useEffect(() => {
+        let cancelled = false;
+        let timer: ReturnType<typeof setTimeout> | undefined;
+        (async () => {
+            const wn = await shouldShowWhatsNew(WHATS_NEW_VERSION).catch(() => false);
+            if (wn || cancelled) return;
+
+            const show = await shouldShowNotificationReAsk().catch(() => false);
+            if (!show || cancelled) return;
+
+            const count = await getNotificationReAskCount().catch(() => 0);
+            timer = setTimeout(() => {
+                if (cancelled) return;
+                setNotifReAskCount(count);
+                setShowNotifReAsk(true);
+            }, 3800);
+        })();
+        return () => { cancelled = true; if (timer) clearTimeout(timer); };
+    }, []);
     const [nightCalc, setNightCalc] = useState<NightCalculation | null>(null);
     const [prayerTimes, setPrayerTimes] = useState<PrayerTimes | null>(null);
     const [currentTime, setCurrentTime] = useState(new Date());
     const [refreshKey, setRefreshKey] = useState(0);
     const [nightModeSkipped, setNightModeSkipped] = useState(false);
+    // True once Tahajjud is logged for today, from ANY entry point (Tracker
+    // tab, Siri/widget, or this screen's own button) — not just this screen's
+    // "Skip" button. Without this, logging Tahajjud from the Tracker tab
+    // still left the night-mode ritual screen's own gate believing nothing
+    // had been done for tonight, so it would pop back up on the next re-render.
+    const [tahajjudLoggedToday, setTahajjudLoggedToday] = useState(false);
     // True only if the user opened the app WHILE already in the last third
     // of the night. We don't want the Tahajjud screen to auto-pop in the
     // middle of a normal session if the time naturally crosses into the
@@ -160,7 +205,19 @@ export function HomeTab() {
     const [openedDuringLastThird, setOpenedDuringLastThird] = useState(false);
     const [showMap, setShowMap] = useState(false);
     const [mapDailyTotal, setMapDailyTotal] = useState(0);
+    // Beginner discovery: surface the how-to Guide to users who haven't logged
+    // any Tahajjud yet. Discovery of existing content, not new content.
+    const [neverPrayed, setNeverPrayed] = useState(false);
+    useEffect(() => {
+        AsyncStorage.getItem('prayer-tracker-v2').then(raw => {
+            const h = raw ? JSON.parse(raw) : null;
+            setNeverPrayed(!h?.tahajjud?.length);
+        }).catch(() => {});
+    }, []);
     const [showWhatsNew, setShowWhatsNew] = useState(false);
+    const [showSupportModal, setShowSupportModal] = useState(false);
+    const [showNotifReAsk, setShowNotifReAsk] = useState(false);
+    const [notifReAskCount, setNotifReAskCount] = useState(0);
     useEffect(() => {
         if (nightCalc && isInTahajjudWindow(nightCalc, new Date())) {
             setOpenedDuringLastThird(true);
@@ -173,6 +230,24 @@ export function HomeTab() {
         AsyncStorage.getItem(`night-mode-skipped-${today}`).then(v => {
             if (v === 'true') setNightModeSkipped(true);
         }).catch(() => {});
+    }, []);
+
+    const checkTahajjudLoggedToday = () => {
+        AsyncStorage.getItem('prayer-tracker-v2').then(raw => {
+            const history = raw ? JSON.parse(raw) : null;
+            const today = localDateStr(new Date());
+            const logged = (history?.tahajjud || []).some((d: string) => localDateStr(d) === today);
+            if (logged) setTahajjudLoggedToday(true);
+        }).catch(() => {});
+    };
+
+    // Check on mount (covers logging via Siri/widget before the app opened),
+    // and again the instant ANY code path logs Tahajjud — Tracker.tsx and
+    // this screen's own button both emit 'prayerLogged' after a successful log.
+    useEffect(() => {
+        checkTahajjudLoggedToday();
+        const sub = DeviceEventEmitter.addListener('prayerLogged', checkTahajjudLoggedToday);
+        return () => sub.remove();
     }, []);
 
     const skipNightMode = async () => {
@@ -320,6 +395,10 @@ export function HomeTab() {
     //      night (captured at mount — see `openedDuringLastThird` above).
     //   2. The window is still active right now.
     //   3. They haven't tapped "Skip" for tonight.
+    //   4. Tahajjud hasn't already been logged tonight via ANY entry point
+    //      (Tracker tab, Siri/widget, or this screen's own button) — without
+    //      this, logging from the Tracker tab left this gate's own signals
+    //      unaware anything had happened, so it kept popping back up.
     // This prevents the screen from auto-popping when the user is mid-session
     // and the time naturally rolls into the last third.
     if (
@@ -327,6 +406,7 @@ export function HomeTab() {
         && nightCalc
         && isInTahajjudWindow(nightCalc, currentTime)
         && !nightModeSkipped
+        && !tahajjudLoggedToday
     ) {
         // NOTE: plain View (not SafeAreaView) so NightHomeScreen's gradient
         // fills behind the status bar. NightHomeScreen handles its own
@@ -392,6 +472,35 @@ export function HomeTab() {
                         </TouchableOpacity>
                     </View>
                 </View>
+
+                {/* Trial-save banner: shown only when the user is in a trial with
+                    auto-renew already OFF — they've decided to lapse. A gentle
+                    value reminder here recovers some of them; everyone else
+                    never sees it. */}
+                {trialLapsing && !trialSaveDismissed && (
+                    <TouchableOpacity
+                        style={[styles.trialSaveBanner, { borderColor: colors.accent + '44', backgroundColor: colors.accent + '14' }]}
+                        activeOpacity={0.85}
+                        onPress={() => {
+                            import('../utils/analytics').then(m => m.track('trial_save_banner_tapped')).catch(() => {});
+                            openPaywall('trial_save_banner');
+                        }}
+                    >
+                        <Text style={[styles.trialSaveTitle, { color: colors.accent }]}>
+                            {t('trialBanner.title', { day: trialEndsAt ? new Date(trialEndsAt).toLocaleDateString([], { weekday: 'long' }) : '…' })}
+                        </Text>
+                        <Text style={styles.trialSaveBody}>
+                            {t('trialBanner.body')}
+                        </Text>
+                        <TouchableOpacity
+                            style={styles.trialSaveDismiss}
+                            onPress={() => setTrialSaveDismissed(true)}
+                            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                        >
+                            <Text style={{ color: '#64748b', fontSize: 12, fontWeight: '700' }}>✕</Text>
+                        </TouchableOpacity>
+                    </TouchableOpacity>
+                )}
 
                 <GlobalSearch
                     visible={showSearch}
@@ -519,7 +628,9 @@ export function HomeTab() {
                           around the box (seen on some users' devices).
                         */}
                         <Text
-                            style={[styles.heroSubtitle, { color: colors.accent }]}
+                            // Positive letterSpacing visually disconnects cursive
+                            // scripts (Arabic/Urdu/Persian) — drop it for RTL locales.
+                            style={[styles.heroSubtitle, { color: colors.accent }, isRTL() && { letterSpacing: 0 }]}
                             numberOfLines={1}
                             adjustsFontSizeToFit
                             maxFontSizeMultiplier={1.2}
@@ -581,8 +692,43 @@ export function HomeTab() {
                         <DiscoverCard onNavigate={handleDiscoverNavigate} />
                     </Animated.View>
 
+                    {/* Beginner discovery — only for users who've never logged a
+                        Tahajjud. Links into the existing how-to Guide. */}
+                    {neverPrayed && (
+                        <Animated.View entering={fadeIn(340)}>
+                            <TouchableOpacity
+                                style={[styles.mapCard, { borderColor: colors.accent + '33' }]}
+                                onPress={() => {
+                                    const { switchToTab } = require('../App');
+                                    switchToTab('Guide');
+                                    setTimeout(() => DeviceEventEmitter.emit('guide:openGuide'), 350);
+                                }}
+                                activeOpacity={0.8}
+                            >
+                                <BlurView intensity={Math.round(20 * blurIntensity)} tint="dark" style={StyleSheet.absoluteFill} />
+                                <LinearGradient
+                                    colors={[colors.accent + '12', 'transparent']}
+                                    style={StyleSheet.absoluteFill}
+                                    start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}
+                                />
+                                <View style={[styles.mapGlobe, { backgroundColor: colors.accent + '22' }]}>
+                                    <BookOpen size={22} color={colors.accent} />
+                                </View>
+                                <View style={{ flex: 1 }}>
+                                    <Text style={[styles.mapTitle, { color: colors.primaryText }]}>
+                                        New to Tahajjud?
+                                    </Text>
+                                    <Text style={[styles.mapSub, { color: colors.secondaryText }]}>
+                                        A simple step-by-step guide to your first night prayer
+                                    </Text>
+                                </View>
+                                <ChevronRight size={20} color={colors.secondaryText} />
+                            </TouchableOpacity>
+                        </Animated.View>
+                    )}
+
                     {/* Accountability Partner */}
-                    <Animated.View entering={fadeIn(350)}>
+                    <Animated.View entering={fadeIn(350)} onLayout={e => { sectionYRef.current['accountability_partner'] = e.nativeEvent.layout.y; }}>
                         <AccountabilityPartnerCard />
                     </Animated.View>
 
@@ -604,7 +750,7 @@ export function HomeTab() {
                             </View>
                             <View style={{ flex: 1 }}>
                                 <Text style={[styles.mapTitle, { color: colors.primaryText }]}>
-                                    {mapDailyTotal.toLocaleString()} Muslims praying tonight
+                                    {mapDailyTotal.toLocaleString()} Muslims prayed in the last 24h
                                 </Text>
                                 <Text style={[styles.mapSub, { color: colors.secondaryText }]}>
                                     See the ummah standing together worldwide
@@ -621,6 +767,7 @@ export function HomeTab() {
                     <Animated.View
                         entering={fadeIn(400)}
                         style={styles.fullWidthCard}
+                        onLayout={e => { sectionYRef.current['tasbeeh_stats'] = e.nativeEvent.layout.y; }}
                     >
                         <TasbeehCard />
                     </Animated.View>
@@ -657,7 +804,7 @@ export function HomeTab() {
                     </Animated.View>
 
                     {/* 40-night Tahajjud challenge */}
-                    <Animated.View entering={fadeIn(700)}>
+                    <Animated.View entering={fadeIn(700)} onLayout={e => { sectionYRef.current['challenges'] = e.nativeEvent.layout.y; }}>
                         <TahajjudChallengeCard />
                     </Animated.View>
 
@@ -687,6 +834,10 @@ export function HomeTab() {
             <GlobalTahajjudMap
                 visible={showMap}
                 onClose={() => setShowMap(false)}
+                // Sync the card's headline to the map's live count while it's
+                // open — the card's periodic aggregate count and the map's
+                // live query could otherwise briefly disagree (e.g. 71 vs 68).
+                onLiveTotal={setMapDailyTotal}
             />
 
             {/* What's New (after an update) */}
@@ -696,6 +847,22 @@ export function HomeTab() {
                     setShowWhatsNew(false);
                     markWhatsNewSeen(WHATS_NEW_VERSION).catch(() => {});
                 }}
+            />
+
+            <SupportModal
+                visible={showSupportModal}
+                onClose={() => setShowSupportModal(false)}
+            />
+
+            <NotificationReAskModal
+                visible={showNotifReAsk}
+                tahajjudCount={notifReAskCount}
+                onClose={() => setShowNotifReAsk(false)}
+            />
+
+            <CancellationSurveyModal
+                visible={showCancellationSurvey}
+                onClose={dismissCancellationSurvey}
             />
 
             <Modal
@@ -969,4 +1136,28 @@ const styles = StyleSheet.create({
     },
     mapLiveDot: { width: 6, height: 6, borderRadius: 3 },
     mapLiveText: { fontSize: 10, fontWeight: '800', letterSpacing: 0.5 },
+    trialSaveBanner: {
+        marginHorizontal: 20,
+        marginBottom: 16,
+        padding: 14,
+        paddingRight: 34,
+        borderRadius: 16,
+        borderWidth: 1,
+    },
+    trialSaveTitle: {
+        fontSize: 14,
+        fontWeight: '800',
+        marginBottom: 3,
+    },
+    trialSaveBody: {
+        color: '#94a3b8',
+        fontSize: 12,
+        fontWeight: '600',
+        lineHeight: 17,
+    },
+    trialSaveDismiss: {
+        position: 'absolute',
+        top: 10,
+        right: 12,
+    },
 });

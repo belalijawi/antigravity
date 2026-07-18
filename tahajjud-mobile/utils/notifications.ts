@@ -2,6 +2,7 @@ import * as Notifications from 'expo-notifications';
 import * as Device from 'expo-device';
 import { Platform } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { t } from './i18n';
 
 export const NOTIFICATION_ENABLED_KEY = 'tahajjud_notification_enabled';
 export const NOTIFICATION_ID_KEY_PREFIX = 'scheduled_notification_id_';
@@ -31,8 +32,8 @@ export function ensureNotificationHandler() {
                              dataType === 'islamic_event' || dataType === 'streak_at_risk';
             // Community reactions — warm, welcome to show in foreground
             const isCommunity = dataType === 'dua_milestone' || dataType === 'testimony_milestone';
-            // Feature nudge — informational, fine to show in foreground
-            const isNudge = dataType === 'feature_nudge';
+            // Feature nudge / day-1 morning check-in — informational, fine in foreground
+            const isNudge = dataType === 'feature_nudge' || dataType === 'morning_after';
             const shouldShow = isPartner || isPrayer || isCommunity || isNudge;
             return {
                 shouldShowAlert: shouldShow,
@@ -72,7 +73,9 @@ export async function requestNotificationPermissions(): Promise<boolean> {
             importance: Notifications.AndroidImportance.MAX,
             vibrationPattern: [0, 2000, 1000, 2000],
             lightColor: '#4F46E5',
-            sound: 'tahajjud_alert.m4a',
+            // Android resolves this against res/raw/tahajjud_alert (the full-length
+            // alarm) — the extension must match the actual raw resource file.
+            sound: 'tahajjud_alert.wav',
             lockscreenVisibility: Notifications.AndroidNotificationVisibility.PUBLIC,
             bypassDnd: true,
         });
@@ -87,6 +90,39 @@ export async function requestNotificationPermissions(): Promise<boolean> {
     }
 
     return true;
+}
+
+/**
+ * Day-1 morning check-in — scheduled ONCE, at the end of onboarding, for the
+ * following morning. First-day prayer-loggers retain at 2× everyone else;
+ * this is the first-day loop-closer: "did you wake for Tahajjud? Log it."
+ */
+export async function scheduleMorningAfter(hasStreak: boolean): Promise<void> {
+    const KEY = 'morning-after-scheduled-v1';
+    try {
+        if (await AsyncStorage.getItem(KEY)) return; // only ever once
+        const { status } = await Notifications.getPermissionsAsync();
+        if (status !== 'granted') return;
+
+        const fireDate = new Date();
+        fireDate.setDate(fireDate.getDate() + 1);
+        fireDate.setHours(8, 30, 0, 0);
+
+        await Notifications.scheduleNotificationAsync({
+            content: {
+                title: hasStreak ? t('morning.titleStreak') : t('morning.titleFirst'),
+                body: hasStreak ? t('morning.bodyStreak') : t('morning.bodyFirst'),
+                sound: 'default',
+                data: { type: 'morning_after' },
+            },
+            trigger: {
+                type: Notifications.SchedulableTriggerInputTypes.DATE,
+                date: fireDate,
+                ...(Platform.OS === 'android' && { channelId: 'prayers' }),
+            },
+        });
+        await AsyncStorage.setItem(KEY, 'true');
+    } catch { /* never block onboarding */ }
 }
 
 // Note: Public individual schedule functions removed in favor of unified scheduleAllPrayerNotifications
@@ -143,9 +179,6 @@ export async function cancelNotification(key: string): Promise<void> {
         console.error(`Error canceling notification for ${key}:`, error);
     }
 }
-
-// Backward compatibility
-export const cancelTahajjudNotification = () => cancelNotification('tahajjud');
 
 export async function isNotificationEnabled(key: string = 'tahajjud'): Promise<boolean> {
     try {
@@ -358,7 +391,9 @@ async function internalScheduleTahajjudNotification(targetTime: Date, bufferMinu
         content: {
             title,
             body,
-            sound: 'tahajjud_alert.m4a',
+            // iOS: must be ≤30s and caf/wav/aiff — the old 4-min .m4a was silently
+            // rejected by iOS, which played the default chime instead.
+            sound: 'tahajjud_alert.caf',
             priority: Notifications.AndroidNotificationPriority.MAX,
             vibrate: [0, 1000, 500, 1000, 500, 1000],
             // ── Time-sensitive: bypasses iOS Focus / Do Not Disturb ──
@@ -401,7 +436,9 @@ async function internalScheduleTahajjudNotificationRaw(targetTime: Date, bufferM
             content: {
                 title,
                 body,
-                sound: 'tahajjud_alert.m4a',
+                // iOS: must be ≤30s and caf/wav/aiff — the old 4-min .m4a was silently
+            // rejected by iOS, which played the default chime instead.
+            sound: 'tahajjud_alert.caf',
                 priority: Notifications.AndroidNotificationPriority.MAX,
                 vibrate: [0, 1000, 500, 1000, 500, 1000],
                 // Same time-sensitive escalation as tonight's reminder so
@@ -431,7 +468,7 @@ function buildPrayerNotificationContent(
     const timeStr = prayerTime.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
     if (offsetMinutes > 0) {
         return {
-            title: `${emoji} ${name} in ${offsetMinutes} min`,
+            title: `${emoji} ${name} in ${offsetMinutes === 60 ? '1 hour' : `${offsetMinutes} min`}`,
             body: `${name} begins at ${timeStr}. Time to prepare.`,
         };
     }
@@ -487,20 +524,28 @@ async function internalSchedulePrayerNotification(prayerName: string, targetTime
     const content = PRAYER_CONTENT[key];
     const { title, body } = buildPrayerNotificationContent(prayerName, content, offsetMinutes, targetTime);
 
-    const notificationId = await Notifications.scheduleNotificationAsync({
-        content: {
-            title,
-            body,
-            priority: Notifications.AndroidNotificationPriority.HIGH,
-            sound: 'default',
-        },
-        trigger: {
-            type: Notifications.SchedulableTriggerInputTypes.DATE,
-            date: scheduleTime,
-            ...(Platform.OS === 'android' && { channelId: 'prayers' }),
-        },
-    });
+    // Scheduling is best-effort: a failure here (e.g. an OS/notification-channel
+    // hiccup) must never propagate up into the caller's prayer-time-fetch try
+    // block, which would otherwise misreport a successful prayer-time load as
+    // "Failed to load prayer times". Mirrors internalScheduleTahajjudNotificationRaw.
+    try {
+        const notificationId = await Notifications.scheduleNotificationAsync({
+            content: {
+                title,
+                body,
+                priority: Notifications.AndroidNotificationPriority.HIGH,
+                sound: 'default',
+            },
+            trigger: {
+                type: Notifications.SchedulableTriggerInputTypes.DATE,
+                date: scheduleTime,
+                ...(Platform.OS === 'android' && { channelId: 'prayers' }),
+            },
+        });
 
-    await AsyncStorage.setItem(`${NOTIFICATION_ID_KEY_PREFIX}${key}`, notificationId);
-    log(`[DEBUG] ${prayerName} scheduled for ${scheduleTime.toLocaleString()} (${offsetMinutes} min before)`);
+        await AsyncStorage.setItem(`${NOTIFICATION_ID_KEY_PREFIX}${key}`, notificationId);
+        log(`[DEBUG] ${prayerName} scheduled for ${scheduleTime.toLocaleString()} (${offsetMinutes} min before)`);
+    } catch (e) {
+        log(`[DEBUG] Failed to schedule ${prayerName} notification:`, e);
+    }
 }

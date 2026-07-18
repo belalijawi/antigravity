@@ -17,14 +17,14 @@ import * as Speech from 'expo-speech';
 import * as LocalAuthentication from 'expo-local-authentication';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { supabase } from '../utils/supabase';
-import { fetchCloudData } from '../utils/syncService';
+import { fetchCloudData, syncLocalToCloud } from '../utils/syncService';
 import { getFirebaseAuth } from '../utils/firebase';
 import { GlassBg as BlurView } from './GlassBg';
 import { LinearGradient } from 'expo-linear-gradient';
-import Animated, { FadeInDown, FadeInUp } from 'react-native-reanimated';
 import { useTheme } from '../context/ThemeContext';
 import { usePurchases } from '../context/PurchasesContext';
 import { tabletContentStyle } from '../utils/layout';
+import { t, getLocale } from '../utils/i18n';
 
 interface DuaCardProps {
     dua: Dua;
@@ -50,8 +50,10 @@ const DuaCard = React.memo(({ dua, isBookmarked, onToggleBookmark, isPlaying, ac
           )
         : -1;
     return (
-        <Animated.View
-            entering={FadeInDown.duration(600)}
+        // Plain View (no `entering`): entering animations on virtualized FlatList
+        // rows can stick at opacity:0 on first mount, hiding the list until a
+        // scroll — the same bug fixed in Stories.
+        <View
             style={styles.duaCard}
         >
             <BlurView intensity={Math.round(15 * blurIntensity)} tint="dark" style={[StyleSheet.absoluteFill, { backgroundColor: cardBg }]} />
@@ -111,7 +113,7 @@ const DuaCard = React.memo(({ dua, isBookmarked, onToggleBookmark, isPlaying, ac
                         {dua.translation ? (
                             <Text style={styles.letterText} numberOfLines={4}>{dua.translation}</Text>
                         ) : (
-                            <Text style={[styles.letterText, { color: '#475569', fontStyle: 'italic' }]}>No content</Text>
+                            <Text style={[styles.letterText, { color: '#475569', fontStyle: 'italic' }]}>{t('duasTab.noContent')}</Text>
                         )}
                     </View>
                 ) : (
@@ -138,14 +140,14 @@ const DuaCard = React.memo(({ dua, isBookmarked, onToggleBookmark, isPlaying, ac
 
                         {dua.transliteration ? (
                             <View style={styles.transliterationContainer}>
-                                <Text style={[styles.transliterationLabel, { color: '#94a3b8' }]}>Transliteration</Text>
+                                <Text style={[styles.transliterationLabel, { color: '#94a3b8' }]}>{t('hifz.transliterationToggle')}</Text>
                                 <Text style={[styles.transliterationText, { color: '#cbd5e1' }]}>{dua.transliteration}</Text>
                             </View>
                         ) : null}
 
                         {dua.translation ? (
                             <View style={styles.translationContainer}>
-                                <Text style={[styles.translationLabel, { color: colors.accent }]}>Translation</Text>
+                                <Text style={[styles.translationLabel, { color: colors.accent }]}>{t('hifz.translationToggle')}</Text>
                                 {activeTranslationWord >= 0 ? (
                                     <Text style={styles.translationText}>
                                         {translationWords.map((word, wi) => (
@@ -171,7 +173,7 @@ const DuaCard = React.memo(({ dua, isBookmarked, onToggleBookmark, isPlaying, ac
                     <Text style={styles.sourceText}>{dua.source}</Text>
                 </View>
             </View>
-        </Animated.View>
+        </View>
     );
 }, (prevProps, nextProps) => {
     return (
@@ -318,6 +320,11 @@ export function DuasTab() {
         const auth = getFirebaseAuth();
         const firebaseUser = auth?.currentUser;
         if (firebaseUser) {
+            // Push any local-only duas (written before sign-in, or on a
+            // brand-new cloud account) up FIRST — otherwise the "replace
+            // local storage with cloud data" step below would silently wipe
+            // them out the moment the cloud already has anything else in it.
+            await syncLocalToCloud(firebaseUser.uid).catch(() => {});
             const cloudDuas = await fetchCloudData(firebaseUser.uid);
             if (cloudDuas.length > 0) {
                 // Persist via the same key + notify path so all subscribers update
@@ -329,7 +336,7 @@ export function DuasTab() {
 
     const handleSaveDua = async () => {
         if (!newDuaTranslation.trim()) {
-            Alert.alert('Empty Letter', 'Please write something in your letter to Allah.');
+            Alert.alert(t('duasTab.emptyLetterTitle'), t('duasTab.emptyLetterBody'));
             return;
         }
 
@@ -337,7 +344,7 @@ export function DuasTab() {
         // their fourth letter to Allah would be the worst possible moment.
 
         const date = new Date();
-        const formattedDate = date.toLocaleDateString('en-US', {
+        const formattedDate = date.toLocaleDateString(getLocale(), {
             month: 'short',
             day: 'numeric',
             hour: '2-digit',
@@ -346,7 +353,7 @@ export function DuasTab() {
 
         const newDua: PersonalDua = {
             id: Date.now().toString(),
-            title: newDuaTitle.trim() || `Letter · ${formattedDate}`,
+            title: newDuaTitle.trim() || t('duasTab.letterFallbackTitle', { date: formattedDate }),
             arabic: newDuaArabic,
             transliteration: newDuaTransliteration,
             translation: newDuaTranslation,
@@ -354,28 +361,33 @@ export function DuasTab() {
             createdAt: Date.now(),
         };
 
-        await savePersonalDua(newDua);
+        const ok = await savePersonalDua(newDua);
+        if (!ok) {
+            Alert.alert(t('letterModal.saveFailedTitle'), t('letterModal.saveFailedBody'));
+            return;
+        }
         // Subscription via subscribePersonalDuas updates state authoritatively
         setIsModalVisible(false);
         resetForm();
 
         // Check for achievements (subscription has already fired by now)
-        const newlyUnlocked = await checkAchievements('dua', personalDuas.length + 1);
+        const newlyUnlockedList = await checkAchievements('dua', personalDuas.length + 1);
+        const newlyUnlocked = newlyUnlockedList[0];
         if (newlyUnlocked) {
             if (!isPremium) {
                 Alert.alert(
                     `🏅 ${newlyUnlocked.title}`,
-                    `${newlyUnlocked.description}\n\nUnlock Premium to see all your achievements, track your full history, and honour every night you've stood before Allah.`,
+                    `${newlyUnlocked.description}\n\n${t('duasTab.unlockAchievementsBody')}`,
                     [
-                        { text: 'MashAllah!', style: 'cancel' },
-                        { text: 'Unlock Premium ⭐', onPress: openPaywall },
+                        { text: t('tracker.mashallahExclaim'), style: 'cancel' },
+                        { text: t('tracker.unlockPremiumBtn'), onPress: openPaywall },
                     ]
                 );
             } else {
                 Alert.alert(
                     `🏅 ${newlyUnlocked.title}`,
-                    `MashAllah! ${newlyUnlocked.description}`,
-                    [{ text: 'MashAllah!' }]
+                    `${t('tracker.mashallahExclaim')} ${newlyUnlocked.description}`,
+                    [{ text: t('tracker.mashallahExclaim') }]
                 );
             }
         }
@@ -383,12 +395,12 @@ export function DuasTab() {
 
     const handleDeleteDua = async (id: string) => {
         Alert.alert(
-            "Delete Dua",
-            "Are you sure you want to delete this dua?",
+            t('duasTab.deleteDuaTitle'),
+            t('duasTab.deleteDuaBody'),
             [
-                { text: "Cancel", style: "cancel" },
+                { text: t('btn.cancel'), style: "cancel" },
                 {
-                    text: "Delete",
+                    text: t('btn.delete'),
                     style: "destructive",
                     onPress: async () => {
                         await deletePersonalDua(id);
@@ -452,13 +464,11 @@ export function DuasTab() {
     };
 
     const handleToggleBookmark = useCallback(async (duaId: string) => {
-        await toggleBookmark(duaId);
-        // Optimistic update
-        setBookmarkedIds(prev =>
-            prev.includes(duaId)
-                ? prev.filter(id => id !== duaId)
-                : [...prev, duaId]
-        );
+        setBookmarkedIds(prev => {
+            if (prev.includes(duaId)) return prev;
+            return [...prev, duaId];
+        });
+        toggleBookmark(duaId);
     }, []);
 
     const handlePlayDua = useCallback(async (dua: Dua) => {
@@ -508,15 +518,9 @@ export function DuasTab() {
                     // playback. Surface a helpful message with install steps.
                     if (Platform.OS === 'android') {
                         Alert.alert(
-                            'Arabic Voice Not Installed',
-                            'Your phone is missing Arabic text-to-speech data.\n\n' +
-                            'To enable dua audio:\n' +
-                            '1. Settings → System → Languages & input\n' +
-                            '2. Tap "Text-to-speech output"\n' +
-                            '3. Tap the gear ⚙ next to Google\'s engine\n' +
-                            '4. Tap "Install voice data" → Arabic\n\n' +
-                            'After install, reopen Tahajjud+ and try again.',
-                            [{ text: 'OK' }]
+                            t('duasTab.arabicVoiceTitle'),
+                            t('duasTab.arabicVoiceBody'),
+                            [{ text: t('btn.ok') }]
                         );
                     }
                 }
@@ -532,15 +536,9 @@ export function DuasTab() {
             // Android devices missing the language pack.
             if (Platform.OS === 'android' && !voiceIdentifier) {
                 Alert.alert(
-                    'Arabic Voice Not Installed',
-                    'Your phone is missing Arabic text-to-speech data.\n\n' +
-                    'To enable dua audio:\n' +
-                    '1. Settings → System → Languages & input\n' +
-                    '2. Tap "Text-to-speech output"\n' +
-                    '3. Tap the gear ⚙ next to Google\'s engine\n' +
-                    '4. Tap "Install voice data" → Arabic\n\n' +
-                    'After install, reopen Tahajjud+ and try again.',
-                    [{ text: 'OK' }]
+                    t('duasTab.arabicVoiceTitle'),
+                    t('duasTab.arabicVoiceBody'),
+                    [{ text: t('btn.ok') }]
                 );
                 setPlayingDuaId(null);
                 clearWordTimer();
@@ -553,7 +551,7 @@ export function DuasTab() {
             console.error('Playback failed', error);
             setPlayingDuaId(null);
             clearWordTimer();
-            Alert.alert('Error', 'Unable to play audio.');
+            Alert.alert(t('duasTab.errorTitle'), t('duasTab.errorAudioBody'));
         }
     }, [playingDuaId, voiceIdentifier, clearWordTimer]);
 
@@ -642,8 +640,8 @@ export function DuasTab() {
         <View style={styles.emptyState}>
             <Text style={styles.emptyText}>
                 {selectedCategory === 'Liked'
-                    ? 'No liked duas yet. Tap the heart icon to save your favourites!'
-                    : 'No duas found'}
+                    ? t('duasTab.noLikedDuas')
+                    : t('duasTab.noDuasFound')}
             </Text>
         </View>
     );
@@ -653,19 +651,19 @@ export function DuasTab() {
             <View style={[styles.container, tabletContentStyle()]}>
                 {/* Header */}
                 <View style={styles.header}>
-                    <Text style={[styles.headerTitle, { color: colors.accent }]}>Duas</Text>
+                    <Text style={[styles.headerTitle, { color: colors.accent }]}>{t('duasTab.title')}</Text>
                     <View style={styles.tabsContainer}>
                         <TouchableOpacity
                             style={[styles.tab, activeTab === 'library' && styles.activeTab]}
                             onPress={() => handleTabChange('library')}
                         >
-                            <Text style={[styles.tabText, activeTab === 'library' && styles.activeTabText]}>Library</Text>
+                            <Text style={[styles.tabText, activeTab === 'library' && styles.activeTabText]}>{t('duasTab.tabLibrary')}</Text>
                         </TouchableOpacity>
                         <TouchableOpacity
                             style={[styles.tab, activeTab === 'personal' && styles.activeTab]}
                             onPress={() => handleTabChange('personal')}
                         >
-                            <Text style={[styles.tabText, activeTab === 'personal' && styles.activeTabText]}>Letters</Text>
+                            <Text style={[styles.tabText, activeTab === 'personal' && styles.activeTabText]}>{t('duasTab.tabLetters')}</Text>
                         </TouchableOpacity>
                     </View>
                 </View>
@@ -693,7 +691,7 @@ export function DuasTab() {
                                     <Search size={20} color="#94a3b8" style={styles.searchIcon} />
                                     <TextInput
                                         style={styles.searchInput}
-                                        placeholder="Search duas..."
+                                        placeholder={t('duasTab.searchPlaceholder')}
                                         placeholderTextColor="#94a3b8"
                                         value={searchQuery}
                                         onChangeText={setSearchQuery}
@@ -750,9 +748,9 @@ export function DuasTab() {
                             {/* Left: tap to open history */}
                             <TouchableOpacity
                                 onPress={async () => {
-                                    if (!isPremium) { openPaywall(); return; }
+                                    if (!isPremium) { openPaywall('feature_gate:journal'); return; }
                                     import('../utils/featureDiscovery').then(m => m.markFeatureUsed('night_journal')).catch(() => {});
-                                    const ok = await requireBiometric({ prompt: 'Unlock your night journal' });
+                                    const ok = await requireBiometric({ prompt: t('duasTab.unlockJournalPrompt') });
                                     if (ok) setShowJournalHistory(true);
                                 }}
                                 style={{ flex: 1, flexDirection: 'row', alignItems: 'center', gap: 12 }}
@@ -763,15 +761,15 @@ export function DuasTab() {
                                 </View>
                                 <View style={{ flex: 1 }}>
                                     <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                                        <Text style={styles.journalBannerTitle}>Night Journal</Text>
+                                        <Text style={styles.journalBannerTitle}>{t('duasTab.nightJournalTitle')}</Text>
                                         {!isPremium && <Lock size={11} color="#f59e0b" />}
                                     </View>
                                     <Text style={styles.journalBannerSub}>
                                         {isPremium
                                             ? (journalEntries.length > 0
-                                                ? `${journalEntries.length} night${journalEntries.length !== 1 ? 's' : ''} logged`
-                                                : 'Reflect after every Tahajjud')
-                                            : 'Write to Allah after every Tahajjud'}
+                                                ? t('duasTab.nightsLogged', { n: journalEntries.length })
+                                                : t('duasTab.reflectAfterTahajjud'))
+                                            : t('duasTab.writeToAllahAfterTahajjud')}
                                     </Text>
                                 </View>
                             </TouchableOpacity>
@@ -779,15 +777,15 @@ export function DuasTab() {
                             {/* Right: Write button */}
                             <TouchableOpacity
                                 onPress={async () => {
-                                    if (!isPremium) { openPaywall(); return; }
-                                    const ok = await requireBiometric({ prompt: 'Unlock your night journal' });
+                                    if (!isPremium) { openPaywall('feature_gate:journal'); return; }
+                                    const ok = await requireBiometric({ prompt: t('duasTab.unlockJournalPrompt') });
                                     if (ok) setShowJournalWrite(true);
                                 }}
                                 style={[styles.journalWriteBtn, { backgroundColor: colors.accent, borderColor: colors.accent }]}
                                 activeOpacity={0.8}
                             >
                                 <PenLine size={13} color="#020617" />
-                                <Text style={styles.journalWriteBtnText}>Write</Text>
+                                <Text style={styles.journalWriteBtnText}>{t('duasTab.writeBtn')}</Text>
                             </TouchableOpacity>
                         </View>
 
@@ -801,9 +799,9 @@ export function DuasTab() {
                                 <Text style={{ fontSize: 16 }}>🤲</Text>
                             </View>
                             <View style={{ flex: 1 }}>
-                                <Text style={styles.journalBannerTitle}>Dua Wall</Text>
+                                <Text style={styles.journalBannerTitle}>{t('duasTab.duaWallTitle')}</Text>
                                 <Text style={styles.journalBannerSub}>
-                                    Read & support anonymous duas from the community
+                                    {t('duasTab.duaWallSub')}
                                 </Text>
                             </View>
                         </TouchableOpacity>
@@ -817,8 +815,8 @@ export function DuasTab() {
                             keyboardDismissMode="on-drag"
                             ListEmptyComponent={() => (
                                 <View style={styles.emptyState}>
-                                    <Text style={styles.emptyText}>Your heart's journey is a private conversation.</Text>
-                                    <Text style={styles.emptySubtext}>Tap the ✏️ icon to write your first letter to Allah.</Text>
+                                    <Text style={styles.emptyText}>{t('duasTab.lettersEmptyTitle')}</Text>
+                                    <Text style={styles.emptySubtext}>{t('duasTab.lettersEmptySub')}</Text>
                                 </View>
                             )}
                             showsVerticalScrollIndicator={false}
@@ -865,17 +863,17 @@ export function DuasTab() {
                         {/* Top bar */}
                         <View style={styles.letterModalTopBar}>
                             <TouchableOpacity onPress={() => setIsModalVisible(false)} style={styles.letterModalCancel}>
-                                <Text style={styles.letterModalCancelText}>Cancel</Text>
+                                <Text style={styles.letterModalCancelText}>{t('btn.cancel')}</Text>
                             </TouchableOpacity>
                             <View style={styles.letterModalLabelWrap}>
                                 <PenTool size={11} color={colors.accent} />
-                                <Text style={[styles.letterModalLabel, { color: colors.accent }]}>LETTER TO ALLAH</Text>
+                                <Text style={[styles.letterModalLabel, { color: colors.accent }]}>{t('duasTab.letterToAllahLabel')}</Text>
                             </View>
                             <TouchableOpacity
                                 onPress={handleSaveDua}
                                 style={[styles.letterModalSendBtn, { backgroundColor: colors.accent }]}
                             >
-                                <Text style={styles.letterModalSendText}>Send</Text>
+                                <Text style={styles.letterModalSendText}>{t('duasTab.sendBtn')}</Text>
                             </TouchableOpacity>
                         </View>
 
@@ -892,7 +890,7 @@ export function DuasTab() {
 
                             <TextInput
                                 style={styles.letterTitleField}
-                                placeholder="Subject (optional)"
+                                placeholder={t('duasTab.subjectPlaceholder')}
                                 placeholderTextColor="#334155"
                                 value={newDuaTitle}
                                 onChangeText={setNewDuaTitle}
@@ -903,7 +901,7 @@ export function DuasTab() {
 
                             <TextInput
                                 style={styles.letterBodyField}
-                                placeholder={"Ya Allah,\n\nWrite whatever is on your heart…"}
+                                placeholder={t('duasTab.bodyPlaceholder')}
                                 placeholderTextColor="#334155"
                                 value={newDuaTranslation}
                                 onChangeText={setNewDuaTranslation}
@@ -914,7 +912,7 @@ export function DuasTab() {
 
                             {newDuaTranslation.trim().length > 0 && (
                                 <Text style={[styles.wordCountText, { color: colors.secondaryText, opacity: 0.5 }]}>
-                                    {newDuaTranslation.trim().split(/\s+/).length} words
+                                    {t('duasTab.wordsCount', { n: newDuaTranslation.trim().split(/\s+/).length })}
                                 </Text>
                             )}
                         </RNScrollView>

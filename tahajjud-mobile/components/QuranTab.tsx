@@ -6,7 +6,7 @@ import { View, Text, FlatList, StyleSheet, TouchableOpacity, ActivityIndicator, 
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { QuranService, SurahMeta } from '../services/QuranService';
 import { SurahReader } from './SurahReader';
-import { Search, Bookmark, BookOpen, Download, CheckCircle, Wifi, Trash2 } from 'lucide-react-native';
+import { Search, Bookmark, BookOpen, Download, CheckCircle, Wifi, Trash2, X } from 'lucide-react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { GlassBg as BlurView } from './GlassBg';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -20,6 +20,7 @@ import { PlaylistManager } from './PlaylistManager';
 import { QuranPlaylist } from '../utils/quranPlaylists';
 import { QuranMiniPlayer } from './QuranMiniPlayer';
 import { useQuranAudio } from '../context/QuranAudioContext';
+import { t } from '../utils/i18n';
 
 // Returns true if every char of `needle` appears in `haystack` in order.
 // Lets "ftha" match "fatiha", or "mlk" match "mulk" — gentle on typos.
@@ -157,17 +158,17 @@ export function QuranTab() {
 
     const handleDownloadPress = (surahNumber: number, surahName: string) => {
         if (!isPremium) {
-            openPaywall();
+            openPaywall('feature_gate:offline_download');
             return;
         }
         const info = dlMap[surahNumber] ?? OfflineQuranService.getInfo(surahNumber);
         if (info.status === 'downloaded') {
             Alert.alert(
-                'Delete Offline Audio',
-                `Remove the downloaded audio for ${surahName}?`,
+                t('quranTab.deleteOfflineTitle'),
+                t('quranTab.deleteOfflineBody', { name: surahName }),
                 [
-                    { text: 'Cancel', style: 'cancel' },
-                    { text: 'Delete', style: 'destructive', onPress: () => OfflineQuranService.delete(surahNumber) },
+                    { text: t('btn.cancel'), style: 'cancel' },
+                    { text: t('btn.delete'), style: 'destructive', onPress: () => OfflineQuranService.delete(surahNumber) },
                 ]
             );
             return;
@@ -198,7 +199,10 @@ export function QuranTab() {
             const surahMeta = surahs.find(s => s.number === sNum);
             if (surahMeta && aNum >= 1 && aNum <= surahMeta.numberOfAyahs) {
                 setVerseRef({ surahNumber: sNum, ayahNumber: aNum, surahName: surahMeta.englishName });
-                setFilteredSurahs([surahMeta]);
+                // Show ONLY the "Jump to … Ayah N" banner — not the whole-surah
+                // row underneath (which would just open the surah at its
+                // beginning, which is confusing for a verse search).
+                setFilteredSurahs([]);
                 return;
             }
             // Invalid (surah doesn't exist or ayah out of range) — clear and
@@ -272,8 +276,8 @@ export function QuranTab() {
         <SafeAreaView style={styles.container} edges={['top', 'left', 'right']}>
             <View style={[styles.container, tabletContentStyle()]}>
                 <View style={styles.header}>
-                    <Text style={[styles.title, { color: colors.accent }]}>The Holy Quran</Text>
-                    <Text style={styles.subtitle}>Guidance for the heart</Text>
+                    <Text style={[styles.title, { color: colors.accent }]}>{t('quranTab.title')}</Text>
+                    <Text style={styles.subtitle}>{t('quranTab.subtitle')}</Text>
                 </View>
 
                 {/* Sub-tab switcher */}
@@ -283,18 +287,19 @@ export function QuranTab() {
                         onPress={() => setActiveSubTab('quran')}
                     >
                         <BookOpenIcon size={14} color={activeSubTab === 'quran' ? colors.accent : '#475569'} />
-                        <Text style={[styles.subTabText, activeSubTab === 'quran' && { color: colors.accent }]}>Read</Text>
+                        <Text style={[styles.subTabText, activeSubTab === 'quran' && { color: colors.accent }]}>{t('quranTab.tabRead')}</Text>
                     </TouchableOpacity>
                     <TouchableOpacity
                         style={[styles.subTab, activeSubTab === 'hifz' && { backgroundColor: colors.accent + '22', borderColor: colors.accent + '66' }]}
                         onPress={() => {
-                            if (!isPremium) { openPaywall(); return; }
+                            // Free users may browse Hifz and memorise their FIRST
+                            // surah — the gate moved to starting a second surah
+                            // (280/mo hit the old hard gate; 8 sessions/mo happened).
                             setActiveSubTab('hifz');
                         }}
                     >
                         <Brain size={14} color={activeSubTab === 'hifz' ? colors.accent : '#475569'} />
-                        <Text style={[styles.subTabText, activeSubTab === 'hifz' && { color: colors.accent }]}>Hifz</Text>
-                        {!isPremium && <Lock size={9} color="#f59e0b" />}
+                        <Text style={[styles.subTabText, activeSubTab === 'hifz' && { color: colors.accent }]}>{t('quranTab.tabHifz')}</Text>
                     </TouchableOpacity>
                     <TouchableOpacity
                         style={[styles.subTab, activeSubTab === 'radio' && { backgroundColor: colors.accent + '22', borderColor: colors.accent + '66' }]}
@@ -305,7 +310,7 @@ export function QuranTab() {
                         }}
                     >
                         <Radio size={14} color={activeSubTab === 'radio' ? colors.accent : '#475569'} />
-                        <Text style={[styles.subTabText, activeSubTab === 'radio' && { color: colors.accent }]}>Radio</Text>
+                        <Text style={[styles.subTabText, activeSubTab === 'radio' && { color: colors.accent }]}>{t('quranTab.tabRadio')}</Text>
                         {!isPremium && <Lock size={9} color="#f59e0b" />}
                     </TouchableOpacity>
                 </View>
@@ -337,7 +342,7 @@ export function QuranTab() {
                                 <BookOpen color={colors.primaryText} size={24} strokeWidth={2} />
                             </View>
                             <View style={styles.bookmarkContent}>
-                                <Text style={styles.bookmarkLabel}>RESUME ASCENT</Text>
+                                <Text style={styles.bookmarkLabel}>{t('quranTab.resumeAscent')}</Text>
                                 <Text style={[styles.bookmarkSurah, { color: colors.primaryText }]}>
                                     {bookmark.surahName} {bookmark.ayahNumber ? `• v${bookmark.ayahNumber}` : ''}
                                 </Text>
@@ -352,7 +357,7 @@ export function QuranTab() {
                     <Search color="#94a3b8" size={20} />
                     <TextInput
                         style={styles.input}
-                        placeholder="Search by name or verse (e.g. 2:255)…"
+                        placeholder={t('quranTab.searchPlaceholder')}
                         placeholderTextColor="rgba(255, 255, 255, 0.2)"
                         value={searchQuery}
                         onChangeText={handleSearch}
@@ -360,6 +365,15 @@ export function QuranTab() {
                         // descender letters past the container's fixed height.
                         maxFontSizeMultiplier={1.2}
                     />
+                    {searchQuery.length > 0 && (
+                        <TouchableOpacity
+                            onPress={() => handleSearch('')}
+                            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                            style={{ padding: 4 }}
+                        >
+                            <X color="#94a3b8" size={18} />
+                        </TouchableOpacity>
+                    )}
                 </View>}
 
                 {/* Verse-reference jump banner — appears when user types "2:255" etc. */}
@@ -378,9 +392,9 @@ export function QuranTab() {
                         <BookOpen size={16} color={colors.accent} />
                         <View style={{ flex: 1 }}>
                             <Text style={[styles.verseJumpTitle, { color: colors.accent }]}>
-                                Jump to {verseRef.surahName} · Ayah {verseRef.ayahNumber}
+                                {t('quranTab.jumpTo', { name: verseRef.surahName, n: verseRef.ayahNumber })}
                             </Text>
-                            <Text style={styles.verseJumpSub}>Surah {verseRef.surahNumber}:{verseRef.ayahNumber}</Text>
+                            <Text style={styles.verseJumpSub}>{t('quranTab.surahRef', { ref: `${verseRef.surahNumber}:${verseRef.ayahNumber}` })}</Text>
                         </View>
                     </TouchableOpacity>
                 )}

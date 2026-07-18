@@ -10,6 +10,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useTheme } from '../context/ThemeContext';
 import { localDateStr } from '../utils/localDate';
 import { subDays } from 'date-fns';
+import { t, getLocale } from '../utils/i18n';
 
 type PrayerKey = 'fajr' | 'dhuhr' | 'asr' | 'maghrib' | 'isha' | 'tahajjud';
 type PrayerHistory = Record<PrayerKey, string[]>;
@@ -23,7 +24,10 @@ const PRAYERS: { key: PrayerKey; label: string; emoji: string }[] = [
     { key: 'tahajjud', label: 'Tahajjud', emoji: '🌙' },
 ];
 
-const DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+// 2023-01-01 was a Sunday — reference date for deriving localized weekday abbreviations.
+function getDayAbbrevs(): string[] {
+    return Array.from({ length: 7 }, (_, i) => new Date(2023, 0, 1 + i).toLocaleDateString(getLocale(), { weekday: 'short' }));
+}
 
 const PRAYER_COLORS: Record<PrayerKey, string> = {
     fajr: '#38bdf8', dhuhr: '#fbbf24', asr: '#fb923c',
@@ -114,7 +118,9 @@ async function computeAnalytics(): Promise<Analytics | null> {
         weekdayDays[i] > 0 ? c / weekdayDays[i] : 0
     );
     const bestDayIdx = dailyByWeekday.indexOf(Math.max(...dailyByWeekday));
-    const bestDay = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'][bestDayIdx];
+    // 2023-01-01 was a Sunday — used purely as a stable reference date to
+    // derive the localized weekday name for bestDayIdx (0=Sun..6=Sat).
+    const bestDay = new Date(2023, 0, 1 + bestDayIdx).toLocaleDateString(getLocale(), { weekday: 'long' });
 
     return { totalLogged, daysTracked, overallPct, perPrayer, bestPrayer, weakestPrayer, bestDay, last30Days: last30, last30Pct, dailyByWeekday };
 }
@@ -162,8 +168,8 @@ export function PrayerAnalytics() {
     if (!data) {
         return (
             <View style={styles.center}>
-                <Text style={styles.emptyTitle}>No data yet</Text>
-                <Text style={styles.emptySub}>Start logging prayers to see your analytics.</Text>
+                <Text style={styles.emptyTitle}>{t('prayerAnalytics.noDataYet')}</Text>
+                <Text style={styles.emptySub}>{t('prayerAnalytics.noDataSub')}</Text>
             </View>
         );
     }
@@ -179,13 +185,13 @@ export function PrayerAnalytics() {
                     <BlurView intensity={Math.round(20 * blurIntensity)} tint="dark" style={StyleSheet.absoluteFill} />
                     <View style={[StyleSheet.absoluteFill, { backgroundColor: cardBg }]} />
                     <Text style={styles.statNum}>{data.overallPct}%</Text>
-                    <Text style={[styles.statLabel, { color: colors.secondaryText }]}>Overall consistency</Text>
+                    <Text style={[styles.statLabel, { color: colors.secondaryText }]}>{t('prayerAnalytics.overallConsistency')}</Text>
                 </View>
                 <View style={[styles.card, { flex: 1 }]}>
                     <BlurView intensity={Math.round(20 * blurIntensity)} tint="dark" style={StyleSheet.absoluteFill} />
                     <View style={[StyleSheet.absoluteFill, { backgroundColor: cardBg }]} />
                     <Text style={styles.statNum}>{data.totalLogged}</Text>
-                    <Text style={[styles.statLabel, { color: colors.secondaryText }]}>Total prayers logged</Text>
+                    <Text style={[styles.statLabel, { color: colors.secondaryText }]}>{t('prayerAnalytics.totalLoggedLabel')}</Text>
                 </View>
             </View>
 
@@ -194,13 +200,13 @@ export function PrayerAnalytics() {
                     <BlurView intensity={Math.round(20 * blurIntensity)} tint="dark" style={StyleSheet.absoluteFill} />
                     <View style={[StyleSheet.absoluteFill, { backgroundColor: cardBg }]} />
                     <Text style={styles.statNum}>{data.last30Pct}%</Text>
-                    <Text style={[styles.statLabel, { color: colors.secondaryText }]}>Last 30 days</Text>
+                    <Text style={[styles.statLabel, { color: colors.secondaryText }]}>{t('prayerAnalytics.last30DaysLabel')}</Text>
                 </View>
                 <View style={[styles.card, { flex: 1 }]}>
                     <BlurView intensity={Math.round(20 * blurIntensity)} tint="dark" style={StyleSheet.absoluteFill} />
                     <View style={[StyleSheet.absoluteFill, { backgroundColor: cardBg }]} />
                     <Text style={styles.statNum}>{data.daysTracked}</Text>
-                    <Text style={[styles.statLabel, { color: colors.secondaryText }]}>Days tracked</Text>
+                    <Text style={[styles.statLabel, { color: colors.secondaryText }]}>{t('prayerAnalytics.daysTrackedLabel')}</Text>
                 </View>
             </View>
 
@@ -212,9 +218,9 @@ export function PrayerAnalytics() {
                     {PRAYERS.find(p => p.key === data.bestPrayer)?.emoji}
                 </Text>
                 <View style={{ flex: 1 }}>
-                    <Text style={[styles.insightTitle, { color: '#22c55e' }]}>Strongest prayer</Text>
+                    <Text style={[styles.insightTitle, { color: '#22c55e' }]}>{t('prayerAnalytics.strongestPrayer')}</Text>
                     <Text style={[styles.insightValue, { color: colors.primaryText }]}>
-                        {PRAYERS.find(p => p.key === data.bestPrayer)?.label} · {data.perPrayer[data.bestPrayer].pct}% of days
+                        {t('prayerAnalytics.pctOfDays', { label: t(`prayer.${data.bestPrayer}`), pct: data.perPrayer[data.bestPrayer].pct })}
                     </Text>
                 </View>
             </View>
@@ -226,9 +232,9 @@ export function PrayerAnalytics() {
                     {PRAYERS.find(p => p.key === data.weakestPrayer)?.emoji}
                 </Text>
                 <View style={{ flex: 1 }}>
-                    <Text style={[styles.insightTitle, { color: '#ef4444' }]}>Needs most attention</Text>
+                    <Text style={[styles.insightTitle, { color: '#ef4444' }]}>{t('prayerAnalytics.needsAttention')}</Text>
                     <Text style={[styles.insightValue, { color: colors.primaryText }]}>
-                        {PRAYERS.find(p => p.key === data.weakestPrayer)?.label} · {data.perPrayer[data.weakestPrayer].pct}% of days
+                        {t('prayerAnalytics.pctOfDays', { label: t(`prayer.${data.weakestPrayer}`), pct: data.perPrayer[data.weakestPrayer].pct })}
                     </Text>
                 </View>
             </View>
@@ -238,22 +244,22 @@ export function PrayerAnalytics() {
                 <View style={[StyleSheet.absoluteFill, { backgroundColor: cardBg }]} />
                 <Text style={styles.insightEmoji}>📅</Text>
                 <View style={{ flex: 1 }}>
-                    <Text style={[styles.insightTitle, { color: colors.accent }]}>Best day of the week</Text>
+                    <Text style={[styles.insightTitle, { color: colors.accent }]}>{t('prayerAnalytics.bestDayOfWeek')}</Text>
                     <Text style={[styles.insightValue, { color: colors.primaryText }]}>{data.bestDay}</Text>
                 </View>
             </View>
 
             {/* ── Per-prayer bars ── */}
-            <Text style={[styles.sectionTitle, { color: colors.secondaryText }]}>CONSISTENCY PER PRAYER</Text>
+            <Text style={[styles.sectionTitle, { color: colors.secondaryText }]}>{t('prayerAnalytics.consistencyPerPrayer')}</Text>
             <View style={[styles.fullCard, { borderColor: 'rgba(255,255,255,0.07)' }]}>
                 <BlurView intensity={Math.round(20 * blurIntensity)} tint="dark" style={StyleSheet.absoluteFill} />
                 <View style={[StyleSheet.absoluteFill, { backgroundColor: cardBg }]} />
-                {PRAYERS.map(({ key, label, emoji }) => {
+                {PRAYERS.map(({ key, emoji }) => {
                     const { count, pct } = data.perPrayer[key];
                     return (
                         <View key={key} style={styles.prayerRow}>
                             <Text style={styles.prayerEmoji}>{emoji}</Text>
-                            <Text style={[styles.prayerLabel, { color: colors.primaryText }]}>{label}</Text>
+                            <Text style={[styles.prayerLabel, { color: colors.primaryText }]}>{t(`prayer.${key}`)}</Text>
                             <View style={styles.barTrack}>
                                 <LinearGradient
                                     colors={[PRAYER_COLORS[key], PRAYER_COLORS[key] + '88']}
@@ -268,7 +274,7 @@ export function PrayerAnalytics() {
             </View>
 
             {/* ── Day of week ── */}
-            <Text style={[styles.sectionTitle, { color: colors.secondaryText }]}>BEST DAY OF THE WEEK</Text>
+            <Text style={[styles.sectionTitle, { color: colors.secondaryText }]}>{t('prayerAnalytics.bestDayUpper')}</Text>
             <View style={[styles.fullCard, { borderColor: 'rgba(255,255,255,0.07)', paddingBottom: 16 }]}>
                 <BlurView intensity={Math.round(20 * blurIntensity)} tint="dark" style={StyleSheet.absoluteFill} />
                 <View style={[StyleSheet.absoluteFill, { backgroundColor: cardBg }]} />
@@ -278,7 +284,7 @@ export function PrayerAnalytics() {
                     ))}
                 </View>
                 <View style={{ flexDirection: 'row', gap: 4, marginTop: 6 }}>
-                    {DAYS.map((d, i) => (
+                    {getDayAbbrevs().map((d, i) => (
                         <Text key={i} style={[styles.dayLabel, { flex: 1, color: colors.secondaryText }]}>{d}</Text>
                     ))}
                 </View>

@@ -19,36 +19,29 @@ import {
 } from '../utils/mosqueTimetable';
 import { localDateStr } from '../utils/localDate';
 import { DeviceEventEmitter } from 'react-native';
+import { t, getLocale } from '../utils/i18n';
+import { format12Hour } from '../utils/timeFormat';
 
 interface Props {
     visible: boolean;
     onClose: () => void;
 }
 
-const PRAYERS: { key: keyof MosqueDayTimes; label: string }[] = [
-    { key: 'fajr',    label: 'Fajr'    },
-    { key: 'dhuhr',   label: 'Dhuhr'   },
-    { key: 'asr',     label: 'Asr'     },
-    { key: 'maghrib', label: 'Maghrib' },
-    { key: 'isha',    label: 'Isha'    },
-];
-
-const MONTH_NAMES = ['January','February','March','April','May','June',
-    'July','August','September','October','November','December'];
-
-function fmt12(t: string | undefined): string {
-    if (!t || !/^\d{2}:\d{2}$/.test(t)) return '--:--';
-    const [h, m] = t.split(':').map(Number);
-    const ampm = h >= 12 ? 'pm' : 'am';
-    const hour = h % 12 || 12;
-    return `${hour}:${m.toString().padStart(2, '0')}${ampm}`;
+function getPrayers(): { key: keyof MosqueDayTimes; label: string }[] {
+    return [
+        { key: 'fajr',    label: t('prayer.fajr')    },
+        { key: 'dhuhr',   label: t('prayer.dhuhr')   },
+        { key: 'asr',     label: t('prayer.asr')     },
+        { key: 'maghrib', label: t('prayer.maghrib') },
+        { key: 'isha',    label: t('prayer.isha')    },
+    ];
 }
 
 function dayLabel(dateStr: string): string {
     const parts = dateStr.split('-');
     if (parts.length !== 3) return dateStr;
     const d = new Date(Number(parts[0]), Number(parts[1]) - 1, Number(parts[2]));
-    return d.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric' });
+    return d.toLocaleDateString(getLocale(), { weekday: 'short', day: 'numeric' });
 }
 
 // ── Wheel picker for a single value (hours or minutes) ────────────────────────
@@ -140,6 +133,7 @@ export function MosqueEditModal({ visible, onClose }: Props) {
     const [editM, setEditM] = useState(0);
     const [saving, setSaving] = useState(false);
     const today = localDateStr(new Date());
+    const PRAYERS = getPrayers();
 
     useEffect(() => {
         if (visible) {
@@ -179,7 +173,7 @@ export function MosqueEditModal({ visible, onClose }: Props) {
         dhuhr:   '11:00 – 15:00',
         asr:     '13:00 – 19:00',
         maghrib: '16:00 – 22:00',
-        isha:    'after 18:00 or before 01:30',
+        isha:    t('mosqueEdit.ishaRange'),
     };
 
     const confirmEdit = async () => {
@@ -190,8 +184,8 @@ export function MosqueEditModal({ visible, onClose }: Props) {
         if (!isPrayerTimeValid(editing.prayer, totalMins)) {
             const pLabel = PRAYERS.find(p => p.key === editing.prayer)?.label ?? editing.prayer;
             Alert.alert(
-                'Time looks wrong',
-                `${pLabel} time should be ${PRAYER_RANGE_LABELS[editing.prayer]}. Please check and try again.`,
+                t('mosqueEdit.timeWrongTitle'),
+                t('mosqueEdit.timeWrongBody', { label: pLabel, range: PRAYER_RANGE_LABELS[editing.prayer] }),
             );
             return;
         }
@@ -214,7 +208,7 @@ export function MosqueEditModal({ visible, onClose }: Props) {
             DeviceEventEmitter.emit('mosqueTimetableUpdated');
             setEditing(null);
         } catch {
-            Alert.alert('Error', 'Failed to save. Please try again.');
+            Alert.alert(t('mosqueEdit.errorTitle'), t('mosqueEdit.failedToSave'));
         } finally {
             setSaving(false);
         }
@@ -236,18 +230,18 @@ export function MosqueEditModal({ visible, onClose }: Props) {
                     <TouchableOpacity onPress={onClose} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
                         <X size={20} color="#64748b" />
                     </TouchableOpacity>
-                    <Text style={styles.headerTitle}>Edit Times</Text>
+                    <Text style={styles.headerTitle}>{t('mosqueEdit.editTimes')}</Text>
                     <View style={{ width: 28 }} />
                 </View>
 
                 {!timetable ? (
                     <View style={styles.empty}>
-                        <Text style={styles.emptyText}>No mosque timetable imported yet.</Text>
+                        <Text style={styles.emptyText}>{t('mosqueEdit.noTimetableYet')}</Text>
                     </View>
                 ) : (
                     <>
                         <Text style={[styles.sub, { color: colors.secondaryText }]}>
-                            {timetable.mosqueName ?? 'Mosque timetable'} · tap any time to correct it
+                            {timetable.mosqueName ?? t('mosqueEdit.mosqueTimetableFallback')} {t('mosqueEdit.tapAnyTime')}
                         </Text>
 
                         <FlatList
@@ -258,7 +252,7 @@ export function MosqueEditModal({ visible, onClose }: Props) {
                             getItemLayout={(_, i) => ({ length: 64, offset: 64 * i, index: i })}
                             ListHeaderComponent={
                                 <View style={styles.tableHead}>
-                                    <Text style={[styles.colDate, { color: colors.secondaryText }]}>Date</Text>
+                                    <Text style={[styles.colDate, { color: colors.secondaryText }]}>{t('mosqueEdit.dateCol')}</Text>
                                     {PRAYERS.map(p => (
                                         <Text key={p.key} style={[styles.colTime, { color: colors.secondaryText }]}>
                                             {p.label.slice(0, 3)}
@@ -285,7 +279,7 @@ export function MosqueEditModal({ visible, onClose }: Props) {
                                                     hitSlop={{ top: 6, bottom: 6, left: 2, right: 2 }}
                                                 >
                                                     <Text style={[styles.timeText, { color: isEditing ? colors.accent : colors.primaryText }]}>
-                                                        {fmt12(t)}
+                                                        {format12Hour(t)}
                                                     </Text>
                                                 </TouchableOpacity>
                                             );
@@ -304,7 +298,7 @@ export function MosqueEditModal({ visible, onClose }: Props) {
                             {prayerLabel} · {editingDayLabel}
                         </Text>
                         <Text style={styles.editorCurrent}>
-                            Currently: {fmt12(currentValue)}
+                            {t('mosqueEdit.currently', { time: format12Hour(currentValue) })}
                         </Text>
 
                         <View style={styles.wheels}>
@@ -332,7 +326,7 @@ export function MosqueEditModal({ visible, onClose }: Props) {
                                 style={[styles.editorBtn, { borderColor: '#334155' }]}
                                 onPress={() => setEditing(null)}
                             >
-                                <Text style={{ color: '#64748b', fontWeight: '700' }}>Cancel</Text>
+                                <Text style={{ color: '#64748b', fontWeight: '700' }}>{t('btn.cancel')}</Text>
                             </TouchableOpacity>
                             <TouchableOpacity
                                 style={[styles.editorBtn, { backgroundColor: colors.accent, borderColor: colors.accent }]}
@@ -341,7 +335,7 @@ export function MosqueEditModal({ visible, onClose }: Props) {
                             >
                                 <Check size={16} color="#fff" />
                                 <Text style={{ color: '#fff', fontWeight: '800', marginLeft: 6 }}>
-                                    {saving ? 'Saving…' : 'Save'}
+                                    {saving ? t('journalModal.saving') : t('playlistBuilder.saveBtn')}
                                 </Text>
                             </TouchableOpacity>
                         </View>

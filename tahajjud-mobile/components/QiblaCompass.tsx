@@ -7,6 +7,7 @@ import { Smartphone } from 'lucide-react-native';
 import { calculateQibla, getCompassDirection } from '../utils/qiblaCalculator';
 import { useTheme } from '../context/ThemeContext';
 import { haptic } from '../utils/haptic';
+import { t } from '../utils/i18n';
 
 export function QiblaCompass() {
     const { colors } = useTheme();
@@ -18,7 +19,7 @@ export function QiblaCompass() {
     const [locationDenied, setLocationDenied] = useState(false);
     const [cityName, setCityName] = useState<string | null>(null);
     const [isLocked, setIsLocked] = useState(false);
-    const [guidance, setGuidance] = useState('Point your phone forward');
+    const [guidance, setGuidance] = useState(t('qibla.pointForward'));
     const [coords, setCoords] = useState<{ lat: number, lon: number } | null>(null);
     const rotationAnim = useRef(new Animated.Value(0)).current;
     const roseAnim = useRef(new Animated.Value(0)).current;
@@ -30,6 +31,19 @@ export function QiblaCompass() {
     const lastRoseRotationRef = useRef<number>(0);
     const headingSubscriptionRef = useRef<Location.LocationSubscription | null>(null);
     const [accuracy, setAccuracy] = useState<number | null>(null);
+    // Compass-health guard: some Android phones have a weak/absent magnetometer,
+    // in which case watchHeadingAsync never fires and the needle silently points
+    // the wrong way. If no heading update arrives within a few seconds, surface
+    // an honest warning instead of a confidently-wrong arrow.
+    const [compassUnavailable, setCompassUnavailable] = useState(false);
+    const headingReceivedRef = useRef(false);
+    const compassCheckTimerRef = useRef<NodeJS.Timeout | null>(null);
+    // Local magnetic declination (degrees, +E/−W) at the user's location.
+    // On Android we add this to the raw magnetic heading ourselves to get TRUE
+    // north — the Qibla bearing is true-north, and Android's built-in
+    // trueHeading sometimes omits this correction, pointing users off by the
+    // local declination (can be 15–20° in parts of the US/Africa).
+    const declinationRef = useRef(0);
 
     useEffect(() => {
         setupQibla();
@@ -37,6 +51,9 @@ export function QiblaCompass() {
         return () => {
             if (headingSubscriptionRef.current) {
                 headingSubscriptionRef.current.remove();
+            }
+            if (compassCheckTimerRef.current) {
+                clearTimeout(compassCheckTimerRef.current);
             }
         };
     }, []);
@@ -82,15 +99,15 @@ export function QiblaCompass() {
 
             const showOffTargetGuidance = () => {
                 if (diff > 0) {
-                    setGuidance(absDiff > 25 ? 'Rotate Right ↻' : 'Slightly Right →');
+                    setGuidance(absDiff > 25 ? t('qibla.rotateRight') : t('qibla.slightlyRight'));
                 } else {
-                    setGuidance(absDiff > 25 ? 'Rotate Left ↺' : '← Slightly Left');
+                    setGuidance(absDiff > 25 ? t('qibla.rotateLeft') : t('qibla.slightlyLeft'));
                 }
             };
 
             if (isLocked) {
                 if (stillLocked) {
-                    setGuidance('🕋 Facing Kaaba');
+                    setGuidance(t('qibla.facingKaaba'));
                 } else {
                     // User moved away while locked — unlock immediately and
                     // start guiding them back. No grace period: the previous
@@ -105,7 +122,7 @@ export function QiblaCompass() {
                 }
             } else if (isAligned) {
                 offTargetCountRef.current = 0; // Reset jitter counter
-                setGuidance('Hold Steady...');
+                setGuidance(t('qibla.holdSteady'));
                 if (!lockTimerRef.current) {
                     haptic.light();
                     lockTimerRef.current = setTimeout(() => {
@@ -173,6 +190,16 @@ export function QiblaCompass() {
 
             // Calculate Qibla direction — instant once we have coords
             const { bearing, distance: dist } = calculateQibla(coords.latitude, coords.longitude);
+
+            // Compute the local magnetic declination so we can derive true north
+            // ourselves on Android (see declinationRef). Pure-JS, no native call.
+            try {
+                const geomagnetism = require('geomagnetism') as {
+                    model: (date?: Date) => { point: (c: [number, number]) => { decl: number } };
+                };
+                declinationRef.current = geomagnetism.model().point([coords.latitude, coords.longitude]).decl;
+            } catch { declinationRef.current = 0; }
+
             setCoords({ lat: coords.latitude, lon: coords.longitude });
             setQiblaDirection(bearing);
             setDistance(dist);
@@ -189,8 +216,23 @@ export function QiblaCompass() {
 
             // Subscribe to True North heading
             headingSubscriptionRef.current = await Location.watchHeadingAsync((data) => {
+                // The sensor is alive — cancel any "compass not responding" state.
+                if (!headingReceivedRef.current) {
+                    headingReceivedRef.current = true;
+                    setCompassUnavailable(false);
+                }
                 setAccuracy(data.accuracy);
-                const newHeading = data.trueHeading !== -1 ? data.trueHeading : data.magHeading;
+                // iOS: CoreLocation's trueHeading is already true-north and reliable.
+                // Android: derive true north from the RAW magnetic heading plus the
+                // declination we computed — avoids double-correction and Android's
+                // unreliable built-in trueHeading.
+                let newHeading: number;
+                if (Platform.OS === 'android') {
+                    const mag = data.magHeading !== -1 ? data.magHeading : data.trueHeading;
+                    newHeading = ((mag + declinationRef.current) % 360 + 360) % 360;
+                } else {
+                    newHeading = data.trueHeading !== -1 ? data.trueHeading : data.magHeading;
+                }
 
                 // Low-pass filter (Exponential Moving Average)
                 // Smoothens jitter significantly
@@ -210,6 +252,12 @@ export function QiblaCompass() {
                 lastHeadingRef.current = filteredHeading;
                 setMagnetometerHeading(filteredHeading);
             });
+
+            // Watchdog: if no heading has arrived in 4s, the device likely has no
+            // working compass. Show a warning rather than a silently-wrong needle.
+            compassCheckTimerRef.current = setTimeout(() => {
+                if (!headingReceivedRef.current) setCompassUnavailable(true);
+            }, 4000);
 
             setLoading(false);
         } catch (err) {
@@ -233,7 +281,7 @@ export function QiblaCompass() {
                 />
                 <View style={styles.loadingContainer}>
                     <ActivityIndicator size="large" color={colors.accent} />
-                    <Text style={[styles.loadingText, { color: colors.secondaryText }]}>Finding Qibla...</Text>
+                    <Text style={[styles.loadingText, { color: colors.secondaryText }]}>{t('qibla.findingQibla')}</Text>
                 </View>
             </View>
         );
@@ -250,15 +298,15 @@ export function QiblaCompass() {
                 <BlurView intensity={20} tint="dark" style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(0,0,0,0.3)', borderRadius: 32 }]} />
                 <View style={styles.permissionContainer}>
                     <Text style={styles.permissionIcon}>📍</Text>
-                    <Text style={styles.permissionTitle}>Location Required</Text>
+                    <Text style={styles.permissionTitle}>{t('qibla.locationRequiredTitle')}</Text>
                     <Text style={styles.permissionBody}>
-                        The Qibla Compass needs your location to calculate the direction of the Kaaba from where you are.
+                        {t('qibla.locationRequiredBody')}
                     </Text>
                     <Text
                         style={styles.permissionButton}
                         onPress={() => Linking.openSettings()}
                     >
-                        Open Settings →
+                        {t('qibla.openSettings')}
                     </Text>
                 </View>
             </View>
@@ -288,13 +336,13 @@ export function QiblaCompass() {
                     {/* Fixed Forward Target */}
                     <View style={styles.topMarkerContainer}>
                         <View style={[styles.targetMarker, { borderBottomColor: isLocked ? '#10b981' : colors.accent }]} />
-                        <Text style={[styles.targetLabel, { color: colors.secondaryText }]}>FORWARD</Text>
+                        <Text style={[styles.targetLabel, { color: colors.secondaryText }]}>{t('qibla.forwardLabel')}</Text>
                     </View>
 
                     {/* Flat Position Reminder */}
                     <View style={styles.flatReminder}>
                         <Smartphone size={10} color={colors.secondaryText} opacity={0.5} />
-                        <Text style={[styles.flatText, { color: colors.secondaryText }]}>Hold phone flat</Text>
+                        <Text style={[styles.flatText, { color: colors.secondaryText }]}>{t('qibla.holdPhoneFlat')}</Text>
                     </View>
 
                     {/* Rotating Compass Rose */}
@@ -373,14 +421,14 @@ export function QiblaCompass() {
                 {/* Info */}
                 <View style={styles.infoContainer}>
                     <View style={styles.infoItem}>
-                        <Text style={[styles.infoLabel, { color: colors.secondaryText }]}>From</Text>
+                        <Text style={[styles.infoLabel, { color: colors.secondaryText }]}>{t('qibla.fromLabel')}</Text>
                         <Text style={[styles.infoValue, { color: colors.primaryText, fontSize: 13 }]} numberOfLines={1}>
-                            {cityName || 'Detecting...'}
+                            {cityName || t('qibla.detecting')}
                         </Text>
                     </View>
                     <View style={styles.divider} />
                     <View style={styles.infoItem}>
-                        <Text style={[styles.infoLabel, { color: colors.secondaryText }]}>Direction</Text>
+                        <Text style={[styles.infoLabel, { color: colors.secondaryText }]}>{t('qibla.directionLabel')}</Text>
                         <Text style={[styles.infoValue, { color: colors.primaryText }]}>
                             {qiblaDirection}°{' '}
                             <Text style={{ color: colors.accent }}>
@@ -390,7 +438,7 @@ export function QiblaCompass() {
                     </View>
                     <View style={styles.divider} />
                     <View style={styles.infoItem}>
-                        <Text style={[styles.infoLabel, { color: colors.secondaryText }]}>Distance</Text>
+                        <Text style={[styles.infoLabel, { color: colors.secondaryText }]}>{t('qibla.distanceLabel')}</Text>
                         <Text style={[styles.infoValue, { color: colors.primaryText }]}>
                             {distance !== null ? distance.toLocaleString() : '—'}
                         </Text>
@@ -400,12 +448,23 @@ export function QiblaCompass() {
                     </View>
                 </View>
 
+                {/* Compass not responding — likely no/weak magnetometer */}
+                {compassUnavailable && (
+                    <View style={styles.warningBadge}>
+                        <Text style={styles.warningText}>
+                            {t('qibla.compassWarning', {
+                                dir: qiblaDirection !== null ? `${qiblaDirection}° (${getCompassDirection(qiblaDirection)})` : t('qibla.directionBelow'),
+                            })}
+                        </Text>
+                    </View>
+                )}
+
                 {/* Accuracy Status (Only if critical) */}
-                {accuracy !== null && accuracy < 2 && (
+                {!compassUnavailable && accuracy !== null && accuracy < 2 && (
                     <View style={styles.statusBadge}>
                         <View style={[styles.statusDot, { backgroundColor: '#ef4444' }]} />
                         <Text style={[styles.statusText, { color: colors.secondaryText }]}>
-                            Low accuracy — wave phone in a figure-8 to calibrate
+                            {t('qibla.lowAccuracy')}
                         </Text>
                     </View>
                 )}
@@ -580,6 +639,22 @@ const styles = StyleSheet.create({
         justifyContent: 'center',
         gap: 6,
         marginTop: 10,
+    },
+    warningBadge: {
+        marginTop: 10,
+        paddingHorizontal: 14,
+        paddingVertical: 10,
+        borderRadius: 12,
+        backgroundColor: 'rgba(251, 191, 36, 0.12)',
+        borderWidth: 1,
+        borderColor: 'rgba(251, 191, 36, 0.3)',
+    },
+    warningText: {
+        fontSize: 12,
+        fontWeight: '600',
+        color: '#fbbf24',
+        textAlign: 'center',
+        lineHeight: 18,
     },
     statusDot: {
         width: 6,

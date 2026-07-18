@@ -16,6 +16,7 @@ import { updateWidget } from '../utils/widgetBridge';
 import { usePurchases } from '../context/PurchasesContext';
 import { localDateStr } from '../utils/localDate';
 import { mosqueTimeToDate } from '../utils/mosqueTimetable';
+import { t } from '../utils/i18n';
 
 export function NightCalculator({ onNightCalcReady, onPrayerTimesReady, refreshKey }: { onNightCalcReady?: (calc: NightCalculation) => void, onPrayerTimesReady?: (times: PrayerTimes) => void, refreshKey?: number } = {}) {
     const { colors } = useTheme();
@@ -386,25 +387,37 @@ export function NightCalculator({ onNightCalcReady, onPrayerTimesReady, refreshK
             if (!hasLoadedRef.current) setLoading(true);
             try {
                 const today = new Date();
-                const todayTimes = await getPrayerTimes(location!.lat, location!.lng, today, selectedMethod);
+                const yesterday = new Date(today);
+                yesterday.setDate(yesterday.getDate() - 1);
+                const tomorrow = new Date(today);
+                tomorrow.setDate(tomorrow.getDate() + 1);
+
+                // Fetch all three days in PARALLEL. The old code awaited today's
+                // times before fetching the adjacent day, so a cold cache (every
+                // first open of a new day) paid two sequential network round-trips
+                // — the "prayers load slowly sometimes" complaint. allSettled so a
+                // failure in the day we don't end up needing can't break the load.
+                const [todayR, yesterdayR, tomorrowR] = await Promise.allSettled([
+                    getPrayerTimes(location!.lat, location!.lng, today, selectedMethod),
+                    getPrayerTimes(location!.lat, location!.lng, yesterday, selectedMethod),
+                    getPrayerTimes(location!.lat, location!.lng, tomorrow, selectedMethod),
+                ]);
+                if (todayR.status === 'rejected') throw todayR.reason;
+                const todayTimes = todayR.value;
 
                 let nightStart: Date;
                 let nightEnd: Date;
                 let activeTimes: PrayerTimes;
 
                 if (today < todayTimes.fajr) {
-                    const yesterday = new Date(today);
-                    yesterday.setDate(yesterday.getDate() - 1);
-                    const yesterdayTimes = await getPrayerTimes(location!.lat, location!.lng, yesterday, selectedMethod);
-                    nightStart = yesterdayTimes.maghrib;
+                    if (yesterdayR.status === 'rejected') throw yesterdayR.reason;
+                    nightStart = yesterdayR.value.maghrib;
                     nightEnd = todayTimes.fajr;
                     activeTimes = todayTimes;
                 } else {
-                    const tomorrow = new Date(today);
-                    tomorrow.setDate(tomorrow.getDate() + 1);
-                    const tomorrowTimes = await getPrayerTimes(location!.lat, location!.lng, tomorrow, selectedMethod);
+                    if (tomorrowR.status === 'rejected') throw tomorrowR.reason;
                     nightStart = todayTimes.maghrib;
-                    nightEnd = tomorrowTimes.fajr;
+                    nightEnd = tomorrowR.value.fajr;
                     activeTimes = todayTimes;
                 }
 
@@ -472,6 +485,21 @@ export function NightCalculator({ onNightCalcReady, onPrayerTimesReady, refreshK
                 // Update home screen widget with latest prayer times, streak & Tahajjud time
                 updateWidget(activeTimes, new Date(calc.lastThirdStart)).catch(() => {});
 
+                // Always warm the prayer-times cache a few days ahead, fire-and-
+                // forget. Today/yesterday/tomorrow were fetched above; +2..+4 make
+                // the next few day-rollovers instant cache hits instead of network
+                // fetches on the critical path. (prefetchFutureNights below also
+                // warms it, but only when notifications are enabled AND the
+                // scheduling key changed — users with notifications off were
+                // paying a cold fetch on the first open of every new day.)
+                (async () => {
+                    for (let i = 2; i <= 4; i++) {
+                        const future = new Date(today);
+                        future.setDate(future.getDate() + i);
+                        await getPrayerTimes(location!.lat, location!.lng, future, selectedMethod).catch(() => {});
+                    }
+                })();
+
                 // Schedule all enabled prayer notifications (Daily + Tahajjud)
                 const allPrayers = await AsyncStorage.getItem('notification_all_prayers_enabled');
                 const isEnabled = allPrayers === 'true';
@@ -537,11 +565,11 @@ export function NightCalculator({ onNightCalcReady, onPrayerTimesReady, refreshK
             await AsyncStorage.setItem(NOTIFICATION_ENABLED_KEY, 'false');
             setNotificationEnabled(false);
             setLastScheduledKey(null); // Force re-sync
-            Alert.alert('Reminder Disabled', 'Tahajjud reminder has been turned off.');
+            Alert.alert(t('night.remOffTitle'), t('night.remOffBody'));
         } else {
             const hasPermission = await requestNotificationPermissions();
             if (!hasPermission) {
-                Alert.alert('Permission Required', 'Please enable notifications in settings.');
+                Alert.alert(t('night.permTitle'), t('night.permBody'));
                 setIsTogglingNotif(false);
                 return;
             }
@@ -560,7 +588,7 @@ export function NightCalculator({ onNightCalcReady, onPrayerTimesReady, refreshK
                     return `• ${format(t, 'h:mm a')}${b > 0 ? ` (${b} min before)` : ' (at start)'}`;
                 })
                 .join('\n');
-            Alert.alert('Reminder Set! 🌙', `Reminders scheduled:\n${reminderLines}`);
+            Alert.alert(t('night.remSetTitle'), `${t('night.remSetBody')}\n${reminderLines}`);
         }
         setIsTogglingNotif(false);
     };
@@ -568,7 +596,7 @@ export function NightCalculator({ onNightCalcReady, onPrayerTimesReady, refreshK
     if (loading) return (
         <View style={styles.centerContainer}>
             <ActivityIndicator size="large" color="#f8fafc" />
-            <Text style={styles.loadingText}>Seeking the stars...</Text>
+            <Text style={styles.loadingText}>{t('night.seeking')}</Text>
         </View>
     );
 
@@ -579,7 +607,7 @@ export function NightCalculator({ onNightCalcReady, onPrayerTimesReady, refreshK
                 onPress={() => { setErrorMsg(null); setInternalRefresh(p => p + 1); }}
                 style={{ marginTop: 12, paddingHorizontal: 20, paddingVertical: 8, borderRadius: 20, borderWidth: 1, borderColor: 'rgba(255,255,255,0.2)' }}
             >
-                <Text style={{ color: '#94a3b8', fontSize: 13 }}>Try again</Text>
+                <Text style={{ color: '#94a3b8', fontSize: 13 }}>{t('night.tryAgain')}</Text>
             </TouchableOpacity>
         </View>
     );
@@ -600,9 +628,9 @@ export function NightCalculator({ onNightCalcReady, onPrayerTimesReady, refreshK
                     <View style={styles.locationWarningContent}>
                         <Text style={styles.locationWarningIcon}>📍</Text>
                         <View style={styles.locationWarningText}>
-                            <Text style={styles.locationWarningTitle}>Location Access Needed</Text>
+                            <Text style={styles.locationWarningTitle}>{t('night.locTitle')}</Text>
                             <Text style={styles.locationWarningBody}>
-                                Prayer times are calculated using Makkah. Enable location for accurate local times.
+                                {t('night.locBody')}
                             </Text>
                         </View>
                     </View>
@@ -610,7 +638,7 @@ export function NightCalculator({ onNightCalcReady, onPrayerTimesReady, refreshK
                         style={styles.locationWarningButton}
                         onPress={() => Linking.openSettings()}
                     >
-                        <Text style={styles.locationWarningButtonText}>Open Settings</Text>
+                        <Text style={styles.locationWarningButtonText}>{t('night.openSettings')}</Text>
                     </TouchableOpacity>
                 </View>
             )}
@@ -618,10 +646,10 @@ export function NightCalculator({ onNightCalcReady, onPrayerTimesReady, refreshK
             <View style={styles.mainDisplay}>
                 <View style={styles.timeBadge}>
                     <View style={styles.labelRow}>
-                        <Text style={styles.label}>Last Third Begins</Text>
+                        <Text style={styles.label}>{t('night.lastThird')}</Text>
                         {cityName && (
-                            <TouchableOpacity onPress={fetchLocation} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-                                <Text style={styles.cityBadge}>📍 {cityName}</Text>
+                            <TouchableOpacity onPress={fetchLocation} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }} style={styles.cityBadgeWrap}>
+                                <Text style={styles.cityBadge} numberOfLines={1}>📍 {cityName}</Text>
                             </TouchableOpacity>
                         )}
                     </View>
@@ -629,7 +657,7 @@ export function NightCalculator({ onNightCalcReady, onPrayerTimesReady, refreshK
                     <View style={styles.statusRow}>
                         <Animated.View style={[styles.pulseDot, isLastThird && styles.pulseDotActive, dotAnimStyle]} />
                         <Text style={[styles.statusText, isLastThird && { color: colors.accent, fontWeight: '800', letterSpacing: 0.5 }]}>
-                            {isLastThird ? "The Gate is Open" : "Upcoming"}
+                            {isLastThird ? t('night.gateOpenNow') : t('night.upcoming')}
                         </Text>
                     </View>
                 </View>
@@ -704,7 +732,7 @@ export function NightCalculator({ onNightCalcReady, onPrayerTimesReady, refreshK
                         {buffers.length < 4 && (
                             <TouchableOpacity
                                 style={[styles.addChipBtn, { borderColor: isPremium ? colors.accent + '44' : 'rgba(255,255,255,0.08)' }]}
-                                onPress={() => isPremium ? saveBuffers([...buffers, 30]) : openPaywall()}
+                                onPress={() => isPremium ? saveBuffers([...buffers, 30]) : openPaywall('feature_gate:reminders')}
                             >
                                 {isPremium
                                     ? <Plus size={11} color={colors.accent} />
@@ -736,7 +764,7 @@ export function NightCalculator({ onNightCalcReady, onPrayerTimesReady, refreshK
                     <View style={styles.progressArea}>
                         <View style={styles.progressHeader}>
                             <Text style={[styles.progressLabel, isLastThird && { color: colors.accent }]}>
-                                Night Flow{isLastThird ? ' ✦' : ''}
+                                {t('night.flow')}{isLastThird ? ' ✦' : ''}
                             </Text>
                             <Text style={[styles.progressValue, isLastThird && { color: colors.accent }]}>
                                 {isLastThird ? '100%' : `${Math.min(100, Math.floor(progress))}%`}
@@ -785,7 +813,7 @@ export function NightCalculator({ onNightCalcReady, onPrayerTimesReady, refreshK
                         <View style={styles.progressFooter}>
                             <Text style={styles.footerTime}>Maghrib • {format(nightCalc.nightStart, "h:mm a")}</Text>
                             <Text style={[styles.footerTime, { color: colors.accent, fontWeight: isLastThird ? '900' : '700' }]}>
-                                {isLastThird ? '✦ Gate Open ✦' : 'Tahajjud Zone'}
+                                {isLastThird ? t('night.gateOpenMark') : t('night.zone')}
                             </Text>
                             <Text style={styles.footerTime}>{format(nightCalc.nightEnd, "h:mm a")} • Fajr</Text>
                         </View>
@@ -805,8 +833,8 @@ export function NightCalculator({ onNightCalcReady, onPrayerTimesReady, refreshK
                     style={styles.bufferModalOverlay}
                 >
                     <View style={styles.bufferModalBox}>
-                        <Text style={[styles.bufferModalTitle, { color: colors.primaryText }]}>Set Reminder</Text>
-                        <Text style={[styles.bufferModalSub, { color: colors.secondaryText }]}>Minutes before Tahajjud begins</Text>
+                        <Text style={[styles.bufferModalTitle, { color: colors.primaryText }]}>{t('night.setReminder')}</Text>
+                        <Text style={[styles.bufferModalSub, { color: colors.secondaryText }]}>{t('night.minsBefore')}</Text>
 
                         <View style={styles.bufferPresetRow}>
                             {[0, 5, 10, 15, 20, 30].map(mins => (
@@ -840,7 +868,7 @@ export function NightCalculator({ onNightCalcReady, onPrayerTimesReady, refreshK
                                 style={[styles.bufferModalBtn, { backgroundColor: 'rgba(255,255,255,0.06)' }]}
                                 onPress={() => setShowBufferModal(false)}
                             >
-                                <Text style={{ color: '#94a3b8', fontWeight: '700', fontSize: 15 }}>Cancel</Text>
+                                <Text style={{ color: '#94a3b8', fontWeight: '700', fontSize: 15 }}>{t('btn.cancel')}</Text>
                             </TouchableOpacity>
                             <TouchableOpacity
                                 style={[styles.bufferModalBtn, { backgroundColor: colors.accent }]}
@@ -854,7 +882,7 @@ export function NightCalculator({ onNightCalcReady, onPrayerTimesReady, refreshK
                                     setShowBufferModal(false);
                                 }}
                             >
-                                <Text style={{ color: '#020617', fontWeight: '800', fontSize: 15 }}>Save</Text>
+                                <Text style={{ color: '#020617', fontWeight: '800', fontSize: 15 }}>{t('btn.save')}</Text>
                             </TouchableOpacity>
                         </View>
                     </View>
@@ -873,6 +901,9 @@ const styles = StyleSheet.create({
     timeBadge: { flex: 1 },
     labelRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 2 },
     label: { fontSize: 9, color: '#cbd5e1', fontWeight: '900', textTransform: 'uppercase', letterSpacing: 1.5 },
+    // Long city names ("Bandar Seri Begawan") must truncate instead of
+    // colliding with the alarm/SET column to the right of the row.
+    cityBadgeWrap: { flexShrink: 1 },
     cityBadge: { fontSize: 9, color: '#64748b', fontWeight: '700' },
     timeText: { fontSize: 36, fontWeight: '900', letterSpacing: -1 },
     statusRow: { flexDirection: 'row', alignItems: 'center', marginTop: 2, gap: 5 },

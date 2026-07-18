@@ -187,7 +187,7 @@ interface ThemeContextType {
 const ThemeContext = createContext<ThemeContextType | undefined>(undefined);
 
 export function ThemeProvider({ children }: { children: React.ReactNode }) {
-    const [theme, setThemeState] = useState<ThemeType>('silver');
+    const [theme, setThemeState] = useState<ThemeType>('teal');
     const [userName, setUserNameState] = useState<string>('Servant');
     const [darkMode, setDarkModeState] = useState<boolean>(false);
 

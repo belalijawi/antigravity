@@ -9,6 +9,7 @@ import Animated, { FadeInDown } from 'react-native-reanimated';
 import { useTheme } from '../context/ThemeContext';
 import { haptic } from '../utils/haptic';
 import { TahajjudChallenge, ChallengeState } from '../utils/tahajjudChallenge';
+import { t } from '../utils/i18n';
 
 /**
  * Compact card on Home that surfaces:
@@ -37,12 +38,12 @@ export function TahajjudChallengeCard() {
 
     const handleAbandon = () => {
         Alert.alert(
-            'End the challenge?',
-            'Your progress so far will be saved but the challenge will be marked complete. You can start a new one anytime.',
+            t('challenge40.endTitle'),
+            t('challenge40.endBody'),
             [
-                { text: 'Cancel', style: 'cancel' },
+                { text: t('btn.cancel'), style: 'cancel' },
                 {
-                    text: 'End challenge',
+                    text: t('challenge40.endBtn'),
                     style: 'destructive',
                     onPress: async () => {
                         haptic.light();
@@ -66,7 +67,7 @@ export function TahajjudChallengeCard() {
                     <View style={[styles.iconWrap, { backgroundColor: colors.accent + '22', borderColor: colors.accent + '44' }]}>
                         <Trophy size={14} color={colors.accent} />
                     </View>
-                    <Text style={[styles.kicker, { color: colors.accent }]}>40-NIGHT CHALLENGE</Text>
+                    <Text style={[styles.kicker, { color: colors.accent }]}>{t('challenge40.kicker')}</Text>
                     <TouchableOpacity onPress={handleAbandon} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
                         <X size={14} color="#475569" />
                     </TouchableOpacity>
@@ -76,7 +77,7 @@ export function TahajjudChallengeCard() {
                     <Text style={{ color: '#f1f5f9' }}>{state.progressDays.length}</Text>
                     <Text style={{ color: '#475569' }}> / 40</Text>
                 </Text>
-                <Text style={styles.subText}>{remaining} night{remaining === 1 ? '' : 's'} to go</Text>
+                <Text style={styles.subText}>{t('challenge40.nightsToGo', { n: remaining })}</Text>
 
                 {/* Progress bar */}
                 <View style={[styles.progressTrack, { backgroundColor: 'rgba(255,255,255,0.06)' }]}>
@@ -102,17 +103,17 @@ export function TahajjudChallengeCard() {
                     <View style={[styles.iconWrap, { backgroundColor: 'rgba(34,197,94,0.18)', borderColor: 'rgba(34,197,94,0.4)' }]}>
                         <Check size={14} color="#22c55e" strokeWidth={3} />
                     </View>
-                    <Text style={[styles.kicker, { color: '#22c55e' }]}>40 NIGHTS COMPLETE</Text>
+                    <Text style={[styles.kicker, { color: '#22c55e' }]}>{t('challenge40.completeKicker')}</Text>
                 </View>
 
-                <Text style={[styles.bigCount, { color: '#22c55e' }]}>MashaAllah</Text>
-                <Text style={styles.subText}>Completed {state.completedAt}</Text>
+                <Text style={[styles.bigCount, { color: '#22c55e' }]}>{t('challenge40.mashaAllah')}</Text>
+                <Text style={styles.subText}>{t('challenge40.completedOn', { date: state.completedAt })}</Text>
 
                 <TouchableOpacity
                     onPress={() => TahajjudChallenge.reset()}
                     style={[styles.startBtn, { backgroundColor: colors.accent + '22', borderColor: colors.accent + '44' }]}
                 >
-                    <Text style={[styles.startBtnText, { color: colors.accent }]}>Start a new challenge</Text>
+                    <Text style={[styles.startBtnText, { color: colors.accent }]}>{t('challenge40.startNewBtn')}</Text>
                 </TouchableOpacity>
             </Animated.View>
         );
@@ -128,11 +129,11 @@ export function TahajjudChallengeCard() {
                     <View style={[styles.iconWrap, { backgroundColor: colors.accent + '15', borderColor: colors.accent + '33' }]}>
                         <Sparkles size={14} color={colors.accent} />
                     </View>
-                    <Text style={[styles.kicker, { color: colors.accent }]}>40-NIGHT CHALLENGE</Text>
+                    <Text style={[styles.kicker, { color: colors.accent }]}>{t('challenge40.kicker')}</Text>
                 </View>
 
                 <Text style={styles.ctaText} maxFontSizeMultiplier={1.2}>
-                    Commit to 40 nights of Tahajjud. No deadline — go at your own pace.
+                    {t('challenge40.ctaText')}
                 </Text>
 
                 <TouchableOpacity
@@ -140,7 +141,7 @@ export function TahajjudChallengeCard() {
                     activeOpacity={0.85}
                     style={[styles.startBtn, { backgroundColor: colors.accent }]}
                 >
-                    <Text style={[styles.startBtnText, { color: '#0a1228' }]} maxFontSizeMultiplier={1.2} numberOfLines={1}>Start the challenge</Text>
+                    <Text style={[styles.startBtnText, { color: '#0a1228' }]} maxFontSizeMultiplier={1.2} numberOfLines={1}>{t('challenge40.startBtn')}</Text>
                 </TouchableOpacity>
             </Animated.View>
 
@@ -151,20 +152,19 @@ export function TahajjudChallengeCard() {
                         <View style={[styles.iconWrapLarge, { backgroundColor: colors.accent + '22', borderColor: colors.accent + '44' }]}>
                             <Trophy size={28} color={colors.accent} />
                         </View>
-                        <Text style={styles.modalTitle}>40 nights of Tahajjud</Text>
+                        <Text style={styles.modalTitle}>{t('challenge40.modalTitle')}</Text>
                         <Text style={styles.modalBody}>
-                            The Prophet ﷺ said the most beloved deeds to Allah are the most consistent, even if small.{"\n\n"}
-                            This challenge tracks 40 separate Tahajjud nights — they don't have to be in a row. Take your time. Build the habit.
+                            {t('challenge40.modalBody')}
                         </Text>
                         <View style={styles.modalActions}>
                             <TouchableOpacity onPress={() => setShowStart(false)} style={styles.modalCancelBtn}>
-                                <Text style={styles.modalCancelText}>Maybe later</Text>
+                                <Text style={styles.modalCancelText}>{t('challenge40.maybeLater')}</Text>
                             </TouchableOpacity>
                             <TouchableOpacity
                                 onPress={handleStart}
                                 style={[styles.modalConfirmBtn, { backgroundColor: colors.accent }]}
                             >
-                                <Text style={styles.modalConfirmText}>I'm in</Text>
+                                <Text style={styles.modalConfirmText}>{t('challenge40.imIn')}</Text>
                             </TouchableOpacity>
                         </View>
                     </View>

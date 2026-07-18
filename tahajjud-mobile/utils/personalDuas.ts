@@ -99,27 +99,17 @@ export const getPersonalDuas = async (): Promise<PersonalDua[]> => {
     }
 };
 
-export const savePersonalDua = async (dua: PersonalDua): Promise<void> => {
+export const savePersonalDua = async (dua: PersonalDua): Promise<boolean> => {
     try {
         const currentDuas = await getPersonalDuas();
         const updatedDuas = [dua, ...currentDuas];
         await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(updatedDuas));
         notify(updatedDuas);
         cloudSetDua(dua);
+        return true;
     } catch (e) {
         console.error('Error saving personal dua', e);
-    }
-};
-
-export const updatePersonalDua = async (updatedDua: PersonalDua): Promise<void> => {
-    try {
-        const currentDuas = await getPersonalDuas();
-        const updatedList = currentDuas.map(d => d.id === updatedDua.id ? updatedDua : d);
-        await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(updatedList));
-        notify(updatedList);
-        cloudSetDua(updatedDua);
-    } catch (e) {
-        console.error('Error updating personal dua', e);
+        return false;
     }
 };
 

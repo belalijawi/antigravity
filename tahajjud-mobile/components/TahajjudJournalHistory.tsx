@@ -11,8 +11,19 @@ import { TahajjudJournal, JournalEntry, STATE_OPTIONS } from '../utils/tahajjudJ
 import { TahajjudJournalModal } from './TahajjudJournalModal';
 import { haptic } from '../utils/haptic';
 import { format, parseISO, subDays } from 'date-fns';
-import Animated, { FadeInDown } from 'react-native-reanimated';
 import { localDateStr } from '../utils/localDate';
+import { t } from '../utils/i18n';
+
+function stateLabel(key: string): string {
+    switch (key) {
+        case 'tired': return t('journalState.tired');
+        case 'focused': return t('journalState.focused');
+        case 'emotional': return t('journalState.emotional');
+        case 'distracted': return t('journalState.distracted');
+        case 'connected': return t('journalState.connected');
+        default: return key;
+    }
+}
 
 interface Props {
     visible: boolean;
@@ -30,7 +41,10 @@ function EntryCard({ entry, colors, onDelete, onToggleAnswered }: {
     const hasDua = entry.duaText.trim().length > 0;
 
     return (
-        <Animated.View entering={FadeInDown.duration(300)}>
+        // Plain View (no `entering`): entering animations on virtualized FlatList
+        // rows can stick at opacity:0 on first mount, hiding the list until a
+        // scroll — the same bug fixed in Stories.
+        <View>
             <TouchableOpacity
                 onPress={() => { setExpanded(v => !v); haptic.light(); }}
                 activeOpacity={0.85}
@@ -45,7 +59,7 @@ function EntryCard({ entry, colors, onDelete, onToggleAnswered }: {
                                 {format(parseISO(entry.date), 'EEE, MMM d')}
                             </Text>
                             <Text style={styles.entrySub}>
-                                {entry.rakats} rakats · {stateOption?.label}
+                                {t('journalHist.rakatsCount', { n: entry.rakats })} · {stateOption ? stateLabel(stateOption.key) : ''}
                             </Text>
                         </View>
                     </View>
@@ -68,7 +82,7 @@ function EntryCard({ entry, colors, onDelete, onToggleAnswered }: {
                         <View style={[styles.divider, { backgroundColor: 'rgba(255,255,255,0.06)' }]} />
                         {hasDua ? (
                             <>
-                                <Text style={styles.duaLabel}>Ya Allah, tonight I…</Text>
+                                <Text style={styles.duaLabel}>{t('journalHist.duaLabel')}</Text>
                                 <Text style={styles.duaText}>{entry.duaText}</Text>
                                 <TouchableOpacity
                                     onPress={() => { haptic.light(); onToggleAnswered(entry.id, !entry.duaAnswered); }}
@@ -84,24 +98,24 @@ function EntryCard({ entry, colors, onDelete, onToggleAnswered }: {
                                         fill={entry.duaAnswered ? '#22c55e' : 'transparent'}
                                     />
                                     <Text style={[styles.answeredText, { color: entry.duaAnswered ? '#22c55e' : '#334155' }]}>
-                                        {entry.duaAnswered ? 'Dua answered ✓' : 'Mark dua as answered'}
+                                        {entry.duaAnswered ? t('journalHist.duaAnsweredCheck') : t('journalHist.markAnswered')}
                                     </Text>
                                 </TouchableOpacity>
                             </>
                         ) : (
-                            <Text style={styles.noDua}>No dua written this night</Text>
+                            <Text style={styles.noDua}>{t('journalHist.noDuaWritten')}</Text>
                         )}
                         <TouchableOpacity
                             onPress={() => { haptic.light(); onDelete(entry.id); }}
                             style={styles.deleteBtn}
                         >
                             <Trash2 size={14} color="#475569" />
-                            <Text style={styles.deleteText}>Delete entry</Text>
+                            <Text style={styles.deleteText}>{t('journalHist.deleteEntry')}</Text>
                         </TouchableOpacity>
                     </View>
                 )}
             </TouchableOpacity>
-        </Animated.View>
+        </View>
     );
 }
 
@@ -135,12 +149,12 @@ export function TahajjudJournalHistory({ visible, onClose }: Props) {
     const handleDelete = (id: string) => {
         // Journal entries can be very personal — never delete without confirming.
         Alert.alert(
-            'Delete this entry?',
-            'This will permanently remove the journal entry and your dua from that night. This cannot be undone.',
+            t('journalHist.deleteEntryTitle'),
+            t('journalHist.deleteEntryBody'),
             [
-                { text: 'Cancel', style: 'cancel' },
+                { text: t('btn.cancel'), style: 'cancel' },
                 {
-                    text: 'Delete',
+                    text: t('btn.delete'),
                     style: 'destructive',
                     onPress: async () => {
                         haptic.medium();
@@ -182,7 +196,7 @@ export function TahajjudJournalHistory({ visible, onClose }: Props) {
                     </TouchableOpacity>
                     <View style={styles.headerCenter}>
                         <Moon size={15} color={colors.accent} />
-                        <Text style={[styles.headerTitle, { color: colors.accent }]}>NIGHT JOURNAL</Text>
+                        <Text style={[styles.headerTitle, { color: colors.accent }]}>{t('journalHist.nightJournalTitle')}</Text>
                     </View>
                     <TouchableOpacity
                         onPress={() => { haptic.light(); setShowAddJournal(true); }}
@@ -191,7 +205,7 @@ export function TahajjudJournalHistory({ visible, onClose }: Props) {
                     >
                         <PenLine size={14} color={hasToday ? colors.accent : '#fff'} />
                         <Text style={[styles.writeBtnText, { color: hasToday ? colors.accent : '#fff' }]}>
-                            {hasToday ? 'Edit' : 'Write'}
+                            {hasToday ? t('journalHist.editBtn') : t('duasTab.writeBtn')}
                         </Text>
                     </TouchableOpacity>
                 </View>
@@ -201,22 +215,22 @@ export function TahajjudJournalHistory({ visible, onClose }: Props) {
                     <View style={styles.statsRow}>
                         <View style={[styles.statBox, { borderColor: 'rgba(255,255,255,0.07)' }]}>
                             <Text style={[styles.statNum, { color: colors.accent }]}>{totalNights}</Text>
-                            <Text style={styles.statLabel}>nights</Text>
+                            <Text style={styles.statLabel}>{t('journalHist.nightsLabel')}</Text>
                         </View>
                         <View style={[styles.statBox, { borderColor: 'rgba(255,255,255,0.07)' }]}>
                             <Text style={[styles.statNum, { color: colors.accent }]}>{totalRakats}</Text>
-                            <Text style={styles.statLabel}>rakats total</Text>
+                            <Text style={styles.statLabel}>{t('journalHist.rakatsTotal')}</Text>
                         </View>
                         {answeredDuas > 0 && (
                             <View style={[styles.statBox, { borderColor: 'rgba(34,197,94,0.2)', backgroundColor: 'rgba(34,197,94,0.05)' }]}>
                                 <Text style={[styles.statNum, { color: '#22c55e' }]}>{answeredDuas}</Text>
-                                <Text style={styles.statLabel}>duas answered</Text>
+                                <Text style={styles.statLabel}>{t('journalHist.duasAnswered')}</Text>
                             </View>
                         )}
                         {!answeredDuas && mostCommonState && (
                             <View style={[styles.statBox, { borderColor: 'rgba(255,255,255,0.07)' }]}>
                                 <Text style={styles.statEmoji}>{mostCommonState.emoji}</Text>
-                                <Text style={styles.statLabel}>usually {mostCommonState.label.toLowerCase()}</Text>
+                                <Text style={styles.statLabel}>{t('journalHist.usuallyState', { state: stateLabel(mostCommonState.key).toLowerCase() })}</Text>
                             </View>
                         )}
                     </View>
@@ -225,7 +239,7 @@ export function TahajjudJournalHistory({ visible, onClose }: Props) {
                 {/* 7-day grid */}
                 {!loading && entries.length > 0 && (
                     <View style={[styles.weekGrid, { borderColor: 'rgba(255,255,255,0.06)' }]}>
-                        <Text style={[styles.weekTitle, { color: colors.secondaryText }]}>LAST 7 NIGHTS</Text>
+                        <Text style={[styles.weekTitle, { color: colors.secondaryText }]}>{t('journalHist.last7Nights')}</Text>
                         <View style={styles.weekRow}>
                             {Array.from({ length: 7 }).map((_, i) => {
                                 const d = subDays(new Date(), 6 - i);
@@ -259,13 +273,13 @@ export function TahajjudJournalHistory({ visible, onClose }: Props) {
                 {/* List */}
                 {loading ? (
                     <View style={styles.empty}>
-                        <Text style={styles.emptyText}>Loading…</Text>
+                        <Text style={styles.emptyText}>{t('miniPlayer.loading')}</Text>
                     </View>
                 ) : entries.length === 0 ? (
                     <View style={styles.empty}>
                         <Text style={styles.emptyEmoji}>🌙</Text>
-                        <Text style={styles.emptyTitle}>No entries yet</Text>
-                        <Text style={styles.emptyText}>Your journal will fill as you pray Tahajjud each night</Text>
+                        <Text style={styles.emptyTitle}>{t('journalHist.noEntriesYet')}</Text>
+                        <Text style={styles.emptyText}>{t('journalHist.emptyBody')}</Text>
                     </View>
                 ) : (
                     <FlatList

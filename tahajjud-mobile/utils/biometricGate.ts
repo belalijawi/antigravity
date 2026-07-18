@@ -79,7 +79,3 @@ export async function requireBiometric(opts: BiometricGateOptions = {}): Promise
     }
 }
 
-/** Force-invalidate the in-memory auth cache (e.g. on logout). */
-export function clearBiometricCache(): void {
-    lastAuthAt = 0;
-}

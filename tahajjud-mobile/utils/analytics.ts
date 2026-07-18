@@ -25,6 +25,18 @@ const HOST = process.env.EXPO_PUBLIC_POSTHOG_HOST || 'https://us.i.posthog.com';
 
 let client: any = null;
 let initialized = false;
+let onboardedAtLaunch: boolean | null = null;
+
+/**
+ * Record whether the "onboarded" flag was already set at cold start, BEFORE
+ * onboarding can complete. app_first_open must classify existing_user from
+ * this snapshot: analytics initializes on a delay, and for brand-new users
+ * onboarding sets the flag first — reading storage at init time would
+ * misclassify every new download as an existing user.
+ */
+export function noteOnboardedAtLaunch(onboarded: boolean): void {
+    if (onboardedAtLaunch === null) onboardedAtLaunch = onboarded;
+}
 
 /** Initialize once at app startup. Safe to call multiple times. */
 export async function initAnalytics(): Promise<void> {
@@ -43,6 +55,8 @@ export async function initAnalytics(): Promise<void> {
             captureAppLifecycleEvents: true,
         });
         initialized = true;
+        // Fire-and-forget — never delays init for callers.
+        trackFirstOpenOnce();
     } catch (e) {
         // Never block the app on analytics. Most common failure: dev client
         // missing expo-localization native module (rebuild needed).
@@ -50,6 +64,35 @@ export async function initAnalytics(): Promise<void> {
         client = null;
         initialized = true;
     }
+}
+
+/**
+ * One-time "new download" event. PostHog's automatic "Application Installed"
+ * lifecycle event also fires for EXISTING users the first time they update
+ * into an analytics-enabled build, so it over-counts installs. This event
+ * carries `existing_user` so a PostHog insight can chart genuine new
+ * downloads: trend on `app_first_open` where existing_user = false.
+ */
+async function trackFirstOpenOnce(): Promise<void> {
+    try {
+        // Lazy require, same reasoning as PostHog itself above.
+        // eslint-disable-next-line @typescript-eslint/no-var-requires
+        const AsyncStorage = require('@react-native-async-storage/async-storage').default;
+        const KEY = 'analytics_first_open_at';
+        if (await AsyncStorage.getItem(KEY)) return;
+        // A genuine new download had no "onboarded" flag at cold start; an
+        // existing user updating into this build launched with it already set.
+        // Falls back to reading storage only if the launch snapshot was never
+        // taken (it is set from checkOnboarding before this can run).
+        const onboarded = onboardedAtLaunch
+            ?? ((await AsyncStorage.getItem('onboarded')) === 'true');
+        // Carry platform explicitly: this fires before super properties are
+        // registered, so a brand-new device would otherwise send it without
+        // any dimensions to slice iOS vs Android downloads by.
+        const { Platform } = require('react-native');
+        track('app_first_open', { existing_user: onboarded, platform: Platform.OS });
+        await AsyncStorage.setItem(KEY, String(Date.now()));
+    } catch { /* never block or crash over analytics */ }
 }
 
 /**
@@ -81,22 +124,17 @@ export function track(event: string, properties?: Record<string, any>): void {
     } catch { /* ignore */ }
 }
 
-export function trackScreen(name: string): void {
+/**
+ * Register "super properties" — sent automatically with EVERY future event
+ * (persisted on-device by PostHog). Use this for low-cardinality dimensions
+ * you want to slice ALL analytics by, e.g. app version, platform, premium
+ * status, locale. Re-call whenever one of these changes (e.g. on
+ * subscribe/unsubscribe) to keep it current.
+ */
+export function setSuperProperties(properties: Record<string, any>): void {
     if (!client) return;
     try {
-        // PostHog v4 removed the dedicated screen() method — screen views are
-        // captured as a "$screen" event with a $screen_name property.
-        client.capture('$screen', { $screen_name: name });
+        client.register(sanitize(properties));
     } catch { /* ignore */ }
 }
 
-/**
- * Identify the user with a STABLE ANONYMOUS ID — never their email or name.
- * If you sign in via Firebase later, you can call this with the Firebase uid.
- */
-export function identifyAnonymous(anonymousId: string): void {
-    if (!client) return;
-    try {
-        client.identify(anonymousId);
-    } catch { /* ignore */ }
-}

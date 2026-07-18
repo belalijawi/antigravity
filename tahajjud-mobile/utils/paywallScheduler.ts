@@ -15,13 +15,13 @@
 
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
-const OPEN_COUNT_KEY = 'app-open-count-v1';
-const LAST_SHOWN_KEY = 'paywall-weekly-last-v1';
+const OPEN_COUNT_KEY        = 'app-open-count-v1';
+const COFFEE_LAST_SHOWN_KEY = 'coffee-prompt-last-v1';
+
+const COFFEE_MS = 10 * 24 * 60 * 60 * 1000; // coffee cadence: every 10 days
 
 const MIN_OPENS_BEFORE_FIRST = 3;             // let them use it a few times first
-const WEEK_MS = 7 * 24 * 60 * 60 * 1000;
-
-let shownThisSession = false;
+let coffeeShownThisSession = false;
 
 /** Call once per app launch to track engagement. Returns the new open count. */
 export async function recordAppOpen(): Promise<number> {
@@ -35,24 +35,29 @@ export async function recordAppOpen(): Promise<number> {
     }
 }
 
+// NOTE: the scheduled free-user paywall ("weekly paywall" / scheduled_5day)
+// was retired 2026-07-14 — 60% of paywall impressions at 0.7% conversion vs
+// 2% for feature gates. Contextual gates are now the only paywall triggers.
+
 /**
- * Returns true if the weekly paywall should be shown right now.
- * Caller should already have confirmed the user is NOT premium.
+ * Returns true if the coffee/support prompt should be shown right now.
+ * Shown to premium users (who won't see the paywall) on a 10-day cadence.
+ * Caller should already have confirmed the user IS premium.
  */
-export async function shouldShowWeeklyPaywall(): Promise<boolean> {
+export async function shouldShowCoffeePrompt(): Promise<boolean> {
     try {
-        if (shownThisSession) return false;
+        if (coffeeShownThisSession) return false;
 
         const [openRaw, lastRaw] = await Promise.all([
             AsyncStorage.getItem(OPEN_COUNT_KEY),
-            AsyncStorage.getItem(LAST_SHOWN_KEY),
+            AsyncStorage.getItem(COFFEE_LAST_SHOWN_KEY),
         ]);
 
         const opens = openRaw ? parseInt(openRaw, 10) : 0;
         if (opens < MIN_OPENS_BEFORE_FIRST) return false;
 
         const last = lastRaw ? parseInt(lastRaw, 10) : 0;
-        if (Date.now() - last < WEEK_MS) return false;
+        if (Date.now() - last < COFFEE_MS) return false;
 
         return true;
     } catch {
@@ -60,10 +65,10 @@ export async function shouldShowWeeklyPaywall(): Promise<boolean> {
     }
 }
 
-/** Mark the weekly paywall as shown (call right after showing it). */
-export async function markWeeklyPaywallShown(): Promise<void> {
-    shownThisSession = true;
+/** Mark the coffee prompt as shown (call right after showing it). */
+export async function markCoffeePromptShown(): Promise<void> {
+    coffeeShownThisSession = true;
     try {
-        await AsyncStorage.setItem(LAST_SHOWN_KEY, String(Date.now()));
+        await AsyncStorage.setItem(COFFEE_LAST_SHOWN_KEY, String(Date.now()));
     } catch { /* ignore */ }
 }

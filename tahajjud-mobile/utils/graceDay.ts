@@ -13,10 +13,95 @@ import { localDateStr } from './localDate';
  */
 
 const KEY = 'streak-grace-days-v1';
+const PAUSE_KEY = 'streak-pause-v1';
 
 interface GraceState {
     /** ISO dates (YYYY-MM-DD) of freezes consumed, one per ISO week max. */
     used: string[];
+}
+
+// ── Streak pause (religious / life exemptions) ──────────────────────────
+// Some days a user is genuinely *exempt* from praying — most importantly a
+// woman during menstruation (ḥayḍ) or postnatal bleeding (nifās), who is not
+// required to pray and does not make those prayers up. These days must NOT
+// count as misses, and must NOT burn a weekly freeze — the streak simply
+// *bridges* over them, as if they weren't on the calendar.
+//
+// This is deliberately separate from the freeze system: a freeze forgives a
+// slip-up; a pause recognises there was no obligation in the first place.
+//
+// Privacy: stored ONLY on-device, never synced or shared. The reason is
+// optional and exists only to tailor supportive copy — it is never required.
+
+export type PauseReason = 'period' | 'postpartum' | 'illness' | 'travel' | 'unspecified';
+
+export interface PausePeriod {
+    start: string;        // YYYY-MM-DD (inclusive)
+    end: string | null;   // YYYY-MM-DD (inclusive) — null while the pause is active
+    reason?: PauseReason;
+}
+
+interface PauseState {
+    ranges: PausePeriod[];
+}
+
+async function loadPause(): Promise<PauseState> {
+    try {
+        const raw = await AsyncStorage.getItem(PAUSE_KEY);
+        if (raw) return JSON.parse(raw);
+    } catch { /* ignore */ }
+    return { ranges: [] };
+}
+
+async function savePause(state: PauseState): Promise<void> {
+    await AsyncStorage.setItem(PAUSE_KEY, JSON.stringify(state));
+}
+
+/** The currently-active (open-ended) pause, or null if not paused. */
+export async function getActivePause(): Promise<PausePeriod | null> {
+    const s = await loadPause();
+    return s.ranges.find(r => r.end === null) ?? null;
+}
+
+/** Is the streak paused right now? */
+export async function isStreakPaused(): Promise<boolean> {
+    return (await getActivePause()) !== null;
+}
+
+/** Begin a pause (idempotent — a no-op if already paused). */
+export async function startStreakPause(reason: PauseReason = 'unspecified', today: Date = new Date()): Promise<void> {
+    const s = await loadPause();
+    if (s.ranges.some(r => r.end === null)) return; // already paused
+    s.ranges.push({ start: format(today, 'yyyy-MM-dd'), end: null, reason });
+    await savePause(s);
+}
+
+/**
+ * End the active pause. Exemption covers `start` through *yesterday* — from
+ * today onward the user can pray again, so today counts normally. A pause
+ * started and ended the same day collapses to nothing (no harm).
+ */
+export async function endStreakPause(today: Date = new Date()): Promise<void> {
+    const s = await loadPause();
+    const active = s.ranges.find(r => r.end === null);
+    if (!active) return;
+    active.end = format(subDays(today, 1), 'yyyy-MM-dd');
+    // Drop ranges that ended before they began (paused & resumed same day).
+    s.ranges = s.ranges.filter(r => r.end === null || r.end >= r.start);
+    await savePause(s);
+}
+
+/** Build a fast predicate: is a given date inside any exempt range? */
+function buildExemptPredicate(pause: PauseState, today: Date): (d: Date) => boolean {
+    const todayStr = format(today, 'yyyy-MM-dd');
+    return (d: Date) => {
+        const ds = format(d, 'yyyy-MM-dd');
+        for (const r of pause.ranges) {
+            const end = r.end ?? todayStr; // active pause extends through today
+            if (r.start <= ds && ds <= end) return true;
+        }
+        return false;
+    };
 }
 
 function weekKey(d: Date): string {
@@ -79,50 +164,57 @@ export async function calculateStreakWithGrace(
     const usedThisWeek = state.used.filter(d => weekKey(new Date(d)) === currentWeek).length;
     const freezeAvailableNow = usedThisWeek < maxFreezesPerWeek;
 
+    const pause = await loadPause();
+    const isExempt = buildExemptPredicate(pause, today);
+
+    const has = (s: string) => dates.some(d => localDateStr(d) === s) || forgiven.has(s);
+
     if (dates.length === 0) {
         return { streak: 0, graceUsedToday: false, freezeAvailable: freezeAvailableNow };
     }
 
-    const todayStr = format(today, 'yyyy-MM-dd');
-    const ydayStr = format(subDays(today, 1), 'yyyy-MM-dd');
-
-    const has = (s: string) => dates.some(d => localDateStr(d) === s) || forgiven.has(s);
-    const hasToday = has(todayStr);
-    const hasYesterday = has(ydayStr);
-
-    let graceUsedToday = false;
-    let freezeAvailable = freezeAvailableNow;
-
-    // If neither today nor yesterday is accounted for, but the user hasn't
-    // used a freeze this week, forgive yesterday so the streak survives.
-    // Only consume the freeze if there is actually a prior streak to protect —
-    // forgiving yesterday when there's nothing before it would waste the freeze.
-    if (!hasToday && !hasYesterday) {
-        if (freezeAvailableNow) {
-            // Peek one day before yesterday to check if a streak exists worth protecting
-            const dayBeforeYdayStr = format(subDays(today, 2), 'yyyy-MM-dd');
-            const hasPriorStreak = has(dayBeforeYdayStr);
-            if (!hasPriorStreak) {
-                return { streak: 0, graceUsedToday: false, freezeAvailable: freezeAvailableNow };
-            }
-            await consumeGrace(subDays(today, 1));
-            forgiven.add(ydayStr);
-            graceUsedToday = true;
-            // Still available if premium user has more freezes remaining this week
-            freezeAvailable = (usedThisWeek + 1) < maxFreezesPerWeek;
-        } else {
-            return { streak: 0, graceUsedToday: false, freezeAvailable: false };
-        }
-    }
-
-    // Walk back from today (or yesterday if today not logged), counting consecutive days.
+    // Walk backward from today. Three cases per day:
+    //   • exempt (paused)  → bridge: skip silently, no count, no freeze spent
+    //   • prayed/forgiven  → count it
+    //   • genuine miss     → today is "in progress" (not a miss yet); an older
+    //                        miss may be bridged by one weekly freeze if a
+    //                        streak exists just beyond it, else the streak ends.
     let count = 0;
-    let cursor = (hasToday) ? today : subDays(today, 1);
+    let freezesUsedInWalk = 0;
+    let cursor = new Date(today);
+    let isToday = true;
+    const freezesRemaining = () => maxFreezesPerWeek - usedThisWeek - freezesUsedInWalk;
+
     while (true) {
         const s = format(cursor, 'yyyy-MM-dd');
-        if (!has(s)) break;
-        count++;
-        cursor = subDays(cursor, 1);
+
+        if (isExempt(cursor)) {            // bridge exempt day
+            cursor = subDays(cursor, 1); isToday = false; continue;
+        }
+        if (has(s)) {                       // prayed / already forgiven
+            count++; cursor = subDays(cursor, 1); isToday = false; continue;
+        }
+        if (isToday) {                      // tonight not prayed yet — not a miss
+            cursor = subDays(cursor, 1); isToday = false; continue;
+        }
+
+        // Genuine past miss. Spend a freeze to bridge it only if a streak exists
+        // just beyond (older than) the gap — otherwise we'd waste the freeze.
+        const older = subDays(cursor, 1);
+        const olderQualifies = has(format(older, 'yyyy-MM-dd')) || isExempt(older);
+        if (freezesRemaining() > 0 && olderQualifies) {
+            await consumeGrace(cursor);
+            forgiven.add(s);
+            count++;
+            freezesUsedInWalk++;
+            cursor = older; isToday = false; continue;
+        }
+        break;
     }
-    return { streak: count, graceUsedToday, freezeAvailable };
+
+    return {
+        streak: count,
+        graceUsedToday: freezesUsedInWalk > 0,
+        freezeAvailable: freezesRemaining() > 0,
+    };
 }

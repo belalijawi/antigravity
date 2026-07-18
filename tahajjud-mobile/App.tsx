@@ -73,7 +73,7 @@ import { Audio, InterruptionModeIOS, InterruptionModeAndroid } from 'expo-av';
 import { QuranPreloadService } from './services/QuranPreloadService';
 import { requestNotificationPermissions } from './utils/notifications';
 import { refreshWeeklyDigest } from './utils/weeklyDigest';
-import { initAnalytics, track } from './utils/analytics';
+import { initAnalytics, track, setSuperProperties, noteOnboardedAtLaunch } from './utils/analytics';
 import { applyRtlIfNeeded } from './utils/rtl';
 import { drainPendingPrayerLogs } from './utils/pendingIntents';
 import { scheduleIslamicEventNotifications } from './utils/islamicEvents';
@@ -117,6 +117,12 @@ function routeFromNotification(data: any): void {
     target = 'Home';
   } else if (type === 'prayer_reminder' || type === 'fajr' || type === 'dhuhr' || type === 'asr' || type === 'maghrib' || type === 'isha') {
     target = 'Home';
+  } else if (type === 'dua_milestone') {
+    target = 'Duas';   // Dua Wall lives in the Duas tab
+  } else if (type === 'testimony_milestone') {
+    target = 'Guide';  // Testimonies live in the Guide tab
+  } else if (type === 'winback_1' || type === 'winback_2') {
+    target = 'Home';
   }
   const navigate = () => {
     if (!navigationRef.isReady()) return;
@@ -126,7 +132,14 @@ function routeFromNotification(data: any): void {
       // 1500ms gives HomeTab time to mount and register its listener even on
       // cold start with Hermes JIT warm-up (400ms was too short on some devices).
       setTimeout(() => {
-        DeviceEventEmitter.emit('openPaywall');
+        DeviceEventEmitter.emit('openPaywall', { source: 'streak_notification' });
+      }, 1500);
+    }
+    // Win-back tap: same deep-link, but tagged so the paywall knows to check
+    // for an eligible win-back offer (Apple StoreKit 2 / RevenueCat).
+    if (type === 'winback_1' || type === 'winback_2') {
+      setTimeout(() => {
+        DeviceEventEmitter.emit('openPaywall', { source: 'winback' });
       }, 1500);
     }
   };
@@ -274,10 +287,13 @@ function MainApp() {
     // module access can't destabilise launch. Staggered so they don't all
     // fire at once.
     const t1 = setTimeout(() => {
-      // Notification permission + analytics first (most important)
+      // Notification permission first (analytics init lives in AppNavigator —
+      // it must run before onboarding completes, and MainApp only mounts after)
       requestNotificationPermissions();
-      initAnalytics().then(() => track('app_launched')).catch(() => {});
       drainPendingPrayerLogs().catch(() => {});
+      // Re-personalize a pending trial-ending reminder with the user's
+      // current nights-prayed count (no-op when no trial is running).
+      import('./utils/trialReminder').then(m => m.refreshTrialReminder()).catch(() => {});
     }, 1200);
 
     const t2 = setTimeout(() => {
@@ -396,9 +412,12 @@ function MainApp() {
                 // Android renders dp smaller than iOS pt — bump font size to keep labels legible
                 fontSize: Platform.OS === 'android' ? 11 : 9,
                 fontWeight: '700',
-                marginTop: Platform.OS === 'android' ? 2 : 1,
+                marginTop: Platform.OS === 'android' ? 0 : 1,
                 letterSpacing: Platform.OS === 'android' ? 0 : 0.3,
-                includeFontPadding: false,
+                // No includeFontPadding:false here — it crops Android text to the
+                // Latin em-box, which cuts the bottom off Arabic/Urdu tab labels.
+                // The explicit lineHeight gives tall scripts room instead.
+                lineHeight: Platform.OS === 'android' ? 17 : undefined,
               },
               tabBarItemStyle: {
                 // Give every tab item a bit of vertical room so users don't
@@ -528,6 +547,25 @@ function AppNavigator() {
   useEffect(() => {
     checkOnboarding();
     setupAudio();
+    // Analytics must initialize here — NOT in MainApp, which only mounts after
+    // onboarding. By then a brand-new user already has the "onboarded" flag set
+    // (app_first_open would misclassify them as an existing user) and every
+    // onboarding_* event fired before init would be silently dropped.
+    // Still deferred 1200ms to stay out of the cold-start critical window.
+    const analyticsTimer = setTimeout(() => {
+      initAnalytics().then(() => {
+        // Slice every future event by these dimensions without having to
+        // pass them on each call — critical for "did v1.8.0 convert better
+        // than v1.7.0?" / "are Android users behaving differently?" queries.
+        setSuperProperties({
+          app_version: APP_VERSION,
+          build_number: NATIVE_BUILD_NUMBER,
+          platform: Platform.OS,
+          environment: IS_PRODUCTION ? 'production' : 'development',
+        });
+        track('app_launched');
+      }).catch(() => {});
+    }, 1200);
     // Set up the foreground notification handler immediately on cold start —
     // otherwise a push that arrives in the cold-start window can be silently
     // swallowed before the handler is configured.
@@ -551,6 +589,11 @@ function AppNavigator() {
         import('./utils/accountabilityPartner')
           .then(m => m.saveExpoPushToken())
           .catch(() => {});
+        // Merge cloud-backed streaks/prayer history with local state —
+        // restores everything after a reinstall or on a new device.
+        import('./utils/prayerHistorySync')
+          .then(m => m.restorePrayerHistory())
+          .catch(() => {});
       });
     }).catch(() => {});
     // Also refresh 3s after cold start to catch any race with auth settling
@@ -562,6 +605,7 @@ function AppNavigator() {
     return () => {
       authUnsub?.();
       clearTimeout(tokenTimer);
+      clearTimeout(analyticsTimer);
     };
   }, []);
 
@@ -588,6 +632,9 @@ function AppNavigator() {
   const checkOnboarding = async () => {
     try {
       const onboarded = await AsyncStorage.getItem('onboarded');
+      // Snapshot BEFORE onboarding can complete — app_first_open classifies
+      // new-vs-existing users from this, not from a post-onboarding read.
+      noteOnboardedAtLaunch(onboarded === 'true');
       setIsOnboarded(onboarded === 'true');
       // Skip the new multi-step flow for users who were already onboarded
       // BEFORE this build shipped — they've already used the app and don't
@@ -642,12 +689,12 @@ function AppNavigator() {
 }
 
 function MainAppWithPaywall() {
-  const { paywallVisible, closePaywall } = usePurchases();
+  const { paywallVisible, closePaywall, paywallSource } = usePurchases();
   return (
     <>
       <MainApp />
       <Modal visible={paywallVisible} animationType="slide" presentationStyle="fullScreen">
-        <Paywall onClose={closePaywall} />
+        <Paywall onClose={closePaywall} source={paywallSource} />
       </Modal>
     </>
   );

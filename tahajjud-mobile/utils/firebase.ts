@@ -1,6 +1,6 @@
 import { initializeApp, getApps, getApp, FirebaseApp } from 'firebase/app';
 import { getAuth, Auth, initializeAuth, signInAnonymously, onAuthStateChanged } from 'firebase/auth';
-import { getFirestore, Firestore } from 'firebase/firestore';
+import { getFirestore, initializeFirestore, Firestore } from 'firebase/firestore';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 // Firebase config is safe to be in source — web API keys are public-facing by design.
@@ -19,10 +19,26 @@ let app: FirebaseApp;
 let auth: Auth;
 let db: Firestore;
 
+// Firestore transport: the Firebase JS SDK defaults to WebChannel streaming,
+// which is unreliable in React Native — reads often succeed from cache while
+// writes (setDoc/updateDoc) hang or reject after a timeout. That caused the
+// Dua Wall "Ameen registers then disappears after a few seconds" bug (the write
+// rejected → the UI rolled back). `experimentalForceLongPolling` switches to a
+// long-polling transport that works reliably in RN. Must be set via
+// initializeFirestore BEFORE any getFirestore() call, and only once.
+function initDb(a: FirebaseApp): Firestore {
+    try {
+        return initializeFirestore(a, { experimentalForceLongPolling: true });
+    } catch {
+        // Already initialized (e.g. fast refresh) — fall back to the existing instance.
+        return getFirestore(a);
+    }
+}
+
 if (getApps().length) {
     app = getApp();
     auth = getAuth(app);
-    db = getFirestore(app);
+    db = initDb(app);
 } else {
     app = initializeApp(FIREBASE_CONFIG);
     try {
@@ -37,7 +53,7 @@ if (getApps().length) {
         // Fallback to in-memory auth if persistence setup fails (e.g. in Expo Go)
         auth = getAuth(app);
     }
-    db = getFirestore(app);
+    db = initDb(app);
 }
 
 export const getFirebaseAuth = (): Auth => auth;

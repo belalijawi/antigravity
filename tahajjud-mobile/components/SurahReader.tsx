@@ -1,5 +1,6 @@
 import React, { useEffect, useState, useRef, useCallback } from 'react';
 import { View, Text, StyleSheet, ActivityIndicator, TouchableOpacity, Modal, FlatList, ViewToken, Pressable, Platform, Animated } from 'react-native';
+import { FlashList, FlashListRef } from '@shopify/flash-list';
 // Use the safe-area-context version (cross-platform). The built-in
 // `react-native` SafeAreaView is a no-op on Android — that's why the system
 // status bar was overlapping the SurahReader header.
@@ -19,6 +20,8 @@ import { QuranTimingService, AyahAudioData, getWordAtTime } from '../services/Qu
 import { parseTajweed, isTajweedEdition, TAJWEED_COLORS } from '../utils/tajweedParser';
 import { QuranWordService, AyahWords } from '../services/QuranWordService';
 import { getCurrentReciterId, subscribeReciter } from '../utils/reciters';
+import { t } from '../utils/i18n';
+import { formatMinSec } from '../utils/timeFormat';
 
 interface Props {
     surahNumber: number;
@@ -267,7 +270,7 @@ export function SurahReader({ surahNumber: initialSurahNumber, edition = 'en.sah
     const [loading, setLoading] = useState(true);
     const [modalVisible, setModalVisible] = useState(false);
     const [hifzVisible, setHifzVisible] = useState(false);
-    const flatListRef = useRef<FlatList>(null);
+    const flatListRef = useRef<FlashListRef<Ayah>>(null);
     const [initialScrollDone, setInitialScrollDone] = useState(false);
     const [bookmarkedAyah, setBookmarkedAyah] = useState<number | null>(null);
     const lastReadAyahRef = useRef<number>(1);
@@ -405,12 +408,6 @@ export function SurahReader({ surahNumber: initialSurahNumber, edition = 'en.sah
             if (sleepIntervalRef.current) clearInterval(sleepIntervalRef.current);
         };
     }, []);
-
-    const formatSleepTime = (secs: number) => {
-        const m = Math.floor(secs / 60);
-        const s = secs % 60;
-        return `${m}:${s.toString().padStart(2, '0')}`;
-    };
 
     // Audio bar slide animation
     const [showAudioBar, setShowAudioBar] = useState(false);
@@ -807,7 +804,7 @@ export function SurahReader({ surahNumber: initialSurahNumber, edition = 'en.sah
                     style={[styles.sleepTimerBtn, repeatSurah && { backgroundColor: colors.accent + '33', borderColor: colors.accent + '66' }]}
                 >
                     <Repeat size={13} color={repeatSurah ? colors.accent : '#94a3b8'} />
-                    <Text style={[styles.sleepTimerText, repeatSurah && { color: colors.accent }]}>Loop</Text>
+                    <Text style={[styles.sleepTimerText, repeatSurah && { color: colors.accent }]}>{t('surahReader.loop')}</Text>
                 </TouchableOpacity>
                 <TouchableOpacity
                     onPress={cycleSleepTimer}
@@ -815,7 +812,7 @@ export function SurahReader({ surahNumber: initialSurahNumber, edition = 'en.sah
                 >
                     <Timer size={13} color={sleepTimerMins > 0 ? colors.accent : '#94a3b8'} />
                     <Text style={[styles.sleepTimerText, sleepTimerMins > 0 && { color: colors.accent }]}>
-                        {sleepTimerMins === 0 ? 'Sleep' : formatSleepTime(sleepSecondsLeft)}
+                        {sleepTimerMins === 0 ? t('surahReader.sleep') : formatMinSec(sleepSecondsLeft)}
                     </Text>
                 </TouchableOpacity>
             </View>
@@ -849,12 +846,12 @@ export function SurahReader({ surahNumber: initialSurahNumber, edition = 'en.sah
                     animated: ayahJumpRequested && !firstScroll,
                     viewPosition: 0,
                 });
-            }, 100);
+            }, 50);
         } else if (index === 0) {
             // Explicit "go to ayah 1" — make sure we're at the top.
             setTimeout(() => {
                 flatListRef.current?.scrollToOffset({ offset: 0, animated: false });
-            }, 100);
+            }, 50);
         }
 
         if (initialAyahNumber) setBookmarkedAyah(initialAyahNumber);
@@ -878,15 +875,30 @@ export function SurahReader({ surahNumber: initialSurahNumber, edition = 'en.sah
         }
     };
 
+    const removeBookmark = async () => {
+        setBookmarkedAyah(null);
+        try {
+            await AsyncStorage.removeItem('quran_last_read');
+        } catch (e) {
+            console.error('Error removing bookmark:', e);
+        }
+    };
+
     // Stable action handlers so FlatList items don't see new function refs
     // on every parent re-render. Without this, every visible ayah re-renders
     // on every audio tick (4Hz) and the reader feels laggy. We route through
     // a ref so the callbacks themselves are stable, but always call the
     // latest version of saveBookmark / playAyah / handlePlayPause.
-    const actionsRef = useRef({ saveBookmark, playAyah, handlePlayPause });
-    actionsRef.current = { saveBookmark, playAyah, handlePlayPause };
+    const bookmarkedAyahRef = useRef(bookmarkedAyah);
+    bookmarkedAyahRef.current = bookmarkedAyah;
+    const actionsRef = useRef({ saveBookmark, removeBookmark, playAyah, handlePlayPause });
+    actionsRef.current = { saveBookmark, removeBookmark, playAyah, handlePlayPause };
     const handleAyahPress = useCallback((ayahNumber: number) => {
-        actionsRef.current.saveBookmark(ayahNumber);
+        if (bookmarkedAyahRef.current === ayahNumber) {
+            actionsRef.current.removeBookmark();
+        } else {
+            actionsRef.current.saveBookmark(ayahNumber);
+        }
     }, []);
     const handleAyahPlayPress = useCallback((index: number) => {
         if (currentAyahIndexRef.current === index) {
@@ -948,7 +960,7 @@ export function SurahReader({ surahNumber: initialSurahNumber, edition = 'en.sah
         return (
             <View style={styles.centerContainer}>
                 <ActivityIndicator size="large" color="#f8fafc" />
-                <Text style={styles.loadingText}>Loading Verses...</Text>
+                <Text style={styles.loadingText}>{t('surahReader.loadingVerses')}</Text>
             </View>
         );
     }
@@ -956,9 +968,9 @@ export function SurahReader({ surahNumber: initialSurahNumber, edition = 'en.sah
     if (!surah) {
         return (
             <View style={styles.centerContainer}>
-                <Text style={styles.errorText}>Could not load translation.</Text>
+                <Text style={styles.errorText}>{t('surahReader.couldNotLoad')}</Text>
                 <TouchableOpacity onPress={onClose} style={styles.closeButton}>
-                    <Text style={styles.closeButtonText}>Go Back</Text>
+                    <Text style={styles.closeButtonText}>{t('surahReader.goBack')}</Text>
                 </TouchableOpacity>
             </View>
         );
@@ -979,8 +991,19 @@ export function SurahReader({ surahNumber: initialSurahNumber, edition = 'en.sah
                     </View>
 
                     <TouchableOpacity
-                        onPress={() => {
-                            if (!isPremium) { openPaywall(); return; }
+                        onPress={async () => {
+                            // Free tier: the first surah is free — the gate only
+                            // fires when starting a SECOND surah.
+                            if (!isPremium) {
+                                try {
+                                    const { getStartedSurahNumbers } = await import('../utils/hifzStorage');
+                                    const started = await getStartedSurahNumbers();
+                                    if (started.length > 0 && !started.includes(surah.number)) {
+                                        openPaywall('feature_gate:hifz_second_surah');
+                                        return;
+                                    }
+                                } catch { /* on error, err on the generous side */ }
+                            }
                             setHifzVisible(true);
                         }}
                         style={styles.hifzButton}
@@ -988,8 +1011,7 @@ export function SurahReader({ surahNumber: initialSurahNumber, edition = 'en.sah
                     >
                         <Brain color={colors.accent} size={20} />
                         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 3, marginTop: 2 }}>
-                            <Text style={[styles.hifzLabel, { color: colors.accent, marginTop: 0 }]}>Hifz</Text>
-                            {!isPremium && <Lock size={9} color="#f59e0b" />}
+                            <Text style={[styles.hifzLabel, { color: colors.accent, marginTop: 0 }]}>{t('quranTab.tabHifz')}</Text>
                         </View>
                     </TouchableOpacity>
 
@@ -999,36 +1021,24 @@ export function SurahReader({ surahNumber: initialSurahNumber, edition = 'en.sah
                         hitSlop={{ top: 10, bottom: 10, left: 6, right: 6 }}
                     >
                         <Globe color="#cbd5e1" size={22} />
-                        <Text style={styles.langLabel}>Language</Text>
+                        <Text style={styles.langLabel}>{t('surahReader.languageBtn')}</Text>
                     </TouchableOpacity>
                 </View>
             </SafeAreaView>
 
-            {/* Content using FlatList for tracking and scrolling */}
-            <FlatList
+            {/* Content list — FlashList (not FlatList) so jump-to-verse is
+                instant + lands on the exact verse. FlatList can't compute the
+                position of an off-screen ayah in a variable-height list, so it
+                had to render row-by-row until it arrived (the slow "scroll
+                through the whole surah"). FlashList measures + recycles and
+                supports a direct scrollToIndex to any verse. */}
+            <FlashList
                 ref={flatListRef}
+                style={{ flex: 1 }}
                 data={surah.ayahs}
                 keyExtractor={(item) => item.numberInSurah.toString()}
                 onViewableItemsChanged={onViewableItemsChanged}
                 viewabilityConfig={viewabilityConfig}
-                initialNumToRender={8}
-                maxToRenderPerBatch={6}
-                windowSize={4}
-                // Frees memory + GPU cost for off-screen rows on long surahs
-                // (Baqarah = 286 ayahs). Critical for Android scroll perf.
-                removeClippedSubviews={Platform.OS === 'android'}
-                updateCellsBatchingPeriod={50}
-                onScrollToIndexFailed={(info) => {
-                    // FlatList can't measure offscreen variable-height items
-                    // synchronously. Step 1: approximate the offset using the
-                    // measured average — gets us close. Step 2: after layout
-                    // settles, run a precise scrollToIndex.
-                    const offset = info.averageItemLength * info.index;
-                    flatListRef.current?.scrollToOffset({ offset, animated: false });
-                    setTimeout(() => {
-                        flatListRef.current?.scrollToIndex({ index: info.index, animated: false, viewPosition: 0 });
-                    }, 200);
-                }}
                 ListHeaderComponent={() => {
                     if (surah.number === 9) return null;
 
@@ -1108,7 +1118,7 @@ export function SurahReader({ surahNumber: initialSurahNumber, edition = 'en.sah
                 <View style={styles.modalOverlay}>
                     <View style={styles.modalContent}>
                         <View style={styles.modalHeader}>
-                            <Text style={styles.modalTitle}>Choose Language</Text>
+                            <Text style={styles.modalTitle}>{t('surahReader.chooseLanguage')}</Text>
                             <TouchableOpacity onPress={() => setModalVisible(false)} style={styles.modalCloseIcon}>
                                 <X color="#94a3b8" size={24} />
                             </TouchableOpacity>

@@ -11,6 +11,7 @@ import { useQuranAudio } from '../context/QuranAudioContext';
 import { useTheme } from '../context/ThemeContext';
 import { getCurrentReciter, subscribeReciter } from '../utils/reciters';
 import { FullScreenPlayer } from './FullScreenPlayer';
+import { t } from '../utils/i18n';
 
 export function QuranMiniPlayer() {
     const audio = useQuranAudio();
@@ -49,7 +50,7 @@ export function QuranMiniPlayer() {
                 </View>
                 <View style={styles.textArea}>
                     <Text style={styles.surahName} numberOfLines={1}>
-                        {audio.currentSurahName ?? 'Loading…'}
+                        {audio.currentSurahName ?? t('miniPlayer.loading')}
                     </Text>
                     <Text style={styles.sub} numberOfLines={1}>
                         {audio.playlistName && audio.queueTotal > 0

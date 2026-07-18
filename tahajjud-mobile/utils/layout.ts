@@ -3,7 +3,7 @@ import { Dimensions, Platform } from 'react-native';
 const { width, height } = Dimensions.get('window');
 
 /** True when running on an iPad or large Android tablet */
-export const isTablet = Platform.OS === 'ios'
+const isTablet = Platform.OS === 'ios'
     ? (width >= 768 || height >= 768)
     : width >= 600;
 

@@ -5,6 +5,7 @@ import { GlassBg as BlurView } from './GlassBg';
 import { BookOpen, Sparkles, ChevronRight } from 'lucide-react-native';
 import { useTheme } from '../context/ThemeContext';
 import { QuranService } from '../services/QuranService';
+import { t } from '../utils/i18n';
 
 // Curated list of reflective verses — rotates daily by day-of-year.
 // All citations checked against Madinah Mushaf numbering.
@@ -99,7 +100,7 @@ export function VerseOfTheDay({ onOpenSurah }: Props) {
         return (
             <View style={[styles.card, { borderColor: colors.accent + '20' }]}>
                 <Text style={[styles.placeholder, { color: colors.secondaryText }]}>
-                    Loading today's verse…
+                    {t('verseDay.loading')}
                 </Text>
             </View>
         );
@@ -122,7 +123,7 @@ export function VerseOfTheDay({ onOpenSurah }: Props) {
                     <Sparkles size={12} color={colors.accent} />
                 </View>
                 <Text style={[styles.kicker, { color: colors.accent }]}>
-                    {new Date().getDay() === 5 ? 'FRIDAY REFLECTION' : 'VERSE OF THE DAY'}
+                    {new Date().getDay() === 5 ? t('verseDay.friday') : t('verseDay.verseOfDay')}
                 </Text>
             </View>
 
@@ -139,7 +140,7 @@ export function VerseOfTheDay({ onOpenSurah }: Props) {
                     {verse.surahName} {verse.surah}:{verse.ayah}
                 </Text>
                 <View style={styles.readMore}>
-                    <Text style={[styles.readMoreText, { color: colors.accent }]}>Read in surah</Text>
+                    <Text style={[styles.readMoreText, { color: colors.accent }]}>{t('verseDay.readInSurah')}</Text>
                     <ChevronRight size={12} color={colors.accent} />
                 </View>
             </View>

@@ -15,6 +15,7 @@
 
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Platform } from 'react-native';
+import { track } from './analytics';
 
 export type FeatureId =
     | 'mosque_timetable'
@@ -130,6 +131,7 @@ export async function markFeatureUsed(id: FeatureId): Promise<void> {
     used[id] = true;
     usedCache = used;
     try { await AsyncStorage.setItem(USED_KEY, JSON.stringify(used)); } catch { /* ignore */ }
+    track('feature_first_used', { feature: id, premium: FEATURES[id].premium });
 }
 
 export async function hasUsedFeature(id: FeatureId): Promise<boolean> {

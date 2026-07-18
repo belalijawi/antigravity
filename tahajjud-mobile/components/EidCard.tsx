@@ -8,6 +8,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useTheme } from '../context/ThemeContext';
 import { haptic } from '../utils/haptic';
 import { getEidToday } from '../utils/hijri';
+import { t } from '../utils/i18n';
 
 const EID_GOLD = '#facc15';
 
@@ -47,7 +48,7 @@ export function EidCard() {
     };
 
     // Eid al-Adha spans 3 days — show which day of Eid we're on.
-    const dayLabel = eid.kind === 'adha' && eid.day > 1 ? ` · Day ${eid.day}` : '';
+    const dayLabel = eid.kind === 'adha' && eid.day > 1 ? t('eidCard.dayN', { n: eid.day }) : '';
 
     return (
         <Animated.View entering={FadeInDown.duration(500)} style={styles.wrap}>
@@ -70,12 +71,12 @@ export function EidCard() {
                         </TouchableOpacity>
                     </View>
 
-                    <Text style={styles.eidMubarak}>Eid Mubarak</Text>
+                    <Text style={styles.eidMubarak}>{t('eidCard.eidMubarak')}</Text>
 
                     <View style={styles.takbeerWrap}>
                         <Text style={styles.arabic}>اللهُ أَكْبَر</Text>
                         <Text style={styles.transliteration}>taqabbal Allahu minna wa minkum</Text>
-                        <Text style={styles.meaning}>"May Allah accept it from us and from you."</Text>
+                        <Text style={styles.meaning}>{t('eidCard.meaning')}</Text>
                     </View>
                 </View>
             </View>

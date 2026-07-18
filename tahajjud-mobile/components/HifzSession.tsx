@@ -18,10 +18,12 @@ import {
     HIDE_FRACTION, getAllHifzData, recordReview, initAyah, getDueReviewsForSurah,
     getStreakData, recordPracticeDay, getDailyGoal, getTodayProgress, addTodayProgress,
     saveSession, loadSession, clearSession, getHardestAyahs, setAyahHifz,
-    nextIntervalDays, newLevel as computeNewLevel,
+    nextIntervalDays, previewIntervalDays, newLevel as computeNewLevel,
 } from '../utils/hifzStorage';
 import { haptic } from '../utils/haptic';
 import { scheduleHifzNotifications } from '../utils/hifzNotifications';
+import { track } from '../utils/analytics';
+import { t } from '../utils/i18n';
 import Animated, { FadeInDown, FadeInUp } from 'react-native-reanimated';
 
 const AUDIO_CACHE_DIR = FileSystem.documentDirectory + 'hifz_audio/';
@@ -757,6 +759,7 @@ export function HifzSession({ surahNumber, surahName, surahNameTranslation, tota
             };
             setUndoAvailable(true);
             await recordReview(surahNumber, currentItem.rateIndex + 1, rating);
+            track('hifz_rating', { rating, surah: surahNumber });
             const updatedHifz = await getAllHifzData();
             setHifzData(updatedHifz);
             // Check for mastery (first time reaching level 5)
@@ -765,6 +768,7 @@ export function HifzSession({ surahNumber, surahName, surahNameTranslation, tota
                 setMasteredAyahNum(currentItem.rateIndex + 1);
                 setMasteryVisible(true);
                 setTimeout(() => setMasteryVisible(false), 2500);
+                track('hifz_ayah_mastered', { surah: surahNumber, ayah: currentItem.rateIndex + 1 });
             }
         } else {
             // Accumulation — still allow undo of queue position (no storage change)
@@ -814,6 +818,11 @@ export function HifzSession({ surahNumber, surahName, surahNameTranslation, tota
             undoRef.current = null;
             getAllHifzData().then(all => scheduleHifzNotifications(all)).catch(() => {});
             setSessionState('summary');
+            track('hifz_session_completed', {
+                surah: surahNumber,
+                ayahs_reviewed: newResults.length,
+                forgot_count: newResults.filter(r => r.rating === 'forgot').length,
+            });
             return;
         }
 
@@ -945,9 +954,9 @@ export function HifzSession({ surahNumber, surahName, surahNameTranslation, tota
         const nextReviewText = nextReviewDate
             ? (() => {
                 const diff = Math.ceil((nextReviewDate.getTime() - Date.now()) / (1000 * 60 * 60 * 24));
-                if (diff <= 0) return 'today';
-                if (diff === 1) return 'tomorrow';
-                return `in ${diff} days`;
+                if (diff <= 0) return t('tracker.today');
+                if (diff === 1) return t('hifz.tomorrow');
+                return t('hifz.inNDays', { n: diff });
             })()
             : null;
 
@@ -958,34 +967,34 @@ export function HifzSession({ surahNumber, surahName, surahNameTranslation, tota
                     <View style={[styles.streakCard, { borderColor: streakData.currentStreak > 0 ? '#f9741655' : 'rgba(255,255,255,0.08)' }]}>
                         <Flame color={streakData.currentStreak > 0 ? '#f97316' : '#475569'} size={20} />
                         <Text style={[styles.streakNum, { color: streakData.currentStreak > 0 ? '#f97316' : '#475569' }]}>{streakData.currentStreak}</Text>
-                        <Text style={styles.streakLabel}>day streak</Text>
+                        <Text style={styles.streakLabel}>{t('hifz.dayStreak')}</Text>
                     </View>
                     <View style={[styles.goalCard, { borderColor: goalDone ? '#22c55e55' : 'rgba(255,255,255,0.08)' }]}>
                         <Target color={goalDone ? '#22c55e' : '#94a3b8'} size={20} />
                         <Text style={[styles.streakNum, { color: goalDone ? '#22c55e' : '#f8fafc' }]}>{todayProgress}/{dailyGoal}</Text>
-                        <Text style={styles.streakLabel}>{goalDone ? 'goal done!' : 'today'}</Text>
+                        <Text style={styles.streakLabel}>{goalDone ? t('hifz.goalDone') : t('tracker.today')}</Text>
                     </View>
                 </Animated.View>
 
                 {/* Progress */}
                 <Animated.View entering={FadeInDown.duration(600)} style={styles.progressCard}>
                     <Brain color={colors.accent} size={28} />
-                    <Text style={[styles.setupTitle, { color: colors.primaryText }]}>Hifz Mode</Text>
+                    <Text style={[styles.setupTitle, { color: colors.primaryText }]}>{t('hifz.title')}</Text>
                     <Text style={styles.setupSubtitle}>{surahName} · {surahNameTranslation}</Text>
                     <View style={styles.statsRow}>
                         <View style={styles.statBlock}>
                             <Text style={[styles.statNum, { color: colors.accent }]}>{startedCount}</Text>
-                            <Text style={styles.statLabel}>Learning</Text>
+                            <Text style={styles.statLabel}>{t('hifz.statLearning')}</Text>
                         </View>
                         <View style={styles.statDivider} />
                         <View style={styles.statBlock}>
                             <Text style={[styles.statNum, { color: '#22c55e' }]}>{masteredCount}</Text>
-                            <Text style={styles.statLabel}>Mastered</Text>
+                            <Text style={styles.statLabel}>{t('hifz.statMastered')}</Text>
                         </View>
                         <View style={styles.statDivider} />
                         <View style={styles.statBlock}>
                             <Text style={[styles.statNum, { color: '#94a3b8' }]}>{totalAyahs}</Text>
-                            <Text style={styles.statLabel}>Total</Text>
+                            <Text style={styles.statLabel}>{t('hifz.statTotal')}</Text>
                         </View>
                     </View>
                 </Animated.View>
@@ -998,9 +1007,9 @@ export function HifzSession({ surahNumber, surahName, surahNameTranslation, tota
                             onPress={() => setHeatmapExpanded(v => !v)}
                             activeOpacity={0.7}
                         >
-                            <Text style={styles.heatmapTitle}>SURAH MAP</Text>
+                            <Text style={styles.heatmapTitle}>{t('hifz.surahMapUpper')}</Text>
                             <View style={styles.heatmapHeaderRight}>
-                                <Text style={styles.heatmapSummary}>{masteredCount}/{totalAyahs} mastered</Text>
+                                <Text style={styles.heatmapSummary}>{t('hifz.masteredOfTotal', { mastered: masteredCount, total: totalAyahs })}</Text>
                                 <ChevronRight
                                     color="#475569"
                                     size={14}
@@ -1012,10 +1021,10 @@ export function HifzSession({ surahNumber, surahName, surahNameTranslation, tota
                             <>
                                 <View style={styles.heatmapLegend}>
                                     {[
-                                        { color: 'rgba(34,197,94,0.15)', label: 'New' },
-                                        { color: 'rgba(34,197,94,0.32)', label: 'Learning' },
-                                        { color: 'rgba(34,197,94,0.58)', label: 'Strong' },
-                                        { color: 'rgba(34,197,94,0.9)', label: 'Mastered' },
+                                        { color: 'rgba(34,197,94,0.15)', label: t('hifz.legendNew') },
+                                        { color: 'rgba(34,197,94,0.32)', label: t('hifz.legendLearning') },
+                                        { color: 'rgba(34,197,94,0.58)', label: t('hifz.legendStrong') },
+                                        { color: 'rgba(34,197,94,0.9)', label: t('hifz.legendMastered') },
                                     ].map(l => (
                                         <View key={l.label} style={styles.legendItem}>
                                             <View style={[styles.legendDot, { backgroundColor: l.color }]} />
@@ -1044,8 +1053,8 @@ export function HifzSession({ surahNumber, surahName, surahNameTranslation, tota
                     <Animated.View entering={FadeInDown.duration(500)} style={styles.caughtUpCard}>
                         <Text style={styles.caughtUpEmoji}>✅</Text>
                         <View style={{ flex: 1 }}>
-                            <Text style={styles.caughtUpTitle}>All caught up!</Text>
-                            <Text style={styles.caughtUpSub}>Next review {nextReviewText}</Text>
+                            <Text style={styles.caughtUpTitle}>{t('hifz.allCaughtUp')}</Text>
+                            <Text style={styles.caughtUpSub}>{t('hifz.nextReview', { text: nextReviewText || '' })}</Text>
                         </View>
                     </Animated.View>
                 )}
@@ -1061,10 +1070,13 @@ export function HifzSession({ surahNumber, surahName, surahNameTranslation, tota
                                 <SkipBack color="#f97316" size={22} />
                             </View>
                             <View style={{ flex: 1 }}>
-                                <Text style={[styles.actionTitle, { color: colors.primaryText }]}>Resume Session</Text>
+                                <Text style={[styles.actionTitle, { color: colors.primaryText }]}>{t('hifz.resumeSession')}</Text>
                                 <Text style={styles.actionSub}>
-                                    {savedSession.queuePos}/{savedSession.queue.length} items · saved{' '}
-                                    {new Date(savedSession.savedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                    {t('hifz.resumeSub', {
+                                        pos: savedSession.queuePos,
+                                        total: savedSession.queue.length,
+                                        time: new Date(savedSession.savedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+                                    })}
                                 </Text>
                             </View>
                             <ChevronRight color="#f97316" size={20} />
@@ -1080,8 +1092,8 @@ export function HifzSession({ surahNumber, surahName, surahNameTranslation, tota
                                 <RotateCcw color={colors.accent} size={22} />
                             </View>
                             <View style={{ flex: 1 }}>
-                                <Text style={[styles.actionTitle, { color: colors.primaryText }]}>Review Due</Text>
-                                <Text style={styles.actionSub}>{dueReviews.length} ayah{dueReviews.length !== 1 ? 's' : ''} ready for review</Text>
+                                <Text style={[styles.actionTitle, { color: colors.primaryText }]}>{t('hifz.reviewDue')}</Text>
+                                <Text style={styles.actionSub}>{t('hifz.ayahsReadyForReview', { n: dueReviews.length })}</Text>
                             </View>
                             <ChevronRight color="#475569" size={20} />
                         </TouchableOpacity>
@@ -1096,8 +1108,8 @@ export function HifzSession({ surahNumber, surahName, surahNameTranslation, tota
                                 <Play color="#94a3b8" size={22} />
                             </View>
                             <View style={{ flex: 1 }}>
-                                <Text style={[styles.actionTitle, { color: colors.primaryText }]}>Practice All</Text>
-                                <Text style={styles.actionSub}>Run through all {startedCount} ayah{startedCount !== 1 ? 's' : ''} regardless of schedule</Text>
+                                <Text style={[styles.actionTitle, { color: colors.primaryText }]}>{t('hifz.practiceAll')}</Text>
+                                <Text style={styles.actionSub}>{t('hifz.practiceAllSub', { n: startedCount })}</Text>
                             </View>
                             <ChevronRight color="#475569" size={20} />
                         </TouchableOpacity>
@@ -1107,15 +1119,15 @@ export function HifzSession({ surahNumber, surahName, surahNameTranslation, tota
                 {/* Hardest ayahs */}
                 {hardestAyahs.length > 0 && (
                     <Animated.View entering={FadeInDown.duration(700).delay(150)} style={styles.hardestCard}>
-                        <Text style={styles.heatmapTitle}>HARDEST AYAHS</Text>
+                        <Text style={styles.heatmapTitle}>{t('hifz.hardestAyahsUpper')}</Text>
                         {hardestAyahs.map((a, idx) => (
                             <View key={a.ayahNumber} style={styles.hardestRow}>
                                 <View style={styles.hardestNum}>
                                     <Text style={styles.hardestNumText}>{a.ayahNumber}</Text>
                                 </View>
                                 <View style={{ flex: 1 }}>
-                                    <Text style={styles.hardestLabel}>Ayah {a.ayahNumber}</Text>
-                                    <Text style={styles.hardestSub}>{a.forgotCount} forgot · L{a.level} · {a.reviewCount} reviews</Text>
+                                    <Text style={styles.hardestLabel}>{t('hifz.ayahNum', { n: a.ayahNumber })}</Text>
+                                    <Text style={styles.hardestSub}>{t('hifz.hardestStatLine', { forgot: a.forgotCount, level: a.level, reviews: a.reviewCount })}</Text>
                                 </View>
                                 <View style={[styles.hardestRankBadge, { backgroundColor: idx === 0 ? '#ef444430' : 'rgba(255,255,255,0.06)' }]}>
                                     <Text style={[styles.hardestRankText, { color: idx === 0 ? '#ef4444' : '#64748b' }]}>
@@ -1131,7 +1143,7 @@ export function HifzSession({ surahNumber, surahName, surahNameTranslation, tota
                                 launchSession(items);
                             }}
                         >
-                            <Text style={styles.hardestPracticeBtnText}>Practice Hardest Ayahs</Text>
+                            <Text style={styles.hardestPracticeBtnText}>{t('hifz.practiceHardestBtn')}</Text>
                         </TouchableOpacity>
                     </Animated.View>
                 )}
@@ -1143,8 +1155,8 @@ export function HifzSession({ surahNumber, surahName, surahNameTranslation, tota
                             <Plus color="#94a3b8" size={22} />
                         </View>
                         <View style={{ flex: 1 }}>
-                            <Text style={[styles.actionTitle, { color: colors.primaryText }]}>Add New Ayahs</Text>
-                            <Text style={styles.actionSub}>Select verses to begin memorising</Text>
+                            <Text style={[styles.actionTitle, { color: colors.primaryText }]}>{t('hifz.addNewAyahs')}</Text>
+                            <Text style={styles.actionSub}>{t('hifz.addNewAyahsSub')}</Text>
                         </View>
                         <ChevronRight color="#475569" size={20} />
                     </TouchableOpacity>
@@ -1180,7 +1192,7 @@ export function HifzSession({ surahNumber, surahName, surahNameTranslation, tota
                     {/* Speed + repeat controls */}
                     <View style={styles.settingsRow}>
                         <View style={styles.settingsGroup}>
-                            <Text style={styles.settingsLabel}>SPEED</Text>
+                            <Text style={styles.settingsLabel}>{t('hifz.speedLabel').toUpperCase()}</Text>
                             <View style={styles.settingsBtns}>
                                 {([0.75, 1, 1.25] as const).map(s => (
                                     <TouchableOpacity
@@ -1194,7 +1206,7 @@ export function HifzSession({ surahNumber, surahName, surahNameTranslation, tota
                             </View>
                         </View>
                         <View style={styles.settingsGroup}>
-                            <Text style={styles.settingsLabel}>REPEATS</Text>
+                            <Text style={styles.settingsLabel}>{t('hifz.repeatsLabel').toUpperCase()}</Text>
                             <View style={styles.settingsBtns}>
                                 {[1, 2, 3].map(r => (
                                     <TouchableOpacity
@@ -1208,7 +1220,7 @@ export function HifzSession({ surahNumber, surahName, surahNameTranslation, tota
                             </View>
                         </View>
                         <View style={styles.settingsGroup}>
-                            <Text style={styles.settingsLabel}>RECITE</Text>
+                            <Text style={styles.settingsLabel}>{t('hifz.reciteLabel').toUpperCase()}</Text>
                             <Switch
                                 value={recitationMode}
                                 onValueChange={v => {
@@ -1222,7 +1234,7 @@ export function HifzSession({ surahNumber, surahName, surahNameTranslation, tota
                             />
                         </View>
                         <View style={styles.settingsGroup}>
-                            <Text style={styles.settingsLabel}>AUTO</Text>
+                            <Text style={styles.settingsLabel}>{t('hifz.autoLabel').toUpperCase()}</Text>
                             <Switch
                                 value={autoPlay}
                                 onValueChange={v => { setAutoPlay(v); autoPlayRef.current = v; }}
@@ -1236,15 +1248,15 @@ export function HifzSession({ surahNumber, surahName, surahNameTranslation, tota
                     {/* Recitation timer settings — only visible when recitation mode is on */}
                     {recitationMode && (
                         <View style={styles.timerRow}>
-                            <Text style={styles.settingsLabel}>TIMER</Text>
-                            {(['auto', 15, 30, 45, 60] as const).map(t => (
+                            <Text style={styles.settingsLabel}>{t('hifz.timerLabel').toUpperCase()}</Text>
+                            {(['auto', 15, 30, 45, 60] as const).map(opt => (
                                 <TouchableOpacity
-                                    key={t.toString()}
-                                    style={[styles.timerBtn, recitationTimeSetting === t && { backgroundColor: '#f9731622', borderColor: '#f9741666' }]}
-                                    onPress={() => { setRecitationTimeSetting(t); recitationTimeSettingRef.current = t; }}
+                                    key={opt.toString()}
+                                    style={[styles.timerBtn, recitationTimeSetting === opt && { backgroundColor: '#f9731622', borderColor: '#f9741666' }]}
+                                    onPress={() => { setRecitationTimeSetting(opt); recitationTimeSettingRef.current = opt; }}
                                 >
-                                    <Text style={[styles.timerBtnText, recitationTimeSetting === t && { color: '#f97316' }]}>
-                                        {t === 'auto' ? 'Auto' : `${t}s`}
+                                    <Text style={[styles.timerBtnText, recitationTimeSetting === opt && { color: '#f97316' }]}>
+                                        {opt === 'auto' ? t('hifz.autoBtn') : `${opt}s`}
                                     </Text>
                                 </TouchableOpacity>
                             ))}
@@ -1257,14 +1269,14 @@ export function HifzSession({ surahNumber, surahName, surahNameTranslation, tota
                             style={[styles.displayToggle, showTranslit && { backgroundColor: '#7c3aed22', borderColor: '#7c3aed66' }]}
                             onPress={() => setShowTranslit(v => !v)}
                         >
-                            <Text style={[styles.displayToggleText, showTranslit && { color: '#a78bfa' }]}>Transliteration</Text>
+                            <Text style={[styles.displayToggleText, showTranslit && { color: '#a78bfa' }]}>{t('hifz.transliterationToggle')}</Text>
                         </TouchableOpacity>
                         <View style={[styles.displayToggle, { flex: 1, flexDirection: 'row', padding: 0, overflow: 'hidden' }, showTranslation && { backgroundColor: '#0369a122', borderColor: '#0369a166' }]}>
                             <TouchableOpacity
                                 style={{ flex: 1, paddingVertical: 7, alignItems: 'center', justifyContent: 'center' }}
                                 onPress={() => setShowTranslation(v => !v)}
                             >
-                                <Text style={[styles.displayToggleText, showTranslation && { color: '#38bdf8' }]}>Translation</Text>
+                                <Text style={[styles.displayToggleText, showTranslation && { color: '#38bdf8' }]}>{t('hifz.translationToggle')}</Text>
                             </TouchableOpacity>
                             <View style={{ width: 1, backgroundColor: 'rgba(255,255,255,0.08)' }} />
                             <TouchableOpacity
@@ -1280,13 +1292,13 @@ export function HifzSession({ surahNumber, surahName, surahNameTranslation, tota
                     <View style={styles.levelBadgeRow}>
                         <View style={[styles.levelBadge, { backgroundColor: level === 5 ? colors.accent + '33' : 'rgba(255,255,255,0.06)' }]}>
                             <Text style={[styles.levelBadgeText, { color: level === 5 ? colors.accent : '#94a3b8' }]}>
-                                {level === 5 ? 'MASTERED' : `LEVEL ${level}`}
+                                {level === 5 ? t('hifz.masteredBadge').toUpperCase() : t('hifz.levelBadge', { n: level }).toUpperCase()}
                             </Text>
                         </View>
                         <Text style={styles.ayahLabel}>
                             {currentItem.isAccumulation
-                                ? `Ayahs ${currentItem.ayahIndices.map(i => i + 1).join(' + ')}`
-                                : `Ayah ${currentItem.rateIndex + 1}`}
+                                ? t('hifz.ayahsGroupLabel', { list: currentItem.ayahIndices.map(i => i + 1).join(' + ') })
+                                : t('hifz.ayahNum', { n: currentItem.rateIndex + 1 })}
                         </Text>
                     </View>
 
@@ -1295,11 +1307,11 @@ export function HifzSession({ surahNumber, surahName, surahNameTranslation, tota
                         <Animated.View entering={FadeInDown.duration(400)} style={[styles.recitationBanner, { borderColor: '#22d3ee44' }]}>
                             <Mic color="#22d3ee" size={24} />
                             <View style={{ flex: 1 }}>
-                                <Text style={styles.recitationTitle}>Now Recite</Text>
-                                <Text style={styles.recitationSub}>Recite from memory — {recitationSecsLeft}s remaining</Text>
+                                <Text style={styles.recitationTitle}>{t('hifz.nowRecite')}</Text>
+                                <Text style={styles.recitationSub}>{t('hifz.reciteFromMemory', { n: recitationSecsLeft })}</Text>
                             </View>
                             <TouchableOpacity style={[styles.recitationDoneBtn, { backgroundColor: colors.accent }]} onPress={skipRecitation}>
-                                <Text style={styles.recitationDoneText}>Done</Text>
+                                <Text style={styles.recitationDoneText}>{t('btn.done')}</Text>
                             </TouchableOpacity>
                         </Animated.View>
                     )}
@@ -1329,7 +1341,7 @@ export function HifzSession({ surahNumber, surahName, surahNameTranslation, tota
                             <View key={ayahIdx} style={{ flexShrink: 0 }}>
                                 {currentItem.ayahIndices.length > 1 && (
                                     <Text style={[styles.groupAyahLabel, isRateAyah && { color: colors.accent }]}>
-                                        Ayah {ayahNum}{isRateAyah ? ' · practice' : ' · context'}
+                                        {t('hifz.ayahNum', { n: ayahNum })}{isRateAyah ? t('hifz.ayahPractice') : t('hifz.ayahContext')}
                                     </Text>
                                 )}
                                 <View style={[
@@ -1419,7 +1431,7 @@ export function HifzSession({ surahNumber, surahName, surahNameTranslation, tota
                     })}
 
                     {hideFraction > 0 && !revealed && !isReciting && (
-                        <Text style={styles.peekHint}>Tap covered words to reveal</Text>
+                        <Text style={styles.peekHint}>{t('hifz.tapToReveal')}</Text>
                     )}
 
                     {/* Audio controls */}
@@ -1450,15 +1462,15 @@ export function HifzSession({ surahNumber, surahName, surahNameTranslation, tota
                                     )}
                                     <Text style={[styles.audioBtnLabel, { color: isReciting ? '#334155' : colors.accent }]}>
                                         {isPlaying
-                                            ? (currentItem.ayahIndices.length > 1 ? `${playingGroupIdx + 1}/${currentItem.ayahIndices.length}` : 'Pause')
-                                            : 'Listen'}
+                                            ? (currentItem.ayahIndices.length > 1 ? `${playingGroupIdx + 1}/${currentItem.ayahIndices.length}` : t('hifz.pauseBtn'))
+                                            : t('hifz.listenBtn')}
                                     </Text>
                                 </TouchableOpacity>
 
                                 {hideFraction > 0 && !revealed && !isReciting && (
                                     <TouchableOpacity style={styles.revealBtn} onPress={() => setRevealed(true)}>
                                         <Eye color="#94a3b8" size={20} />
-                                        <Text style={styles.revealBtnLabel}>Reveal All</Text>
+                                        <Text style={styles.revealBtnLabel}>{t('hifz.revealAll')}</Text>
                                     </TouchableOpacity>
                                 )}
 
@@ -1466,7 +1478,7 @@ export function HifzSession({ surahNumber, surahName, surahNameTranslation, tota
                                 {undoAvailable && (
                                     <TouchableOpacity style={styles.undoBtn} onPress={handleUndo}>
                                         <Undo2 color="#64748b" size={18} />
-                                        <Text style={styles.undoBtnLabel}>Undo</Text>
+                                        <Text style={styles.undoBtnLabel}>{t('hifz.undoBtn')}</Text>
                                     </TouchableOpacity>
                                 )}
                             </View>
@@ -1478,11 +1490,11 @@ export function HifzSession({ surahNumber, surahName, surahNameTranslation, tota
                         <Animated.View entering={FadeInDown.duration(350)} style={styles.forgotBanner}>
                             <Text style={styles.forgotBannerEmoji}>😔</Text>
                             <View style={{ flex: 1 }}>
-                                <Text style={styles.forgotBannerTitle}>Listen again carefully</Text>
+                                <Text style={styles.forgotBannerTitle}>{t('hifz.listenAgainCarefully')}</Text>
                                 <Text style={styles.forgotBannerSub}>
                                     {forgotCount >= 3
-                                        ? 'Keep listening — you can move on when ready'
-                                        : `Attempt ${forgotCount + 1} · follow each word as it plays`}
+                                        ? t('hifz.keepListening')
+                                        : t('hifz.attemptN', { n: forgotCount + 1 })}
                                 </Text>
                             </View>
                         </Animated.View>
@@ -1493,15 +1505,20 @@ export function HifzSession({ surahNumber, surahName, surahNameTranslation, tota
                         <Animated.View entering={FadeInUp.duration(300)} style={styles.ratingSection}>
                             <Text style={styles.ratingLabel}>
                                 {forgotCount > 0
-                                    ? 'Did you get it this time?'
-                                    : currentItem.isAccumulation ? 'How did the full group feel?' : 'How did you do?'}
+                                    ? t('hifz.didYouGetIt')
+                                    : currentItem.isAccumulation ? t('hifz.howDidGroupFeel') : t('hifz.howDidYouDo')}
                             </Text>
                             <View style={styles.ratingRow}>
                                 {(['forgot', 'hard', 'good', 'easy'] as HifzRating[]).map(r => {
-                                    const days = nextIntervalDays(level, r);
+                                    // Preview the real adaptive interval for THIS ayah (its own
+                                    // ease/interval), not a fixed per-level table.
+                                    const days = previewIntervalDays(currentHifz, r);
                                     const nextLvl = computeNewLevel(level, r);
                                     const lvlDelta = nextLvl - level;
-                                    const intervalLabel = days === 1 ? 'tomorrow' : `${days}d`;
+                                    const intervalLabel = days === 1 ? t('hifz.tomorrow')
+                                        : days < 7 ? `${days}d`
+                                        : days < 30 ? `${Math.round(days / 7)}w`
+                                        : `${Math.round(days / 30)}mo`;
                                     const levelLabel = lvlDelta < 0 ? `▼ L${nextLvl}` : lvlDelta === 0 ? `L${nextLvl}` : `▲ L${nextLvl}`;
                                     return (
                                         <TouchableOpacity
@@ -1511,7 +1528,7 @@ export function HifzSession({ surahNumber, surahName, surahNameTranslation, tota
                                         >
                                             <Text style={styles.ratingEmoji}>{ratingEmoji(r)}</Text>
                                             <Text style={[styles.ratingBtnText, { color: ratingColor(r) }]}>
-                                                {r.charAt(0).toUpperCase() + r.slice(1)}
+                                                {ratingLabel(r)}
                                             </Text>
                                             <Text style={[styles.ratingInterval, { color: ratingColor(r) + 'aa' }]}>{intervalLabel}</Text>
                                             <Text style={[styles.ratingLevelHint, { color: ratingColor(r) + '77' }]}>{levelLabel}</Text>
@@ -1522,12 +1539,12 @@ export function HifzSession({ surahNumber, surahName, surahNameTranslation, tota
                             {/* After 3 forgots let them bail out */}
                             {forgotCount >= 3 && (
                                 <TouchableOpacity style={styles.forceAdvanceBtn} onPress={handleForceAdvance}>
-                                    <Text style={styles.forceAdvanceText}>Move on for now →</Text>
+                                    <Text style={styles.forceAdvanceText}>{t('hifz.moveOnForNow')}</Text>
                                 </TouchableOpacity>
                             )}
                             {sessionResults.filter(r => r.rating === 'forgot').length > 0 && forgotCount === 0 && (
                                 <Text style={styles.requeueNote}>
-                                    {sessionResults.filter(r => r.rating === 'forgot').length} ayah{sessionResults.filter(r => r.rating === 'forgot').length !== 1 ? 's' : ''} re-queued
+                                    {t('hifz.ayahsRequeued', { n: sessionResults.filter(r => r.rating === 'forgot').length })}
                                 </Text>
                             )}
                         </Animated.View>
@@ -1536,7 +1553,7 @@ export function HifzSession({ surahNumber, surahName, surahNameTranslation, tota
                     {/* Before rating phase: show "skip to rate" if not in reciting mode */}
                     {!isRatingPhase && !isReciting && (
                         <TouchableOpacity style={styles.skipToRateBtn} onPress={() => setPracticePhase('rating')}>
-                            <Text style={styles.skipToRateText}>Skip to rating →</Text>
+                            <Text style={styles.skipToRateText}>{t('hifz.skipToRating')}</Text>
                         </TouchableOpacity>
                     )}
                 </ScrollView>
@@ -1546,8 +1563,8 @@ export function HifzSession({ surahNumber, surahName, surahNameTranslation, tota
                     <Animated.View entering={FadeInUp.duration(400)} style={styles.masteryOverlay}>
                         <Text style={styles.masteryEmoji}>⭐</Text>
                         <View style={{ flex: 1 }}>
-                            <Text style={styles.masteryTitle}>Mastered!</Text>
-                            <Text style={styles.masterySub}>Ayah {masteredAyahNum} is now fully memorised</Text>
+                            <Text style={styles.masteryTitle}>{t('hifz.masteredExclaim')}</Text>
+                            <Text style={styles.masterySub}>{t('hifz.ayahFullyMemorised', { n: masteredAyahNum })}</Text>
                         </View>
                     </Animated.View>
                 )}
@@ -1573,20 +1590,20 @@ export function HifzSession({ surahNumber, surahName, surahNameTranslation, tota
                 <Animated.View entering={FadeInUp.duration(600)} style={styles.summaryCard}>
                     <Award color={score >= 70 ? colors.accent : '#94a3b8'} size={48} />
                     <Text style={[styles.summaryScore, { color: score >= 70 ? colors.accent : '#f8fafc' }]}>{score}%</Text>
-                    <Text style={styles.summaryTitle}>Session Complete</Text>
-                    <Text style={styles.summarySubtitle}>{sessionResults.length} review{sessionResults.length !== 1 ? 's' : ''}</Text>
+                    <Text style={styles.summaryTitle}>{t('hifz.sessionComplete')}</Text>
+                    <Text style={styles.summarySubtitle}>{t('hifz.reviewsCount', { n: sessionResults.length })}</Text>
                 </Animated.View>
 
                 <Animated.View entering={FadeInUp.duration(600).delay(80)} style={styles.streakRow}>
                     <View style={[styles.streakCard, { borderColor: '#f9741655' }]}>
                         <Flame color="#f97316" size={20} />
                         <Text style={[styles.streakNum, { color: '#f97316' }]}>{streakData.currentStreak}</Text>
-                        <Text style={styles.streakLabel}>day streak</Text>
+                        <Text style={styles.streakLabel}>{t('hifz.dayStreak')}</Text>
                     </View>
                     <View style={[styles.goalCard, { borderColor: goalDone ? '#22c55e55' : 'rgba(255,255,255,0.08)' }]}>
                         <Target color={goalDone ? '#22c55e' : '#94a3b8'} size={20} />
                         <Text style={[styles.streakNum, { color: goalDone ? '#22c55e' : '#f8fafc' }]}>{todayProgress}/{dailyGoal}</Text>
-                        <Text style={styles.streakLabel}>{goalDone ? 'goal done!' : 'today'}</Text>
+                        <Text style={styles.streakLabel}>{goalDone ? t('hifz.goalDone') : t('tracker.today')}</Text>
                     </View>
                 </Animated.View>
 
@@ -1594,7 +1611,7 @@ export function HifzSession({ surahNumber, surahName, surahNameTranslation, tota
                     {(['forgot', 'hard', 'good', 'easy'] as HifzRating[]).map(r => (
                         <View key={r} style={styles.summaryStatRow}>
                             <Text style={styles.summaryEmoji}>{ratingEmoji(r)}</Text>
-                            <Text style={[styles.summaryStatLabel, { color: ratingColor(r) }]}>{r.charAt(0).toUpperCase() + r.slice(1)}</Text>
+                            <Text style={[styles.summaryStatLabel, { color: ratingColor(r) }]}>{ratingLabel(r)}</Text>
                             <Text style={styles.summaryStatCount}>{counts[r as HifzRating]}</Text>
                         </View>
                     ))}
@@ -1602,10 +1619,10 @@ export function HifzSession({ surahNumber, surahName, surahNameTranslation, tota
 
                 <Animated.View entering={FadeInUp.duration(600).delay(300)} style={{ gap: 12 }}>
                     <TouchableOpacity style={[styles.summaryBtn, { backgroundColor: colors.accent }]} onPress={() => { loadData(); setSessionState('setup'); }}>
-                        <Text style={styles.summaryBtnText}>Continue</Text>
+                        <Text style={styles.summaryBtnText}>{t('btn.continue')}</Text>
                     </TouchableOpacity>
                     <TouchableOpacity style={styles.summaryBtnOutline} onPress={onClose}>
-                        <Text style={styles.summaryBtnOutlineText}>Close</Text>
+                        <Text style={styles.summaryBtnOutlineText}>{t('btn.close')}</Text>
                     </TouchableOpacity>
                 </Animated.View>
             </ScrollView>
@@ -1620,33 +1637,30 @@ export function HifzSession({ surahNumber, surahName, surahNameTranslation, tota
                 <View style={[styles.modalContent, { paddingBottom: 0 }]}>
                     <View style={styles.modalHeader}>
                         <Brain color={colors.accent} size={20} />
-                        <Text style={[styles.modalTitle, { flex: 1, marginLeft: 10 }]}>How Hifz Mode Works</Text>
+                        <Text style={[styles.modalTitle, { flex: 1, marginLeft: 10 }]}>{t('hifz.guideTitle')}</Text>
                         <TouchableOpacity onPress={async () => {
                             await AsyncStorage.setItem('hifz_guide_seen_v1', '1');
                             setGuideVisible(false);
                         }}>
-                            <Text style={[styles.modalClose, { color: colors.accent }]}>Got it</Text>
+                            <Text style={[styles.modalClose, { color: colors.accent }]}>{t('hifz.guideGotIt')}</Text>
                         </TouchableOpacity>
                     </View>
                     <ScrollView contentContainerStyle={{ padding: 20, paddingBottom: 60, gap: 16 }} showsVerticalScrollIndicator={false}>
 
                         {/* What is it */}
                         <View style={[styles.guideSection, { backgroundColor: colors.accent + '10', borderColor: colors.accent + '30', borderWidth: 1 }]}>
-                            <Text style={[styles.guideSectionTitle, { color: colors.accent }]}>🧠  What is Hifz Mode?</Text>
-                            <Text style={styles.guideBody}>
-                                Hifz Mode helps you memorise the Quran using <Text style={styles.guideHighlight}>spaced repetition</Text> — a scientifically proven method that shows you each ayah at exactly the right time before you forget it.{'\n\n'}
-                                The more you know an ayah, the less often you see it. The less you know it, the more it comes back. Over time every ayah gets locked into long-term memory.
-                            </Text>
+                            <Text style={[styles.guideSectionTitle, { color: colors.accent }]}>{t('hifz.guideWhatIsTitle')}</Text>
+                            <Text style={styles.guideBody}>{t('hifz.guideWhatIsBody')}</Text>
                         </View>
 
                         {/* Quick start */}
                         <View style={styles.guideSection}>
-                            <Text style={styles.guideSectionTitle}>🚀  Quick Start</Text>
+                            <Text style={styles.guideSectionTitle}>{t('hifz.guideQuickStartTitle')}</Text>
                             {[
-                                { n: '1', text: 'Open a surah from the Hifz tab', color: colors.accent },
-                                { n: '2', text: 'Tap Add New Ayahs → select verses → Start', color: colors.accent },
-                                { n: '3', text: 'Listen to each ayah, recite it, rate yourself', color: colors.accent },
-                                { n: '4', text: 'Come back when the red badge appears — those are your due reviews', color: '#ef4444' },
+                                { n: '1', text: t('hifz.quickStep1'), color: colors.accent },
+                                { n: '2', text: t('hifz.quickStep2'), color: colors.accent },
+                                { n: '3', text: t('hifz.quickStep3'), color: colors.accent },
+                                { n: '4', text: t('hifz.quickStep4'), color: '#ef4444' },
                             ].map(s => (
                                 <View key={s.n} style={styles.guideStepRow}>
                                     <View style={[styles.guideStepNum, { borderColor: s.color + '66', backgroundColor: s.color + '18' }]}>
@@ -1659,19 +1673,15 @@ export function HifzSession({ surahNumber, surahName, surahNameTranslation, tota
 
                         {/* 3 phases */}
                         <View style={styles.guideSection}>
-                            <Text style={styles.guideSectionTitle}>🔄  The 3 Practice Phases</Text>
+                            <Text style={styles.guideSectionTitle}>{t('hifz.guidePhasesTitle')}</Text>
 
                             <View style={styles.guidePhaseRow}>
                                 <View style={[styles.guidePhaseDot, { backgroundColor: '#22d3ee22', borderColor: '#22d3ee55' }]}>
                                     <Text style={[styles.guidePhaseNum, { color: '#22d3ee' }]}>1</Text>
                                 </View>
                                 <View style={{ flex: 1 }}>
-                                    <Text style={[styles.guidePhaseTitle, { color: '#22d3ee' }]}>Listen</Text>
-                                    <Text style={styles.guidePhaseBody}>
-                                        Tap <Text style={styles.guideHighlight}>Listen</Text> to hear the ayah. Words highlight as they're recited and each word's meaning appears below.{'\n'}
-                                        Tap the progress bar to skip to any point. Use <Text style={styles.guideHighlight}>Speed</Text> (0.75×–1.25×) and <Text style={styles.guideHighlight}>Repeats</Text> (1–3×) to control playback.{'\n'}
-                                        Turn on <Text style={styles.guideHighlight}>AUTO</Text> to automatically start the next ayah after rating.
-                                    </Text>
+                                    <Text style={[styles.guidePhaseTitle, { color: '#22d3ee' }]}>{t('hifz.listenBtn')}</Text>
+                                    <Text style={styles.guidePhaseBody}>{t('hifz.guideListenBody')}</Text>
                                 </View>
                             </View>
 
@@ -1680,11 +1690,8 @@ export function HifzSession({ surahNumber, surahName, surahNameTranslation, tota
                                     <Text style={[styles.guidePhaseNum, { color: '#f97416' }]}>2</Text>
                                 </View>
                                 <View style={{ flex: 1 }}>
-                                    <Text style={[styles.guidePhaseTitle, { color: '#f97416' }]}>Recite</Text>
-                                    <Text style={styles.guidePhaseBody}>
-                                        When <Text style={styles.guideHighlight}>Recite</Text> is on, after listening the text goes blank and a timer starts — say the ayah aloud from memory, then tap <Text style={styles.guideHighlight}>Done</Text>.{'\n'}
-                                        The timer auto-scales to the ayah's length, or set it manually: <Text style={styles.guideHighlight}>Auto / 15s / 30s / 45s / 60s</Text>.
-                                    </Text>
+                                    <Text style={[styles.guidePhaseTitle, { color: '#f97416' }]}>{t('hifz.recitePhaseTitle')}</Text>
+                                    <Text style={styles.guidePhaseBody}>{t('hifz.guideReciteBody')}</Text>
                                 </View>
                             </View>
 
@@ -1693,14 +1700,14 @@ export function HifzSession({ surahNumber, surahName, surahNameTranslation, tota
                                     <Text style={[styles.guidePhaseNum, { color: '#22c55e' }]}>3</Text>
                                 </View>
                                 <View style={{ flex: 1 }}>
-                                    <Text style={[styles.guidePhaseTitle, { color: '#22c55e' }]}>Rate Yourself</Text>
-                                    <Text style={styles.guidePhaseBody}>Be honest — each button shows your next review date and new level before you tap:</Text>
+                                    <Text style={[styles.guidePhaseTitle, { color: '#22c55e' }]}>{t('hifz.rateYourselfTitle')}</Text>
+                                    <Text style={styles.guidePhaseBody}>{t('hifz.rateYourselfIntro')}</Text>
                                     <View style={{ gap: 8, marginTop: 10 }}>
                                         {[
-                                            { emoji: '😔', label: 'Forgot', desc: 'Complete blank. Level drops, re-queued in this session and reviewed again tomorrow.', color: '#ef4444' },
-                                            { emoji: '😤', label: 'Hard', desc: 'Struggled but recalled it. Level stays, review tomorrow.', color: '#f97316' },
-                                            { emoji: '😊', label: 'Good', desc: 'Recalled well with some effort. Level +1, gap gets longer.', color: '#22d3ee' },
-                                            { emoji: '🌟', label: 'Easy', desc: 'Perfect recall, no hesitation. Level +2, much longer gap.', color: '#22c55e' },
+                                            { emoji: '😔', label: t('hifz.ratingForgot'), desc: t('hifz.ratingDescForgot'), color: '#ef4444' },
+                                            { emoji: '😤', label: t('hifz.ratingHard'), desc: t('hifz.ratingDescHard'), color: '#f97316' },
+                                            { emoji: '😊', label: t('hifz.ratingGood'), desc: t('hifz.ratingDescGood'), color: '#22d3ee' },
+                                            { emoji: '🌟', label: t('hifz.ratingEasy'), desc: t('hifz.ratingDescEasy'), color: '#22c55e' },
                                         ].map(r => (
                                             <View key={r.label} style={[styles.guideRatingRow, { backgroundColor: r.color + '10', borderRadius: 10, padding: 8 }]}>
                                                 <Text style={{ fontSize: 20, width: 28 }}>{r.emoji}</Text>
@@ -1712,7 +1719,7 @@ export function HifzSession({ surahNumber, surahName, surahNameTranslation, tota
                                         ))}
                                     </View>
                                     <Text style={[styles.guidePhaseBody, { marginTop: 10, color: '#475569' }]}>
-                                        Mis-tapped? The <Text style={styles.guideHighlight}>Undo</Text> button appears after each rating to reverse it.
+                                        {t('hifz.undoExplain')}
                                     </Text>
                                 </View>
                             </View>
@@ -1720,38 +1727,28 @@ export function HifzSession({ surahNumber, surahName, surahNameTranslation, tota
 
                         {/* Forgot re-listen */}
                         <View style={styles.guideSection}>
-                            <Text style={styles.guideSectionTitle}>😔  When You Forget</Text>
-                            <Text style={styles.guideBody}>
-                                If you tap <Text style={styles.guideHighlight}>Forgot</Text>, the ayah doesn't move on — it plays again automatically so you hear it before your next attempt. This repeats until you've recalled it.{'\n\n'}
-                                After <Text style={styles.guideHighlight}>3 forgots</Text> a "Move on for now" button appears so you're never stuck. Forgotten ayahs are re-queued at the end of the session and come back tomorrow.
-                            </Text>
+                            <Text style={styles.guideSectionTitle}>{t('hifz.guideForgetTitle')}</Text>
+                            <Text style={styles.guideBody}>{t('hifz.guideForgetBody')}</Text>
                         </View>
 
                         {/* Progressive mode */}
                         <View style={styles.guideSection}>
-                            <Text style={styles.guideSectionTitle}>📈  Progressive Mode</Text>
-                            <Text style={styles.guideBody}>
-                                When adding new ayahs, <Text style={styles.guideHighlight}>Progressive Mode</Text> (recommended) builds a chain:{'\n\n'}
-                                Learn Ayah 1 → Learn Ayah 2 → Recite 1+2 together → Learn Ayah 3 → Recite 1+2+3...{'\n\n'}
-                                This way each new ayah connects to everything before it, which is how Quran memorisation traditionally works.
-                            </Text>
+                            <Text style={styles.guideSectionTitle}>{t('hifz.guideProgressiveTitle')}</Text>
+                            <Text style={styles.guideBody}>{t('hifz.guideProgressiveBody')}</Text>
                         </View>
 
                         {/* Hidden words */}
                         <View style={styles.guideSection}>
-                            <Text style={styles.guideSectionTitle}>👁  Hidden Words & Levels</Text>
-                            <Text style={styles.guideBody}>
-                                As your level rises, more words are hidden (shown as <Text style={[styles.guideHighlight, { letterSpacing: 2 }]}>▁▁▁</Text>). This progressively reduces your reliance on reading — at Level 5, the entire ayah is blank.{'\n\n'}
-                                <Text style={styles.guideHighlight}>Tap any hidden word</Text> to peek at it for 1.5s. Tap <Text style={styles.guideHighlight}>Reveal All</Text> to show everything.
-                            </Text>
+                            <Text style={styles.guideSectionTitle}>{t('hifz.guideHiddenWordsTitle')}</Text>
+                            <Text style={styles.guideBody}>{t('hifz.guideHiddenWordsBody')}</Text>
                             <View style={styles.guideLevelGrid}>
                                 {[
-                                    { level: 0, label: 'All visible', color: 'rgba(34,211,238,0.25)' },
-                                    { level: 1, label: '20% hidden', color: 'rgba(239,68,68,0.35)' },
-                                    { level: 2, label: '40% hidden', color: 'rgba(239,68,68,0.5)' },
-                                    { level: 3, label: '60% hidden', color: 'rgba(245,158,11,0.45)' },
-                                    { level: 4, label: '80% hidden', color: 'rgba(245,158,11,0.6)' },
-                                    { level: 5, label: 'All hidden', color: 'rgba(34,197,94,0.5)' },
+                                    { level: 0, label: t('hifz.levelAllVisible'), color: 'rgba(34,211,238,0.25)' },
+                                    { level: 1, label: t('hifz.level20Hidden'), color: 'rgba(239,68,68,0.35)' },
+                                    { level: 2, label: t('hifz.level40Hidden'), color: 'rgba(239,68,68,0.5)' },
+                                    { level: 3, label: t('hifz.level60Hidden'), color: 'rgba(245,158,11,0.45)' },
+                                    { level: 4, label: t('hifz.level80Hidden'), color: 'rgba(245,158,11,0.6)' },
+                                    { level: 5, label: t('hifz.levelAllHidden'), color: 'rgba(34,197,94,0.5)' },
                                 ].map(l => (
                                     <View key={l.level} style={[styles.guideLevelCell, { backgroundColor: l.color }]}>
                                         <Text style={styles.guideLevelNum}>L{l.level}</Text>
@@ -1763,16 +1760,16 @@ export function HifzSession({ surahNumber, surahName, surahNameTranslation, tota
 
                         {/* Non-Arabic speakers */}
                         <View style={styles.guideSection}>
-                            <Text style={styles.guideSectionTitle}>🔤  Can't Read Arabic?</Text>
-                            <Text style={styles.guideBody}>Two toggles make Hifz Mode fully accessible without Arabic:</Text>
+                            <Text style={styles.guideSectionTitle}>{t('hifz.guideArabicTitle')}</Text>
+                            <Text style={styles.guideBody}>{t('hifz.guideArabicIntro')}</Text>
                             <View style={{ gap: 10, marginTop: 8 }}>
                                 <View style={[styles.guidePhaseRow, { backgroundColor: '#7c3aed12', borderRadius: 12, padding: 10 }]}>
                                     <View style={[styles.guidePhaseDot, { backgroundColor: '#7c3aed22', borderColor: '#7c3aed55' }]}>
                                         <Text style={[styles.guidePhaseNum, { color: '#a78bfa' }]}>A</Text>
                                     </View>
                                     <View style={{ flex: 1 }}>
-                                        <Text style={[styles.guidePhaseTitle, { color: '#a78bfa' }]}>Translit</Text>
-                                        <Text style={styles.guidePhaseBody}>Shows romanized pronunciation below each word (e.g. <Text style={[styles.guideHighlight, { fontStyle: 'italic' }]}>bismillāh</Text>). Hidden words stay hidden here too.</Text>
+                                        <Text style={[styles.guidePhaseTitle, { color: '#a78bfa' }]}>{t('hifz.translitPhaseTitle')}</Text>
+                                        <Text style={styles.guidePhaseBody}>{t('hifz.translitDesc')}</Text>
                                     </View>
                                 </View>
                                 <View style={[styles.guidePhaseRow, { backgroundColor: '#0369a112', borderRadius: 12, padding: 10 }]}>
@@ -1780,8 +1777,8 @@ export function HifzSession({ surahNumber, surahName, surahNameTranslation, tota
                                         <Text style={[styles.guidePhaseNum, { color: '#38bdf8' }]}>EN</Text>
                                     </View>
                                     <View style={{ flex: 1 }}>
-                                        <Text style={[styles.guidePhaseTitle, { color: '#38bdf8' }]}>Translation</Text>
-                                        <Text style={styles.guidePhaseBody}>Shows the full English meaning of the ayah so you always understand what you're memorising.</Text>
+                                        <Text style={[styles.guidePhaseTitle, { color: '#38bdf8' }]}>{t('hifz.translationToggle')}</Text>
+                                        <Text style={styles.guidePhaseBody}>{t('hifz.translationDesc')}</Text>
                                     </View>
                                 </View>
                             </View>
@@ -1789,13 +1786,13 @@ export function HifzSession({ surahNumber, surahName, surahNameTranslation, tota
 
                         {/* Setup screen features */}
                         <View style={styles.guideSection}>
-                            <Text style={styles.guideSectionTitle}>📋  Setup Screen</Text>
+                            <Text style={styles.guideSectionTitle}>{t('hifz.guideSetupTitle')}</Text>
                             {[
-                                { icon: '🔔', title: 'Review Due', desc: 'Ayahs whose scheduled date has arrived. Always do these first.' },
-                                { icon: '▶️', title: 'Practice All', desc: 'Run through every ayah regardless of schedule — useful for a full revision.' },
-                                { icon: '😓', title: 'Hardest Ayahs', desc: 'Your top 5 most-forgotten ayahs with a quick-practice button. Great for targeted drilling.' },
-                                { icon: '⏸️', title: 'Resume Session', desc: 'If you exit mid-session and save, this card lets you pick up exactly where you left off.' },
-                                { icon: '🗺️', title: 'Surah Map', desc: 'A heatmap showing the level of every ayah. Tap to expand. Green = mastered, red = still learning.' },
+                                { icon: '🔔', title: t('hifz.reviewDue'), desc: t('hifz.featReviewDueDesc') },
+                                { icon: '▶️', title: t('hifz.practiceAll'), desc: t('hifz.featPracticeAllDesc') },
+                                { icon: '😓', title: t('hifz.featHardestAyahsTitle'), desc: t('hifz.featHardestAyahsDesc') },
+                                { icon: '⏸️', title: t('hifz.resumeSession'), desc: t('hifz.featResumeSessionDesc') },
+                                { icon: '🗺️', title: t('hifz.featSurahMapTitle'), desc: t('hifz.featSurahMapDesc') },
                             ].map(f => (
                                 <View key={f.title} style={styles.guideFeatureRow}>
                                     <Text style={{ fontSize: 18, width: 28 }}>{f.icon}</Text>
@@ -1809,22 +1806,14 @@ export function HifzSession({ surahNumber, surahName, surahNameTranslation, tota
 
                         {/* Streak + notifications */}
                         <View style={styles.guideSection}>
-                            <Text style={styles.guideSectionTitle}>🔥  Streaks & Notifications</Text>
-                            <Text style={styles.guideBody}>
-                                Complete at least one session daily to keep your streak alive. The default goal is <Text style={styles.guideHighlight}>5 reviews</Text> per day.{'\n\n'}
-                                The app schedules a <Text style={styles.guideHighlight}>notification at 9am</Text> on each day that reviews become due — so you never have to remember to check.
-                            </Text>
+                            <Text style={styles.guideSectionTitle}>{t('hifz.guideStreaksTitle')}</Text>
+                            <Text style={styles.guideBody}>{t('hifz.guideStreaksBody')}</Text>
                         </View>
 
                         {/* Tips */}
                         <View style={[styles.guideSection, { backgroundColor: colors.accent + '0e', borderColor: colors.accent + '33', borderWidth: 1 }]}>
-                            <Text style={[styles.guideSectionTitle, { color: colors.accent }]}>💡  Tips</Text>
-                            <Text style={styles.guideBody}>
-                                <Text style={styles.guideHighlight}>Beginners:</Text> Start with 3–5 ayahs in Progressive Mode. Don't try to do the whole surah at once.{'\n\n'}
-                                <Text style={styles.guideHighlight}>Non-Arabic:</Text> Turn on Translit + Translation. Focus on the sounds rather than the letters.{'\n\n'}
-                                <Text style={styles.guideHighlight}>Be honest:</Text> Always rate Forgot when you forget. The system only works if you're truthful — it will keep bringing it back until it sticks.{'\n\n'}
-                                <Text style={styles.guideHighlight}>Consistency beats intensity:</Text> 10 minutes every day will get you further than an hour once a week.
-                            </Text>
+                            <Text style={[styles.guideSectionTitle, { color: colors.accent }]}>{t('hifz.guideTipsTitle')}</Text>
+                            <Text style={styles.guideBody}>{t('hifz.guideTipsBody')}</Text>
                         </View>
 
                     </ScrollView>
@@ -1849,7 +1838,7 @@ export function HifzSession({ surahNumber, surahName, surahNameTranslation, tota
                 <View style={styles.modalOverlay}>
                     <View style={styles.modalContent}>
                         <View style={styles.modalHeader}>
-                            <Text style={styles.modalTitle}>Select Ayahs</Text>
+                            <Text style={styles.modalTitle}>{t('hifz.selectAyahs')}</Text>
                             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 16 }}>
                                 <TouchableOpacity onPress={() => {
                                     if (allSelected) {
@@ -1859,17 +1848,17 @@ export function HifzSession({ surahNumber, surahName, surahNameTranslation, tota
                                     }
                                 }}>
                                     <Text style={[styles.modalClose, { color: allSelected ? '#ef4444' : colors.accent }]}>
-                                        {allSelected ? 'Deselect All' : 'Select All'}
+                                        {allSelected ? t('hifz.deselectAll') : t('hifz.selectAll')}
                                     </Text>
                                 </TouchableOpacity>
                                 <TouchableOpacity onPress={() => { setAddAyahsModalVisible(false); setSelectedAyahs([]); }}>
-                                    <Text style={[styles.modalClose, { color: '#64748b' }]}>Cancel</Text>
+                                    <Text style={[styles.modalClose, { color: '#64748b' }]}>{t('btn.cancel')}</Text>
                                 </TouchableOpacity>
                             </View>
                         </View>
                         <View style={styles.progressiveToggle}>
                             <View style={{ flex: 1 }}>
-                                <Text style={styles.progressiveToggleTitle}>Progressive Mode</Text>
+                                <Text style={styles.progressiveToggleTitle}>{t('hifz.progressiveModeTitle')}</Text>
                                 <Text style={styles.progressiveToggleSub}>1 → 2 → 1+2 → 3 → 1+2+3...</Text>
                             </View>
                             <Switch
@@ -1904,7 +1893,7 @@ export function HifzSession({ surahNumber, surahName, surahNameTranslation, tota
                                             <Text style={[styles.ayahPickerNumText, isAdded && { color: '#334155' }, isSelected && { color: colors.accent }]}>{item.numberInSurah}</Text>
                                         </View>
                                         <Text style={[styles.ayahPickerText, isAdded && { opacity: 0.3 }]} numberOfLines={2}>{item.text}</Text>
-                                        {isAdded && <Text style={styles.ayahPickerAddedLabel}>In progress</Text>}
+                                        {isAdded && <Text style={styles.ayahPickerAddedLabel}>{t('hifz.inProgress')}</Text>}
                                     </TouchableOpacity>
                                 );
                             }}
@@ -1915,7 +1904,7 @@ export function HifzSession({ surahNumber, surahName, surahNameTranslation, tota
                                 onPress={() => { setAddAyahsModalVisible(false); setSelectedAyahs([]); startNewAyahs([...selectedAyahs].sort((a, b) => a - b)); }}
                             >
                                 <Text style={styles.startBtnText}>
-                                    Start {selectedAyahs.length} Ayah{selectedAyahs.length !== 1 ? 's' : ''}{progressiveMode ? ' (Progressive)' : ''}
+                                    {t('hifz.startAyahsBtn', { n: selectedAyahs.length })}{progressiveMode ? t('hifz.progressiveSuffix') : ''}
                                 </Text>
                             </TouchableOpacity>
                         )}
@@ -1932,7 +1921,7 @@ export function HifzSession({ surahNumber, surahName, surahNameTranslation, tota
             <View style={styles.loadingContainer}>
                 <NebulaBackground />
                 <ActivityIndicator size="large" color="#f8fafc" />
-                <Text style={styles.loadingText}>Preparing Hifz...</Text>
+                <Text style={styles.loadingText}>{t('hifz.preparingHifz')}</Text>
             </View>
         );
     }
@@ -1944,10 +1933,10 @@ export function HifzSession({ surahNumber, surahName, surahNameTranslation, tota
                 <View style={styles.header}>
                     <TouchableOpacity
                         onPress={sessionState === 'practice' ? () => {
-                            Alert.alert('Exit Session?', 'Save progress and resume later?', [
-                                { text: 'Cancel', style: 'cancel' },
+                            Alert.alert(t('hifz.exitSessionTitle'), t('hifz.exitSessionBody'), [
+                                { text: t('btn.cancel'), style: 'cancel' },
                                 {
-                                    text: 'Exit & Save',
+                                    text: t('hifz.exitAndSave'),
                                     onPress: async () => {
                                         await saveSession(surahNumber, { queue, queuePos, sessionResults });
                                         stopAudio();
@@ -1955,7 +1944,7 @@ export function HifzSession({ surahNumber, surahName, surahNameTranslation, tota
                                         setSavedSession({ surahNumber, queue, queuePos, sessionResults, savedAt: new Date().toISOString() });
                                     }
                                 },
-                                { text: 'Discard', style: 'destructive', onPress: () => { clearSession(surahNumber).catch(() => {}); stopAudio(); setSessionState('setup'); } },
+                                { text: t('hifz.discard'), style: 'destructive', onPress: () => { clearSession(surahNumber).catch(() => {}); stopAudio(); setSessionState('setup'); } },
                             ]);
                         } : onClose}
                         style={styles.backBtn}
@@ -1964,7 +1953,7 @@ export function HifzSession({ surahNumber, surahName, surahNameTranslation, tota
                     </TouchableOpacity>
                     <View style={styles.headerCenter}>
                         <Text style={styles.headerTitle}>
-                            {sessionState === 'setup' ? 'Hifz Mode' : sessionState === 'practice' ? surahName : 'Summary'}
+                            {sessionState === 'setup' ? t('hifz.title') : sessionState === 'practice' ? surahName : t('hifz.summaryHeaderTitle')}
                         </Text>
                         {sessionState === 'setup' && <Text style={styles.headerSub}>{surahName}</Text>}
                     </View>
@@ -1985,7 +1974,7 @@ export function HifzSession({ surahNumber, surahName, surahNameTranslation, tota
                 <View style={styles.modalOverlay}>
                     <View style={styles.modalContent}>
                         <View style={styles.modalHeader}>
-                            <Text style={styles.modalTitle}>Translation Language</Text>
+                            <Text style={styles.modalTitle}>{t('hifz.translationLanguageTitle')}</Text>
                             <TouchableOpacity onPress={() => setTranslationPickerVisible(false)}>
                                 <Text style={[styles.modalClose, { color: '#94a3b8' }]}>✕</Text>
                             </TouchableOpacity>
@@ -2031,6 +2020,12 @@ function ratingEmoji(r: HifzRating): string {
     if (r === 'hard') return '😤';
     if (r === 'good') return '😊';
     return '🌟';
+}
+function ratingLabel(r: HifzRating): string {
+    if (r === 'forgot') return t('hifz.ratingForgot');
+    if (r === 'hard') return t('hifz.ratingHard');
+    if (r === 'good') return t('hifz.ratingGood');
+    return t('hifz.ratingEasy');
 }
 
 const styles = StyleSheet.create({

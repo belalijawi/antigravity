@@ -1,29 +1,43 @@
 /**
- * Multi-step onboarding shown ONCE on first launch (after the welcome / name
- * screen). Walks the user through:
- *
+ * Multi-step onboarding shown ONCE on first launch. Steps:
  *   1. What is Tahajjud
- *   2. The "last third" gate concept
- *   3. Location permission (for prayer times)
- *   4. Notification permission (for the Tahajjud reminder)
- *   5. Optional: pick a calculation method (or auto-detect)
- *   6. Done
- *
- * Persists `onboarding_complete_v1` so it never reappears for the same user.
- * Skippable on every step.
+ *   2. Your Nightly Gate
+ *   3. Sign up / sign in  ← new
+ *   4. Location permission
+ *   5. Notification permission
+ *   6. Paywall
  */
 import React, { useState } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Platform } from 'react-native';
+import {
+    View, Text, StyleSheet, TouchableOpacity,
+    Platform, ActivityIndicator, Alert,
+} from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
-import { Moon, MapPin, Bell, BookHeart, ChevronRight, Check } from 'lucide-react-native';
+import { Moon, MapPin, Bell, BookHeart, ChevronRight, Check, UserCircle, Globe, Shield } from 'lucide-react-native';
 import * as Location from 'expo-location';
 import * as Notifications from 'expo-notifications';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import Animated, { SlideInRight, SlideOutLeft } from 'react-native-reanimated';
 import { useTheme } from '../context/ThemeContext';
 import { haptic } from '../utils/haptic';
+import { track } from '../utils/analytics';
+import { t } from '../utils/i18n';
+import { scheduleMorningAfter } from '../utils/notifications';
 import Paywall from './Paywall';
+import { GoogleAuthProvider, OAuthProvider, signInWithCredential } from 'firebase/auth';
+import { getFirebaseAuth } from '../utils/firebase';
+
+// Safe requires for native modules not available in Expo Go
+let AppleAuthentication: typeof import('expo-apple-authentication') | null = null;
+let GoogleSignin: any = null;
+let statusCodes: any = {};
+try { AppleAuthentication = require('expo-apple-authentication'); } catch (_) {}
+try {
+    const gs = require('@react-native-google-signin/google-signin');
+    GoogleSignin = gs.GoogleSignin;
+    statusCodes = gs.statusCodes;
+} catch (_) {}
 
 const STORAGE_KEY = 'onboarding_complete_v1';
 
@@ -33,7 +47,7 @@ interface Slide {
     body: string;
     cta?: string;
     skip?: string;
-    action?: 'location' | 'notifications' | 'premium' | null;
+    action?: 'location' | 'notifications' | 'premium' | 'auth' | 'first_night' | null;
 }
 
 const SLIDES: Slide[] = [
@@ -48,6 +62,13 @@ const SLIDES: Slide[] = [
         title: 'Your Nightly Gate',
         body: 'Tahajjud+ calculates the precise window of the last third every night and gently reminds you when the gate opens — so you never miss it.',
         cta: 'Sounds good',
+    },
+    {
+        icon: UserCircle,
+        title: 'Save your progress',
+        body: 'Create an account to back up your streaks, logs, and duas across devices. It only takes a second.',
+        action: 'auth',
+        skip: 'Skip for now',
     },
     {
         icon: MapPin,
@@ -66,14 +87,20 @@ const SLIDES: Slide[] = [
         action: 'notifications',
     },
     {
-        // Premium step renders the real Paywall component (see early return);
-        // these fields are placeholders since the slide UI isn't used for it.
-        // This is the LAST step — onboarding ends when the paywall is
-        // accepted or skipped, then the user lands in the app.
         icon: Moon,
         title: 'Unlock the full experience',
         body: '',
         action: 'premium',
+    },
+    // Activation slide — first-day prayer-loggers retain at 2× everyone else,
+    // so onboarding ends with the alarm armed and (optionally) night one logged
+    // instead of dropping the user onto an empty Home screen.
+    {
+        icon: Moon,
+        title: 'Your first night starts now',
+        body: "Your wake-up alarm is set for the last third of tonight. Begin your streak by logging tonight's prayer — one tap, and night one is yours.",
+        cta: 'Begin my journey',
+        action: 'first_night',
     },
 ];
 
@@ -84,14 +111,27 @@ interface Props {
 export function OnboardingFlow({ onComplete }: Props) {
     const { colors } = useTheme();
     const [step, setStep] = useState(0);
+    const [signingIn, setSigningIn] = useState(false);
+    const [appleAvailable, setAppleAvailable] = useState(false);
+    const [firstPrayerLogged, setFirstPrayerLogged] = useState(false);
+
+    React.useEffect(() => {
+        if (Platform.OS !== 'ios' || !AppleAuthentication) return;
+        AppleAuthentication.isAvailableAsync().then(setAppleAvailable).catch(() => {});
+    }, []);
 
     const slide = SLIDES[step];
     const Icon = slide.icon;
     const isLast = step === SLIDES.length - 1;
 
+    React.useEffect(() => {
+        track('onboarding_step_viewed', { step, slide_title: SLIDES[step].title });
+    }, [step]);
+
     const finish = async () => {
-        try { await AsyncStorage.setItem(STORAGE_KEY, 'true'); } catch { /* ignore */ }
+        try { await AsyncStorage.setItem(STORAGE_KEY, 'true'); } catch {}
         haptic.success();
+        track('onboarding_completed');
         onComplete();
     };
 
@@ -103,34 +143,124 @@ export function OnboardingFlow({ onComplete }: Props) {
 
     const handleAction = async () => {
         if (slide.action === 'location') {
-            try { await Location.requestForegroundPermissionsAsync(); } catch { /* ignore */ }
+            try {
+                const res = await Location.requestForegroundPermissionsAsync();
+                track('onboarding_permission_result', { permission: 'location', granted: res.status === 'granted' });
+            } catch {}
         } else if (slide.action === 'notifications') {
             try {
                 const res = await Notifications.requestPermissionsAsync({
                     ios: { allowAlert: true, allowBadge: true, allowSound: true },
                 });
+                track('onboarding_permission_result', { permission: 'notifications', granted: res.status === 'granted' });
                 if (res.status === 'granted') {
                     import('../utils/accountabilityPartner')
                         .then(m => m.saveExpoPushToken())
-                        .catch(() => { /* ignore */ });
+                        .catch(() => {});
                 }
-            } catch { /* ignore */ }
+            } catch {}
+        } else if (slide.action === 'first_night') {
+            // Arm the Tahajjud alarm — NightCalculator reads this flag on Home
+            // mount and schedules tonight's wake-up notification.
+            try { await AsyncStorage.setItem('tahajjud_notification_enabled', 'true'); } catch {}
+            scheduleMorningAfter(firstPrayerLogged).catch(() => {});
         }
         next();
     };
 
-    // Premium step uses the real Paywall (same as Settings), fitted into the
-    // onboarding flow — its X / successful purchase both advance onboarding.
+    // One-tap first prayer log — writes directly into the Tracker's store so
+    // the user exits onboarding already invested (a streak has begun).
+    const logFirstPrayer = async () => {
+        if (firstPrayerLogged) return;
+        try {
+            const raw = await AsyncStorage.getItem('prayer-tracker-v2');
+            const history = raw ? JSON.parse(raw) : {};
+            if (!Array.isArray(history.isha)) history.isha = [];
+            history.isha.push(new Date().toISOString());
+            for (const k of ['fajr', 'dhuhr', 'asr', 'maghrib', 'tahajjud']) {
+                if (!Array.isArray(history[k])) history[k] = [];
+            }
+            await AsyncStorage.setItem('prayer-tracker-v2', JSON.stringify(history));
+            track('prayer_logged', { prayer: 'isha', source: 'onboarding' });
+            setFirstPrayerLogged(true);
+            haptic.success();
+        } catch { /* never block onboarding */ }
+    };
+
+    const handleGoogleSignIn = async () => {
+        if (!GoogleSignin) {
+            Alert.alert('Not Available', 'Google Sign-In requires a production build.');
+            return;
+        }
+        setSigningIn(true);
+        try {
+            GoogleSignin.configure({
+                iosClientId: '434827238021-l54qkp6ts99g1vsf5ha314tfj056sk50.apps.googleusercontent.com',
+                webClientId: '434827238021-ntc25erm80s4nhkkbj2bv7g18v80l48h.apps.googleusercontent.com',
+                scopes: ['profile', 'email'],
+            });
+            if (Platform.OS === 'android') {
+                try { await GoogleSignin.hasPlayServices({ showPlayServicesUpdateDialog: true }); }
+                catch { setSigningIn(false); return; }
+            }
+            const signInResult = await GoogleSignin.signIn();
+            const idToken = signInResult.data?.idToken;
+            if (!idToken) throw new Error('No ID token');
+            const auth = getFirebaseAuth();
+            if (!auth) throw new Error('Firebase not initialised');
+            const credential = GoogleAuthProvider.credential(idToken);
+            await signInWithCredential(auth, credential);
+            track('onboarding_auth_succeeded', { provider: 'google' });
+            setStep(s => s + 1);
+            haptic.success();
+        } catch (error: any) {
+            if (error.code !== statusCodes.SIGN_IN_CANCELLED) {
+                Alert.alert('Sign-In Failed', error.message || 'Could not sign in with Google.');
+            }
+        } finally {
+            setSigningIn(false);
+        }
+    };
+
+    const handleAppleSignIn = async () => {
+        if (!AppleAuthentication || !appleAvailable) {
+            Alert.alert('Not Available', 'Apple Sign-In is not available on this device.');
+            return;
+        }
+        setSigningIn(true);
+        try {
+            const credential = await AppleAuthentication.signInAsync({
+                requestedScopes: [
+                    AppleAuthentication.AppleAuthenticationScope.FULL_NAME,
+                    AppleAuthentication.AppleAuthenticationScope.EMAIL,
+                ],
+            });
+            const auth = getFirebaseAuth();
+            if (!auth) throw new Error('Firebase not initialised');
+            if (!credential.identityToken) throw new Error('No identity token from Apple');
+            const provider = new OAuthProvider('apple.com');
+            const firebaseCredential = provider.credential({ idToken: credential.identityToken });
+            await signInWithCredential(auth, firebaseCredential);
+            track('onboarding_auth_succeeded', { provider: 'apple' });
+            setStep(s => s + 1);
+            haptic.success();
+        } catch (error: any) {
+            if (error.code !== 'ERR_REQUEST_CANCELED') {
+                Alert.alert('Sign-In Failed', error.message || 'Could not sign in with Apple.');
+            }
+        } finally {
+            setSigningIn(false);
+        }
+    };
+
+    // Premium step — full Paywall component
     if (slide.action === 'premium') {
-        return <Paywall onClose={next} />;
+        return <Paywall onClose={next} source="onboarding" />;
     }
 
     return (
         <SafeAreaView style={styles.root} edges={['top', 'bottom']}>
-            <LinearGradient
-                colors={['#040714', '#07091e', '#040714']}
-                style={StyleSheet.absoluteFill}
-            />
+            <LinearGradient colors={['#040714', '#07091e', '#040714']} style={StyleSheet.absoluteFill} />
 
             {/* Progress dots */}
             <View style={styles.dots}>
@@ -158,33 +288,89 @@ export function OnboardingFlow({ onComplete }: Props) {
                 <View style={[styles.iconWrap, { backgroundColor: colors.accent + '15', borderColor: colors.accent + '33' }]}>
                     <Icon size={40} color={colors.accent} strokeWidth={1.5} />
                 </View>
-
-                <Text style={[styles.title, { color: colors.primaryText }]}>{slide.title}</Text>
-                <Text style={[styles.body, { color: colors.secondaryText }]}>{slide.body}</Text>
+                <Text style={[styles.title, { color: colors.primaryText }]}>{slide.action === 'first_night' ? t('onboard.firstNightTitle') : slide.title}</Text>
+                <Text style={[styles.body, { color: colors.secondaryText }]}>{slide.action === 'first_night' ? t('onboard.firstNightBody') : slide.body}</Text>
             </Animated.View>
 
-            <View style={styles.footer}>
-                <TouchableOpacity
-                    onPress={slide.action ? handleAction : next}
-                    style={[styles.cta, { backgroundColor: colors.accent, shadowColor: colors.accent }]}
-                    activeOpacity={0.85}
-                >
-                    <Text style={styles.ctaText}>{slide.cta ?? 'Continue'}</Text>
-                    {isLast ? (
-                        <Check size={18} color="#0a1228" strokeWidth={3} />
+            {/* Auth step — Apple + Google buttons */}
+            {slide.action === 'auth' ? (
+                <View style={styles.footer}>
+                    {signingIn ? (
+                        <ActivityIndicator color={colors.accent} style={{ marginVertical: 28 }} />
                     ) : (
-                        <ChevronRight size={18} color="#0a1228" strokeWidth={3} />
+                        <>
+                            {appleAvailable && (
+                                <TouchableOpacity
+                                    style={[styles.socialBtn, { backgroundColor: '#fff' }]}
+                                    onPress={handleAppleSignIn}
+                                    activeOpacity={0.85}
+                                >
+                                    <Shield size={18} color="#000" strokeWidth={2} />
+                                    <Text style={styles.socialBtnTextDark}>Sign in with Apple</Text>
+                                </TouchableOpacity>
+                            )}
+                            <TouchableOpacity
+                                style={[styles.socialBtn, { backgroundColor: 'rgba(255,255,255,0.08)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.15)', marginTop: appleAvailable ? 10 : 0 }]}
+                                onPress={handleGoogleSignIn}
+                                activeOpacity={0.85}
+                            >
+                                <Globe size={18} color={colors.primaryText} strokeWidth={2} />
+                                <Text style={[styles.socialBtnText, { color: colors.primaryText }]}>Sign in with Google</Text>
+                            </TouchableOpacity>
+                        </>
                     )}
-                </TouchableOpacity>
-
-                {slide.skip ? (
-                    <TouchableOpacity onPress={slide.action ? handleAction : next} style={styles.skip} hitSlop={{ top: 10, bottom: 10, left: 20, right: 20 }}>
-                        <Text style={[styles.skipText, { color: colors.secondaryText }]}>{slide.skip}</Text>
+                    <TouchableOpacity
+                        onPress={() => { track('onboarding_auth_skipped'); next(); }}
+                        style={styles.skip}
+                        hitSlop={{ top: 10, bottom: 10, left: 20, right: 20 }}
+                    >
+                        <Text style={[styles.skipText, { color: colors.secondaryText }]}>Skip for now</Text>
                     </TouchableOpacity>
-                ) : (
-                    <View style={{ height: 24 }} />
-                )}
-            </View>
+                </View>
+            ) : (
+                <View style={styles.footer}>
+                    {slide.action === 'first_night' && (
+                        <TouchableOpacity
+                            style={[
+                                styles.socialBtn,
+                                firstPrayerLogged
+                                    ? { backgroundColor: colors.accent + '22', borderWidth: 1, borderColor: colors.accent + '66' }
+                                    : { backgroundColor: 'rgba(255,255,255,0.08)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.15)' },
+                                { marginBottom: 12 },
+                            ]}
+                            onPress={logFirstPrayer}
+                            activeOpacity={0.85}
+                        >
+                            <Check size={18} color={firstPrayerLogged ? colors.accent : colors.primaryText} strokeWidth={2.5} />
+                            <Text style={[styles.socialBtnText, { color: firstPrayerLogged ? colors.accent : colors.primaryText }]}>
+                                {firstPrayerLogged ? t('onboard.ishaLogged') : t('onboard.logIsha')}
+                            </Text>
+                        </TouchableOpacity>
+                    )}
+                    <TouchableOpacity
+                        onPress={slide.action ? handleAction : next}
+                        style={[styles.cta, { backgroundColor: colors.accent, shadowColor: colors.accent }]}
+                        activeOpacity={0.85}
+                    >
+                        <Text style={styles.ctaText}>{slide.action === 'first_night' ? t('onboard.firstNightCta') : (slide.cta ?? t('btn.continue'))}</Text>
+                        {isLast
+                            ? <Check size={18} color="#0a1228" strokeWidth={3} />
+                            : <ChevronRight size={18} color="#0a1228" strokeWidth={3} />
+                        }
+                    </TouchableOpacity>
+                    {slide.skip ? (
+                        <TouchableOpacity
+                            onPress={() => { track('onboarding_permission_skipped', { permission: slide.action }); next(); }}
+                            style={styles.skip}
+                            hitSlop={{ top: 10, bottom: 10, left: 20, right: 20 }}
+                        >
+                            <Text style={[styles.skipText, { color: colors.secondaryText }]}>{slide.skip}</Text>
+                        </TouchableOpacity>
+                    ) : (
+                        <View style={{ height: 24 }} />
+                    )}
+                </View>
+            )}
         </SafeAreaView>
     );
 }
@@ -192,40 +378,32 @@ export function OnboardingFlow({ onComplete }: Props) {
 /** Has the user completed onboarding? */
 export async function hasCompletedOnboarding(): Promise<boolean> {
     try { return (await AsyncStorage.getItem(STORAGE_KEY)) === 'true'; }
-    catch { return true; /* fail-open — don't trap users */ }
+    catch { return true; }
 }
 
 const styles = StyleSheet.create({
     root: { flex: 1, alignItems: 'center' },
     dots: {
-        flexDirection: 'row',
-        gap: 8,
-        marginTop: 16,
-        marginBottom: 32,
+        flexDirection: 'row', gap: 8,
+        marginTop: 16, marginBottom: 32,
         alignItems: 'center',
     },
     dot: { height: 6, borderRadius: 3 },
     content: {
-        flex: 1,
-        alignItems: 'center',
-        justifyContent: 'center',
+        flex: 1, alignItems: 'center', justifyContent: 'center',
         paddingHorizontal: 32,
     },
     iconWrap: {
-        width: 96, height: 96, borderRadius: 48,
-        borderWidth: 1,
-        alignItems: 'center', justifyContent: 'center',
-        marginBottom: 32,
+        width: 96, height: 96, borderRadius: 48, borderWidth: 1,
+        alignItems: 'center', justifyContent: 'center', marginBottom: 32,
     },
     title: {
         fontSize: 28, fontWeight: '900',
-        letterSpacing: -0.5, textAlign: 'center',
-        marginBottom: 18,
+        letterSpacing: -0.5, textAlign: 'center', marginBottom: 18,
     },
     body: {
         fontSize: 15, lineHeight: 24, fontWeight: '500',
-        textAlign: 'center',
-        maxWidth: 380,
+        textAlign: 'center', maxWidth: 380,
     },
     footer: {
         width: '100%',
@@ -233,88 +411,18 @@ const styles = StyleSheet.create({
         paddingBottom: Platform.OS === 'ios' ? 12 : 24,
     },
     cta: {
-        flexDirection: 'row',
-        alignItems: 'center', justifyContent: 'center', gap: 8,
+        flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
         paddingVertical: 16, borderRadius: 18,
         shadowOpacity: 0.4, shadowRadius: 18, shadowOffset: { width: 0, height: 8 },
         elevation: 8,
     },
     ctaText: { color: '#0a1228', fontSize: 16, fontWeight: '800', letterSpacing: -0.2 },
+    socialBtn: {
+        flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+        gap: 10, paddingVertical: 16, borderRadius: 18,
+    },
+    socialBtnText: { fontSize: 16, fontWeight: '700' },
+    socialBtnTextDark: { fontSize: 16, fontWeight: '700', color: '#000' },
     skip: { alignItems: 'center', paddingVertical: 14, marginTop: 8 },
     skipText: { fontSize: 14, fontWeight: '600' },
-    contentPremium: {
-        flex: 1,
-        alignItems: 'center',
-        justifyContent: 'flex-start',
-        paddingHorizontal: 24,
-        paddingTop: 4,
-        width: '100%',
-    },
-    premiumSub: {
-        fontSize: 14,
-        fontWeight: '500',
-        textAlign: 'center',
-        lineHeight: 20,
-        marginBottom: 18,
-        paddingTop: 4,
-    },
-    featureList: {
-        width: '100%',
-        gap: 10,
-    },
-    featureRow: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        gap: 12,
-        paddingVertical: 10,
-        paddingHorizontal: 14,
-        borderRadius: 14,
-        borderWidth: 1,
-        backgroundColor: 'rgba(255,255,255,0.03)',
-    },
-    featureIcon: {
-        width: 34,
-        height: 34,
-        borderRadius: 10,
-        alignItems: 'center',
-        justifyContent: 'center',
-    },
-    featureLabel: {
-        fontSize: 14,
-        fontWeight: '700',
-    },
-    featureDesc: {
-        fontSize: 11,
-        fontWeight: '500',
-        marginTop: 1,
-    },
-    pkgBadge: {
-        alignSelf: 'flex-start',
-        paddingHorizontal: 10,
-        paddingVertical: 3,
-        borderTopLeftRadius: 8,
-        borderTopRightRadius: 8,
-        marginBottom: -1,
-        marginLeft: 12,
-    },
-    pkgBadgeText: { fontSize: 10, fontWeight: '900', color: '#000' },
-    pkgCard: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        borderWidth: 1,
-        borderRadius: 14,
-        padding: 14,
-        gap: 12,
-        backgroundColor: 'rgba(255,255,255,0.04)',
-    },
-    pkgTitle: { fontSize: 14, fontWeight: '800' },
-    pkgDesc:  { fontSize: 11, fontWeight: '500', marginTop: 2 },
-    pkgPrice: {
-        paddingHorizontal: 12,
-        paddingVertical: 8,
-        borderRadius: 10,
-        alignItems: 'center',
-        justifyContent: 'center',
-    },
-    pkgPriceText: { fontSize: 13, fontWeight: '900', color: '#000' },
 });

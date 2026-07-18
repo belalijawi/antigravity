@@ -1,12 +1,14 @@
 import React, { useState } from 'react';
-import { View, Text, TextInput, TouchableOpacity, KeyboardAvoidingView, Platform, StyleSheet } from 'react-native';
+import { View, Text, TextInput, TouchableOpacity, KeyboardAvoidingView, Platform, StyleSheet, Modal, ScrollView } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
-import { Moon, ChevronRight } from 'lucide-react-native';
+import { Moon, ChevronRight, Globe } from 'lucide-react-native';
 import { BlurView } from 'expo-blur';
 import Animated, { FadeIn, FadeInDown, FadeInUp } from 'react-native-reanimated';
 import { useTheme } from '../context/ThemeContext';
 import { tabletContentStyle } from '../utils/layout';
+import { LOCALES, getLocale, setLocale, type Locale, t } from '../utils/i18n';
+import { track } from '../utils/analytics';
 
 interface WelcomeScreenProps {
     onComplete: (name?: string) => void;
@@ -15,9 +17,21 @@ interface WelcomeScreenProps {
 export function WelcomeScreen({ onComplete }: WelcomeScreenProps) {
     const { colors } = useTheme();
     const [name, setName] = useState('');
+    const [showLanguages, setShowLanguages] = useState(false);
+    const currentLocale = getLocale();
+    const currentNative = LOCALES.find(l => l.code === currentLocale)?.native ?? 'English';
 
     const handleGetStarted = () => {
         onComplete(name.trim() || undefined);
+    };
+
+    const pickLanguage = async (code: Locale) => {
+        setShowLanguages(false);
+        if (code === currentLocale) return;
+        track('locale_changed', { locale: code, source: 'onboarding' });
+        // setLocale broadcasts localeChanged → App.tsx remounts the tree, so this
+        // screen re-renders fully in the chosen language.
+        await setLocale(code);
     };
 
     return (
@@ -30,6 +44,38 @@ export function WelcomeScreen({ onComplete }: WelcomeScreenProps) {
             {/* Decorative Nebula Glows */}
             <View style={[styles.glow, { top: '10%', left: '-20%', backgroundColor: 'rgba(241, 245, 249, 0.08)' }]} />
             <View style={[styles.glow, { bottom: '10%', right: '-20%', backgroundColor: 'rgba(226, 232, 240, 0.05)' }]} />
+
+            {/* Language chip — one tap, no extra onboarding step. First thing a
+                non-English user can do is make the app theirs. */}
+            <SafeAreaView style={styles.langChipWrap} pointerEvents="box-none">
+                <Animated.View entering={FadeIn.delay(1000).duration(800)}>
+                    <TouchableOpacity style={styles.langChip} onPress={() => setShowLanguages(true)} activeOpacity={0.7}>
+                        <Globe size={14} color="#94a3b8" strokeWidth={2} />
+                        <Text style={styles.langChipText}>{currentNative}</Text>
+                    </TouchableOpacity>
+                </Animated.View>
+            </SafeAreaView>
+
+            <Modal visible={showLanguages} transparent animationType="fade" onRequestClose={() => setShowLanguages(false)}>
+                <TouchableOpacity style={styles.langOverlay} activeOpacity={1} onPress={() => setShowLanguages(false)}>
+                    <View style={styles.langSheet}>
+                        <ScrollView bounces={false}>
+                            {LOCALES.map(loc => (
+                                <TouchableOpacity
+                                    key={loc.code}
+                                    style={[styles.langRow, loc.code === currentLocale && styles.langRowActive]}
+                                    onPress={() => pickLanguage(loc.code)}
+                                >
+                                    <Text style={[styles.langRowText, loc.code === currentLocale && { color: colors.accent, fontWeight: '800' }]}>
+                                        {loc.native}
+                                    </Text>
+                                    <Text style={styles.langRowSub}>{loc.label}</Text>
+                                </TouchableOpacity>
+                            ))}
+                        </ScrollView>
+                    </View>
+                </TouchableOpacity>
+            </Modal>
 
             <KeyboardAvoidingView
                 behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
@@ -78,7 +124,7 @@ export function WelcomeScreen({ onComplete }: WelcomeScreenProps) {
                             entering={FadeInDown.delay(600).duration(1000)}
                             style={styles.subtitle}
                         >
-                            Your companion for the sacred third of the night.
+                            {t('welcome.subtitle')}
                         </Animated.Text>
                     </View>
 
@@ -91,7 +137,7 @@ export function WelcomeScreen({ onComplete }: WelcomeScreenProps) {
                             <BlurView intensity={30} tint="dark" style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(0,0,0,0.3)' }]} />
                             <TextInput
                                 style={styles.input}
-                                placeholder="Enter your name"
+                                placeholder={t('welcome.namePlaceholder')}
                                 placeholderTextColor="rgba(255, 255, 255, 0.3)"
                                 value={name}
                                 onChangeText={setName}
@@ -114,14 +160,14 @@ export function WelcomeScreen({ onComplete }: WelcomeScreenProps) {
                                     start={{ x: 0, y: 0 }}
                                     end={{ x: 1, y: 1 }}
                                 />
-                                <Text style={styles.buttonText}>Begin Your Ascent</Text>
+                                <Text style={styles.buttonText}>{t('welcome.beginAscent')}</Text>
                                 <ChevronRight size={20} color="#0f172a" strokeWidth={2.5} />
                             </TouchableOpacity>
                         </Animated.View>
 
                         <Animated.View entering={FadeIn.delay(1200).duration(1000)}>
                             <TouchableOpacity onPress={() => onComplete(undefined)} style={styles.skipLink}>
-                                <Text style={styles.skipText}>Anonymous Reflection</Text>
+                                <Text style={styles.skipText}>{t('welcome.anonymousReflection')}</Text>
                             </TouchableOpacity>
                         </Animated.View>
                     </View>
@@ -293,6 +339,65 @@ const styles = StyleSheet.create({
         fontStyle: 'italic',
         paddingHorizontal: 40,
         lineHeight: 18,
+        fontWeight: '600',
+    },
+    langChipWrap: {
+        position: 'absolute',
+        top: 0, right: 0,
+        zIndex: 10,
+        paddingTop: 8,
+        paddingRight: 16,
+    },
+    langChip: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 6,
+        paddingHorizontal: 12,
+        paddingVertical: 7,
+        borderRadius: 16,
+        backgroundColor: 'rgba(255,255,255,0.06)',
+        borderWidth: 1,
+        borderColor: 'rgba(255,255,255,0.1)',
+    },
+    langChipText: {
+        color: '#94a3b8',
+        fontSize: 12,
+        fontWeight: '700',
+    },
+    langOverlay: {
+        flex: 1,
+        backgroundColor: 'rgba(0,0,0,0.75)',
+        justifyContent: 'center',
+        paddingHorizontal: 40,
+    },
+    langSheet: {
+        maxHeight: '65%',
+        borderRadius: 20,
+        backgroundColor: '#0b1120',
+        borderWidth: 1,
+        borderColor: 'rgba(255,255,255,0.1)',
+        overflow: 'hidden',
+    },
+    langRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        paddingVertical: 14,
+        paddingHorizontal: 20,
+        borderBottomWidth: StyleSheet.hairlineWidth,
+        borderBottomColor: 'rgba(255,255,255,0.06)',
+    },
+    langRowActive: {
+        backgroundColor: 'rgba(255,255,255,0.04)',
+    },
+    langRowText: {
+        color: '#e2e8f0',
+        fontSize: 15,
+        fontWeight: '600',
+    },
+    langRowSub: {
+        color: '#475569',
+        fontSize: 12,
         fontWeight: '600',
     },
 });

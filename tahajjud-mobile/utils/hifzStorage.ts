@@ -16,6 +16,16 @@ export interface HifzAyah {
     reviewCount: number;
     forgotCount: number; // lifetime total of 'forgot' ratings — used for hardest ayahs view
     lastReviewed: string; // ISO date string
+
+    // ── Adaptive spaced-repetition (SM-2 derived) ─────────────────────
+    // These drive the *schedule*. `level` (above) is kept separate and only
+    // drives the visual word-hiding difficulty (HIDE_FRACTION). Older entries
+    // created before this upgrade won't have these fields — computeSrs() seeds
+    // sensible defaults from `level` on the first review, so nothing breaks.
+    ease?: number;     // ease factor — grows with "easy", shrinks with "hard"/"forgot". [1.3, 2.7]
+    interval?: number; // current scheduling interval in days
+    reps?: number;     // consecutive successful (non-forgot) reviews
+    lapses?: number;   // lifetime count of "forgot" lapses
 }
 
 export interface SavedSession {
@@ -46,7 +56,104 @@ function todayStr(): string {
     return new Date().toISOString().slice(0, 10);
 }
 
-// Days until next review based on rating and current level
+// ── Adaptive scheduling constants (SM-2 derived) ────────────────────
+const DEFAULT_EASE = 2.5;
+const MIN_EASE = 1.3;
+const MAX_EASE = 2.7;
+const MAX_INTERVAL = 365; // cap so intervals don't run away to years
+
+function clampEase(e: number): number {
+    return Math.min(MAX_EASE, Math.max(MIN_EASE, e));
+}
+
+// Legacy fixed-table fallback — used to seed `interval` for ayahs created
+// before adaptive scheduling existed, so their first adaptive review starts
+// from a schedule comparable to what they had before.
+function legacyIntervalForLevel(level: number): number {
+    const intervals = [1, 3, 5, 7, 14, 21];
+    return intervals[level] ?? 21;
+}
+
+export interface SrsState {
+    ease: number;
+    interval: number; // days
+    reps: number;
+    lapses: number;
+    nextReview: string; // ISO date string
+}
+
+/**
+ * Adaptive spaced-repetition schedule (SM-2 derived, tuned for Quran hifz).
+ *
+ * Unlike the old fixed lookup table, the interval here grows by the ayah's
+ * *own* ease factor, so an ayah a user finds easy stretches out fast while a
+ * stubborn one stays tight — each ayah gets its own personalized schedule.
+ *
+ *   forgot → lapse: reset reps, review tomorrow, drop ease
+ *   hard   → grow slowly (×1.2), drop ease a little
+ *   good   → grow by ease, ease unchanged
+ *   easy   → grow by ease with a bonus, raise ease
+ *
+ * Back-compat: `prev` may lack ease/interval/reps (entries from before this
+ * upgrade) — we seed them from the legacy `level` so the transition is smooth.
+ */
+export function computeSrs(
+    prev: { ease?: number; interval?: number; reps?: number; lapses?: number; level?: number },
+    rating: HifzRating,
+    now: Date = new Date(),
+): SrsState {
+    const ease0 = prev.ease ?? DEFAULT_EASE;
+    const reps0 = prev.reps ?? (prev.level ?? 0); // legacy level ≈ successful reps
+    const interval0 = prev.interval ?? legacyIntervalForLevel(prev.level ?? 0);
+    const lapses0 = prev.lapses ?? 0;
+
+    let ease = ease0;
+    let reps: number;
+    let lapses = lapses0;
+    let interval: number;
+
+    if (rating === 'forgot') {
+        ease = clampEase(ease - 0.20);
+        reps = 0;
+        lapses = lapses0 + 1;
+        interval = 1; // relearn tomorrow
+    } else {
+        if (rating === 'hard') ease = clampEase(ease - 0.15);
+        else if (rating === 'easy') ease = clampEase(ease + 0.15);
+        // 'good' leaves ease unchanged
+
+        reps = reps0 + 1;
+        if (reps === 1) {
+            interval = 1;
+        } else if (reps === 2) {
+            interval = rating === 'easy' ? 4 : 3;
+        } else {
+            const base = Math.max(1, interval0);
+            const mult = rating === 'hard' ? 1.2 : rating === 'easy' ? ease * 1.3 : ease;
+            interval = Math.round(base * mult);
+        }
+        interval = Math.min(MAX_INTERVAL, Math.max(1, interval));
+    }
+
+    return { ease, interval, reps, lapses, nextReview: addDays(now, interval).toISOString() };
+}
+
+/**
+ * How many days until the next review if the user rates this ayah `rating`.
+ * Drives the live preview under each rating button. Uses the ayah's actual
+ * stored SRS state so the preview reflects the real adaptive schedule.
+ */
+export function previewIntervalDays(
+    prev: { ease?: number; interval?: number; reps?: number; lapses?: number; level?: number } | null | undefined,
+    rating: HifzRating,
+): number {
+    return computeSrs(prev ?? {}, rating).interval;
+}
+
+// Days until next review based on rating and current level.
+// DEPRECATED: kept for back-compat. New code should use computeSrs /
+// previewIntervalDays, which schedule per-ayah by ease factor rather than a
+// one-size-fits-all table.
 export function nextIntervalDays(level: number, rating: HifzRating): number {
     if (rating === 'forgot') return 1;
     if (rating === 'hard') return 1;
@@ -86,6 +193,15 @@ export async function getAllHifzData(): Promise<Record<string, HifzAyah>> {
 
 function ayahKey(surahNumber: number, ayahNumber: number): string {
     return `${surahNumber}:${ayahNumber}`;
+}
+
+/**
+ * Distinct surahs with any memorisation progress. Used by the free tier:
+ * the FIRST surah is free (try-before-trial), the second hits the paywall.
+ */
+export async function getStartedSurahNumbers(): Promise<number[]> {
+    const all = await getAllHifzData();
+    return [...new Set(Object.values(all).map(a => a.surahNumber))];
 }
 
 export async function getAyahHifz(surahNumber: number, ayahNumber: number): Promise<HifzAyah | null> {
@@ -130,13 +246,19 @@ export async function recordReview(
     };
 
     const updatedLevel = newLevel(existing.level, rating);
-    const days = nextIntervalDays(existing.level, rating);
-    const nextReview = addDays(new Date(), days).toISOString();
+    // Schedule adaptively by this ayah's own ease/interval (SM-2 derived),
+    // not a fixed table. `level` still advances independently to drive the
+    // visual word-hiding difficulty.
+    const srs = computeSrs(existing, rating);
 
     const updated: HifzAyah = {
         ...existing,
         level: updatedLevel,
-        nextReview,
+        nextReview: srs.nextReview,
+        ease: srs.ease,
+        interval: srs.interval,
+        reps: srs.reps,
+        lapses: srs.lapses,
         reviewCount: existing.reviewCount + 1,
         forgotCount: (existing.forgotCount ?? 0) + (rating === 'forgot' ? 1 : 0),
         lastReviewed: new Date().toISOString(),

@@ -1,6 +1,7 @@
 import React from 'react';
 import { View, Text, StyleSheet } from 'react-native';
 import { Moon, Flame } from 'lucide-react-native';
+import { t } from '../utils/i18n';
 
 interface StreakMilestoneCardProps {
     nights: number;
@@ -22,17 +23,17 @@ export const StreakMilestoneCard = React.forwardRef<View, StreakMilestoneCardPro
                         <Flame size={64} color={accent} />
                     </View>
                     <Text style={[styles.bigNumber, { color: accent }]}>{nights}</Text>
-                    <Text style={styles.unit}>{nights === 1 ? 'NIGHT' : 'NIGHTS'}</Text>
+                    <Text style={styles.unit}>{nights === 1 ? t('streakCard.night') : t('streakModal.nightsLabel')}</Text>
                     <View style={[styles.divider, { backgroundColor: accent }]} />
                     <Text style={styles.tagline}>
-                        Standing in the depths{'\n'}of the night.
+                        {t('streakCard.tagline')}
                     </Text>
                 </View>
 
                 <View style={styles.footer}>
                     <Text style={styles.duaArabic}>اللهم تقبل</Text>
                     <Text style={styles.duaTranslit}>Allahumma taqabbal</Text>
-                    <Text style={styles.duaMeaning}>O Allah, accept it.</Text>
+                    <Text style={styles.duaMeaning}>{t('streakCard.duaMeaning')}</Text>
                 </View>
             </View>
         </View>

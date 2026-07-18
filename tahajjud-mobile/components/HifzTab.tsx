@@ -13,12 +13,14 @@ import { QuranService, SurahMeta } from '../services/QuranService';
 import { HifzSession } from './HifzSession';
 import { fuzzyMatch } from '../utils/fuzzy';
 import { useTheme } from '../context/ThemeContext';
+import { usePurchases } from '../context/PurchasesContext';
 import { tabletContentStyle } from '../utils/layout';
 import {
     getAllHifzData, getStreakData, getDailyGoal, getTodayProgress,
     StreakData, HifzAyah,
 } from '../utils/hifzStorage';
 import { scheduleHifzNotifications, requestHifzNotificationPermission } from '../utils/hifzNotifications';
+import { t } from '../utils/i18n';
 
 function countDueNow(ayahs: HifzAyah[]): number {
     const now = new Date();
@@ -33,6 +35,7 @@ interface SurahHifzStats {
 
 export function HifzTab({ embedded = false }: { embedded?: boolean }) {
     const { colors, cardBg, blurIntensity } = useTheme();
+    const { isPremium, openPaywall } = usePurchases();
 
     const [surahs, setSurahs] = useState<SurahMeta[]>([]);
     const [filteredSurahs, setFilteredSurahs] = useState<SurahMeta[]>([]);
@@ -84,7 +87,7 @@ export function HifzTab({ embedded = false }: { embedded?: boolean }) {
         setLoading(false);
         // Keep notification schedule up to date
         requestHifzNotificationPermission().then(granted => {
-            if (granted) scheduleHifzNotifications(allHifz as Record<string, HifzAyah>);
+            if (granted) return scheduleHifzNotifications(allHifz as Record<string, HifzAyah>);
         }).catch(() => {});
     }, []);
 
@@ -124,10 +127,25 @@ export function HifzTab({ embedded = false }: { embedded?: boolean }) {
         const dueCount = dueMap[item.number] ?? 0;
 
         return (
-            <Animated.View entering={FadeInDown.duration(400).delay(Math.min(index, 20) * 30)}>
+            // Plain View (no `entering` stagger): entering animations on
+            // virtualized FlatList rows can stick at opacity:0 on first mount,
+            // hiding the list until a scroll — the same bug fixed in Stories.
+            <View>
                 <TouchableOpacity
                     style={styles.card}
-                    onPress={() => setSelectedSurah(item)}
+                    onPress={() => {
+                        // Free tier: one surah is free — the taste that sells the
+                        // trial. A SECOND surah is where the paywall now lives.
+                        if (!isPremium && !hasProgress) {
+                            const startedElsewhere = Object.entries(statsMap)
+                                .some(([n, s]) => s.started > 0 && Number(n) !== item.number);
+                            if (startedElsewhere) {
+                                openPaywall('feature_gate:hifz_second_surah');
+                                return;
+                            }
+                        }
+                        setSelectedSurah(item);
+                    }}
                     activeOpacity={0.75}
                 >
                     <BlurView
@@ -148,7 +166,7 @@ export function HifzTab({ embedded = false }: { embedded?: boolean }) {
                         </View>
                         <View style={styles.cardText}>
                             <Text style={[styles.surahName, { color: colors.primaryText }]}>{item.englishName}</Text>
-                            <Text style={styles.surahSub}>{item.englishNameTranslation}  ·  {item.numberOfAyahs} ayahs</Text>
+                            <Text style={styles.surahSub}>{item.englishNameTranslation}  ·  {t('hifzTab.ayahsCount', { n: item.numberOfAyahs })}</Text>
                         </View>
                     </View>
 
@@ -176,12 +194,12 @@ export function HifzTab({ embedded = false }: { embedded?: boolean }) {
                                 </Text>
                             </View>
                         ) : (
-                            <Text style={styles.startLabel}>Start</Text>
+                            <Text style={styles.startLabel}>{t('hifzTab.startBtn')}</Text>
                         )}
                         <ChevronRight color="#334155" size={16} />
                     </View>
                 </TouchableOpacity>
-            </Animated.View>
+            </View>
         );
     };
 
@@ -197,8 +215,8 @@ export function HifzTab({ embedded = false }: { embedded?: boolean }) {
                     <View style={styles.header}>
                         <Brain color={colors.accent} size={26} />
                         <View style={{ flex: 1, marginLeft: 12 }}>
-                            <Text style={[styles.title, { color: colors.accent }]}>Hifz Mode</Text>
-                            <Text style={styles.subtitle}>Memorise the Quran</Text>
+                            <Text style={[styles.title, { color: colors.accent }]}>{t('hifz.title')}</Text>
+                            <Text style={styles.subtitle}>{t('hifzTab.subtitle')}</Text>
                         </View>
                     </View>
                 )}
@@ -208,8 +226,8 @@ export function HifzTab({ embedded = false }: { embedded?: boolean }) {
                     <Animated.View entering={FadeInDown.duration(400)} style={styles.dueBanner}>
                         <Text style={styles.dueBannerEmoji}>🔔</Text>
                         <Text style={styles.dueBannerText}>
-                            <Text style={styles.dueBannerCount}>{totalDue} ayah{totalDue !== 1 ? 's' : ''}</Text>
-                            {' '}due for review — tap a surah to start
+                            <Text style={styles.dueBannerCount}>{t('hifzTab.ayahsCount', { n: totalDue })}</Text>
+                            {t('hifzTab.dueBannerSuffix')}
                         </Text>
                     </Animated.View>
                 )}
@@ -220,22 +238,22 @@ export function HifzTab({ embedded = false }: { embedded?: boolean }) {
                         <View style={[styles.statCard, { borderColor: streakData.currentStreak > 0 ? '#f9741655' : 'rgba(255,255,255,0.08)' }]}>
                             <Flame color={streakData.currentStreak > 0 ? '#f97316' : '#475569'} size={18} />
                             <Text style={[styles.statNum, { color: streakData.currentStreak > 0 ? '#f97316' : '#475569' }]}>{streakData.currentStreak}</Text>
-                            <Text style={styles.statLabel}>streak</Text>
+                            <Text style={styles.statLabel}>{t('hifzTab.streakLabel')}</Text>
                         </View>
                         <View style={[styles.statCard, { borderColor: goalDone ? '#22c55e55' : 'rgba(255,255,255,0.08)' }]}>
                             <Target color={goalDone ? '#22c55e' : '#94a3b8'} size={18} />
                             <Text style={[styles.statNum, { color: goalDone ? '#22c55e' : colors.primaryText }]}>{todayProgress}/{dailyGoal}</Text>
-                            <Text style={styles.statLabel}>today</Text>
+                            <Text style={styles.statLabel}>{t('tracker.today')}</Text>
                         </View>
                         <View style={[styles.statCard, { borderColor: 'rgba(255,255,255,0.08)' }]}>
                             <Brain color={colors.accent} size={18} />
                             <Text style={[styles.statNum, { color: colors.accent }]}>{totalStarted}</Text>
-                            <Text style={styles.statLabel}>surahs</Text>
+                            <Text style={styles.statLabel}>{t('hifzTab.surahsLabel')}</Text>
                         </View>
                         <View style={[styles.statCard, { borderColor: totalMastered > 0 ? '#22c55e55' : 'rgba(255,255,255,0.08)' }]}>
                             <Text style={[styles.statNum, { color: '#22c55e', fontSize: 18 }]}>✓</Text>
                             <Text style={[styles.statNum, { color: '#22c55e' }]}>{totalMastered}</Text>
-                            <Text style={styles.statLabel}>mastered</Text>
+                            <Text style={styles.statLabel}>{t('hifzTab.masteredLabel')}</Text>
                         </View>
                     </Animated.View>
                 )}
@@ -245,7 +263,7 @@ export function HifzTab({ embedded = false }: { embedded?: boolean }) {
                     <Search color="#475569" size={16} />
                     <TextInput
                         style={styles.searchInput}
-                        placeholder="Search surah..."
+                        placeholder={t('hifzTab.searchPlaceholder')}
                         placeholderTextColor="#334155"
                         value={searchQuery}
                         onChangeText={handleSearch}
@@ -267,9 +285,9 @@ export function HifzTab({ embedded = false }: { embedded?: boolean }) {
                             totalStarted === 0 && !searchQuery ? (
                                 <Animated.View entering={FadeInDown.duration(600)} style={styles.emptyCard}>
                                     <Brain color={colors.accent} size={36} />
-                                    <Text style={[styles.emptyTitle, { color: colors.primaryText }]}>Start Your Hifz Journey</Text>
+                                    <Text style={[styles.emptyTitle, { color: colors.primaryText }]}>{t('hifzTab.emptyTitle')}</Text>
                                     <Text style={styles.emptyBody}>
-                                        Pick any surah below and tap <Text style={{ color: colors.accent, fontWeight: '700' }}>Add New Ayahs</Text> to begin memorising with spaced repetition.
+                                        {t('hifzTab.emptyBody', { btn: t('hifz.addNewAyahs') })}
                                     </Text>
                                 </Animated.View>
                             ) : null

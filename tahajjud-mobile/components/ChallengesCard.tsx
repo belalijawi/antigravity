@@ -5,31 +5,43 @@
  * No premium gate, no points / XP gaming — just a steady focus point
  * to keep the user motivated. Refreshes when the user returns to Home.
  */
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useState, useCallback, useRef } from 'react';
 import { View, Text, StyleSheet, DeviceEventEmitter } from 'react-native';
 import { GlassBg as BlurView } from './GlassBg';
 import { Trophy, CheckCircle2 } from 'lucide-react-native';
 import Animated, { FadeInDown } from 'react-native-reanimated';
 import { useTheme } from '../context/ThemeContext';
-import { currentWeekly, currentMonthly, progressFor, ChallengeDef } from '../utils/challenges';
+import { currentWeeklyAdaptive, currentMonthlyAdaptive, progressFor, ChallengeDef } from '../utils/challenges';
+import { track } from '../utils/analytics';
+import { t } from '../utils/i18n';
 
 export function ChallengesCard() {
     const { colors, blurIntensity, cardBg } = useTheme();
     const [weekly, setWeekly] = useState<{ c: ChallengeDef; current: number; target: number; complete: boolean } | null>(null);
     const [monthly, setMonthly] = useState<{ c: ChallengeDef; current: number; target: number; complete: boolean } | null>(null);
+    // Tracks which challenge ids we've already fired a completion event for,
+    // so a re-render (e.g. another prayer logged the same day) doesn't double-count.
+    const completedIdsRef = useRef<Set<string>>(new Set());
 
     const refresh = useCallback(async () => {
-        const w = currentWeekly();
-        const m = currentMonthly();
+        const [w, m] = await Promise.all([currentWeeklyAdaptive(), currentMonthlyAdaptive()]);
         const [wp, mp] = await Promise.all([progressFor(w), progressFor(m)]);
         setWeekly({ c: w, ...wp });
         setMonthly({ c: m, ...mp });
+        for (const [kind, def, prog] of [['weekly', w, wp], ['monthly', m, mp]] as const) {
+            if (prog.complete && !completedIdsRef.current.has(def.id)) {
+                completedIdsRef.current.add(def.id);
+                track('challenge_completed', { kind, metric: def.metric, target: prog.target });
+            }
+        }
     }, []);
 
     useEffect(() => {
         refresh();
         // Refresh whenever a prayer is logged so progress feels live.
-        const sub = DeviceEventEmitter.addListener('prayer-logged', refresh);
+        // NOTE: the event is 'prayerLogged' (emitted by Tracker/HomeTab) — the
+        // old 'prayer-logged' name never matched, so the card never updated live.
+        const sub = DeviceEventEmitter.addListener('prayerLogged', refresh);
         return () => sub.remove();
     }, [refresh]);
 
@@ -50,7 +62,7 @@ export function ChallengesCard() {
                 <View style={[styles.iconWrap, { backgroundColor: colors.accent + '22', borderColor: colors.accent + '44' }]}>
                     <Trophy size={14} color={colors.accent} />
                 </View>
-                <Text style={[styles.kicker, { color: colors.accent }]}>CHALLENGES</Text>
+                <Text style={[styles.kicker, { color: colors.accent }]}>{t('challenges.kicker')}</Text>
             </View>
 
             <ChallengeRow data={weekly} colors={colors} />
@@ -72,7 +84,7 @@ function ChallengeRow({
         <View style={styles.row}>
             <View style={styles.rowHead}>
                 <Text style={[styles.periodLabel, { color: colors.accent }]}>
-                    {c.kind === 'weekly' ? 'THIS WEEK' : 'THIS MONTH'}
+                    {c.kind === 'weekly' ? t('challenges.thisWeek') : t('challenges.thisMonth')}
                 </Text>
                 <Text style={[styles.progress, { color: complete ? colors.success : colors.secondaryText }]}>
                     {current} / {target}
@@ -91,7 +103,7 @@ function ChallengeRow({
             {complete && (
                 <View style={styles.completeRow}>
                     <CheckCircle2 size={12} color={colors.success} />
-                    <Text style={[styles.completeText, { color: colors.success }]}>Completed</Text>
+                    <Text style={[styles.completeText, { color: colors.success }]}>{t('challenges.completed')}</Text>
                 </View>
             )}
         </View>

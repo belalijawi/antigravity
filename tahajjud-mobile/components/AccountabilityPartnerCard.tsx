@@ -12,6 +12,7 @@ import { AccountabilityPartner, PartnerData, PartnerEntry } from '../utils/accou
 import { haptic } from '../utils/haptic';
 import { format } from 'date-fns';
 import Animated, { FadeInDown } from 'react-native-reanimated';
+import { t } from '../utils/i18n';
 
 interface PartnerStatus {
     prayed: boolean;
@@ -25,7 +26,7 @@ const PREMIUM_PARTNER_LIMIT = 5;
 function formatPrayedAt(prayedAt: string | null): string {
     if (!prayedAt) return '';
     try {
-        return ' at ' + format(new Date(prayedAt), 'h:mm a');
+        return t('partner.prayedAtPrefix', { time: format(new Date(prayedAt), 'h:mm a') });
     } catch {
         return '';
     }
@@ -109,11 +110,11 @@ export function AccountabilityPartnerCard() {
 
     const handleOpenAddPartner = () => {
         if (!isPremium) {
-            openPaywall();
+            openPaywall('feature_gate:accountability');
             return;
         }
         if (atPartnerLimit) {
-            Alert.alert('Circle is full', `You've connected with your maximum of ${PREMIUM_PARTNER_LIMIT} partners.`);
+            Alert.alert(t('partner.circleFullTitle'), t('partner.circleFullBody', { n: PREMIUM_PARTNER_LIMIT }));
             return;
         }
         setShowModal(true);
@@ -135,7 +136,7 @@ export function AccountabilityPartnerCard() {
             setNameInput('');
             import('../utils/featureDiscovery').then(m => m.markFeatureUsed('accountability_partner')).catch(() => {});
         } else {
-            Alert.alert('Not found', "That code doesn't match any account. Double-check and try again.");
+            Alert.alert(t('partner.notFoundTitle'), t('partner.notFoundBody'));
         }
     };
 
@@ -145,38 +146,38 @@ export function AccountabilityPartnerCard() {
         setWakingPartnerId(partner.userId);
         const result = await AccountabilityPartner.wakePartner(partner.userId);
         setWakingPartnerId(null);
-        const detailSuffix = result.detail ? `\n\nDetail: ${result.detail}` : '';
+        const detailSuffix = result.detail ? t('partner.detailSuffix', { detail: result.detail }) : '';
         switch (result.ok) {
             case 'sent':
-                Alert.alert(`Wake-up sent to ${partner.name}`, "They'll get a push notification. Don't overdo it — limited to once every 8 hours.");
+                Alert.alert(t('partner.wakeSentTitle', { name: partner.name }), t('partner.wakeSentBody'));
                 break;
             case 'rate_limited':
-                Alert.alert('Wake-up not sent', "You've already sent one to this partner in the last 8 hours.");
+                Alert.alert(t('partner.wakeNotSentTitle'), t('partner.wakeRateLimitBody'));
                 break;
             case 'no_token':
                 Alert.alert(
-                    `Can't reach ${partner.name}`,
-                    `${partner.name} hasn't enabled push notifications yet. Ask them to open the app, allow notifications, and re-open Partner.${detailSuffix}`
+                    t('partner.cantReachTitle', { name: partner.name }),
+                    t('partner.noTokenBody', { name: partner.name, detail: detailSuffix })
                 );
                 break;
             case 'device_invalid':
                 Alert.alert(
-                    `Can't reach ${partner.name}`,
-                    `${partner.name}'s device is no longer registered (maybe they reinstalled). Ask them to open the app once to refresh.${detailSuffix}`
+                    t('partner.cantReachTitle', { name: partner.name }),
+                    t('partner.deviceInvalidBody', { name: partner.name, detail: detailSuffix })
                 );
                 break;
             case 'failed':
             default:
-                Alert.alert('Wake-up not sent', `Something went wrong. Check your connection and try again.${detailSuffix}`);
+                Alert.alert(t('partner.wakeNotSentTitle'), t('partner.wakeFailedBody', { detail: detailSuffix }));
                 break;
         }
     };
 
     const handleDisconnect = (partner: PartnerEntry) => {
-        Alert.alert(`Disconnect ${partner.name}?`, 'You can reconnect anytime.', [
-            { text: 'Cancel', style: 'cancel' },
+        Alert.alert(t('partner.disconnectTitle', { name: partner.name }), t('partner.disconnectBody'), [
+            { text: t('btn.cancel'), style: 'cancel' },
             {
-                text: 'Disconnect', style: 'destructive', onPress: async () => {
+                text: t('partner.disconnectBtn'), style: 'destructive', onPress: async () => {
                     await AccountabilityPartner.disconnectPartner(partner.userId);
                     const updated = await AccountabilityPartner.getOrCreate();
                     setPartnerData(updated);
@@ -197,7 +198,7 @@ export function AccountabilityPartnerCard() {
     const handleShare = async () => {
         if (!partnerData?.myCode) return;
         await Share.share({
-            message: `Join me on Tahajjud+ and let's hold each other accountable 🌙\nMy partner code: ${partnerData.myCode}`,
+            message: t('partner.shareMessage', { code: partnerData.myCode }),
         });
     };
 
@@ -218,7 +219,7 @@ export function AccountabilityPartnerCard() {
                         </View>
                         <View style={{ flex: 1 }}>
                             <Text style={styles.headerTitle}>
-                                {partners.length >= 2 ? 'Your Circle' : 'Accountability Partner'}
+                                {partners.length >= 2 ? t('partner.yourCircle') : t('partner.accountabilityPartner')}
                             </Text>
                             {partners.length >= 2 && (() => {
                                 const prayedCount = partners.reduce(
@@ -227,7 +228,7 @@ export function AccountabilityPartnerCard() {
                                 );
                                 return (
                                     <Text style={[styles.circleStat, { color: colors.secondaryText }]}>
-                                        {prayedCount} of {partners.length} prayed tonight 🌙
+                                        {t('partner.prayedTonightCount', { prayed: prayedCount, total: partners.length })}
                                     </Text>
                                 );
                             })()}
@@ -238,7 +239,7 @@ export function AccountabilityPartnerCard() {
                             activeOpacity={0.7}
                         >
                             <UserPlus size={14} color={colors.accent} />
-                            <Text style={[styles.addBtnText, { color: colors.accent }]}>Add</Text>
+                            <Text style={[styles.addBtnText, { color: colors.accent }]}>{t('partner.addBtn')}</Text>
                             {!isPremium && <Lock size={10} color="#f59e0b" />}
                         </TouchableOpacity>
                     </View>
@@ -248,8 +249,8 @@ export function AccountabilityPartnerCard() {
                         <TouchableOpacity style={styles.emptyRow} onPress={handleOpenAddPartner} activeOpacity={0.7}>
                             <Text style={styles.emptyText}>
                                 {isPremium
-                                    ? 'Tap Add to invite someone to pray with you 🌙'
-                                    : 'Pray with a friend — see who prayed tonight, send wake-up calls. Premium only 🌙'}
+                                    ? t('partner.emptyPremium')
+                                    : t('partner.emptyFree')}
                             </Text>
                         </TouchableOpacity>
                     ) : (
@@ -268,11 +269,11 @@ export function AccountabilityPartnerCard() {
                                         { backgroundColor: prayed ? '#22c55e' : 'rgba(255,255,255,0.12)' },
                                     ]} />
                                     <View style={{ flex: 1 }}>
-                                        <Text style={styles.partnerName}>{partner.name}</Text>
+                                        <Text style={styles.partnerName} numberOfLines={1}>{partner.name}</Text>
                                         <Text style={[styles.partnerStatus, prayed && { color: '#22c55e' }]}>
                                             {prayed
-                                                ? `Prayed tonight${formatPrayedAt(prayedAt)} 🌙`
-                                                : "Hasn't prayed yet tonight"
+                                                ? t('partner.prayedTonight', { time: formatPrayedAt(prayedAt) })
+                                                : t('partner.notPrayedYet')
                                             }
                                         </Text>
                                     </View>
@@ -289,7 +290,7 @@ export function AccountabilityPartnerCard() {
                                                 accessibilityLabel={`Send wake-up to ${partner.name}`}
                                             >
                                                 <Moon size={11} color={colors.accent} />
-                                                <Text style={[styles.wakeText, { color: colors.accent }]}>{isWaking ? '…' : 'Wake'}</Text>
+                                                <Text style={[styles.wakeText, { color: colors.accent }]}>{isWaking ? '…' : t('partner.wakeBtn')}</Text>
                                             </TouchableOpacity>
                                         );
                                     })()}
@@ -317,7 +318,7 @@ export function AccountabilityPartnerCard() {
                         <TouchableOpacity onPress={() => setShowModal(false)}>
                             <X size={20} color="#64748b" />
                         </TouchableOpacity>
-                        <Text style={styles.modalTitle}>Add Partner</Text>
+                        <Text style={styles.modalTitle}>{t('partner.addPartnerTitle')}</Text>
                         <View style={{ width: 28 }} />
                     </View>
 
@@ -330,8 +331,8 @@ export function AccountabilityPartnerCard() {
                     >
                         {/* Your code */}
                         <View style={styles.myCodeSection}>
-                            <Text style={styles.sectionLabel}>Your partner code</Text>
-                            <Text style={styles.sectionSub}>Share this with someone you want to pray with</Text>
+                            <Text style={styles.sectionLabel}>{t('partner.yourPartnerCode')}</Text>
+                            <Text style={styles.sectionSub}>{t('partner.shareCodeSub')}</Text>
                             <View style={styles.codeRow}>
                                 <Text style={styles.codeText}>{partnerData.myCode}</Text>
                                 <TouchableOpacity onPress={handleCopyCode} style={styles.codeAction}>
@@ -345,19 +346,19 @@ export function AccountabilityPartnerCard() {
                                 onPress={handleShare}
                                 style={[styles.shareBtn, { backgroundColor: colors.accent + '18', borderColor: colors.accent + '33' }]}
                             >
-                                <Text style={[styles.shareBtnText, { color: colors.accent }]}>Share my code</Text>
+                                <Text style={[styles.shareBtnText, { color: colors.accent }]}>{t('partner.shareMyCode')}</Text>
                             </TouchableOpacity>
                         </View>
 
                         <View style={styles.divider} />
 
                         {/* Enter partner code */}
-                        <Text style={styles.sectionLabel}>Enter their code</Text>
-                        <Text style={styles.sectionSub}>Get their 6-character code and enter it below</Text>
+                        <Text style={styles.sectionLabel}>{t('partner.enterTheirCode')}</Text>
+                        <Text style={styles.sectionSub}>{t('partner.enterCodeSub')}</Text>
 
                         <TextInput
                             style={[styles.textInput, { borderColor: 'rgba(255,255,255,0.12)', color: '#f1f5f9' }]}
-                            placeholder="Your name (shown to partner)"
+                            placeholder={t('partner.namePlaceholder')}
                             placeholderTextColor="#334155"
                             value={nameInput}
                             onChangeText={setNameInput}
@@ -379,22 +380,22 @@ export function AccountabilityPartnerCard() {
                             disabled={connecting || !codeInput.trim() || !nameInput.trim()}
                             style={[styles.connectBtn, { backgroundColor: colors.accent, opacity: connecting || !codeInput.trim() || !nameInput.trim() ? 0.5 : 1 }]}
                         >
-                            <Text style={styles.connectBtnText}>{connecting ? 'Connecting…' : 'Connect'}</Text>
+                            <Text style={styles.connectBtnText}>{connecting ? t('partner.connecting') : t('partner.connectBtn')}</Text>
                         </TouchableOpacity>
 
                         {/* Current partners summary */}
                         {partners.length > 0 && (
                             <>
                                 <View style={styles.divider} />
-                                <Text style={styles.sectionLabel}>Connected ({partners.length})</Text>
+                                <Text style={styles.sectionLabel}>{t('partner.connectedCount', { n: partners.length })}</Text>
                                 {partners.map(p => (
                                     <View key={p.userId} style={styles.existingPartnerRow}>
-                                        <Text style={styles.existingPartnerName}>{p.name}</Text>
+                                        <Text style={styles.existingPartnerName} numberOfLines={1}>{p.name}</Text>
                                         <TouchableOpacity onPress={() => {
                                             setShowModal(false);
                                             handleDisconnect(p);
                                         }}>
-                                            <Text style={styles.removeText}>Remove</Text>
+                                            <Text style={styles.removeText}>{t('partner.removeBtn')}</Text>
                                         </TouchableOpacity>
                                     </View>
                                 ))}
@@ -456,6 +457,8 @@ const styles = StyleSheet.create({
         flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
         paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: 'rgba(255,255,255,0.05)',
     },
-    existingPartnerName: { color: '#cbd5e1', fontSize: 14, fontWeight: '600' },
+    // flex + single line so a long partner name truncates instead of pushing
+    // the Remove button off the row edge.
+    existingPartnerName: { color: '#cbd5e1', fontSize: 14, fontWeight: '600', flex: 1, marginRight: 12 },
     removeText: { color: '#ef4444', fontSize: 13, fontWeight: '700' },
 });

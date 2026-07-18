@@ -17,6 +17,7 @@ import { Plus, Target, X, Lock, BarChart2 } from 'lucide-react-native';
 import { subDays } from 'date-fns';
 import { useTheme } from '../context/ThemeContext';
 import { usePurchases } from '../context/PurchasesContext';
+import { t, getLocale } from '../utils/i18n';
 
 const SESSIONS_KEY     = 'tasbeeh-sessions';
 const CUSTOM_KEY       = 'tasbeeh-custom-dhikrs';
@@ -40,14 +41,16 @@ interface Session {
     date: string;
 }
 
-const BUILT_IN: Dhikr[] = [
-    { id: 'subhan',    arabic: 'سُبْحَانَ اللَّهِ',              transliteration: 'SubhanAllah',                  meaning: 'Glory be to Allah',                  target: 33  },
-    { id: 'hamd',      arabic: 'الْحَمْدُ لِلَّهِ',              transliteration: 'Alhamdulillah',                 meaning: 'All praise be to Allah',             target: 33  },
-    { id: 'akbar',     arabic: 'اللَّهُ أَكْبَرُ',               transliteration: 'Allahu Akbar',                  meaning: 'Allah is the Greatest',              target: 34  },
-    { id: 'istighfar', arabic: 'أَسْتَغْفِرُ اللَّهَ',            transliteration: 'Astaghfirullah',                meaning: 'I seek forgiveness from Allah',       target: 100 },
-    { id: 'tahleel',   arabic: 'لَا إِلَٰهَ إِلَّا اللَّهُ',     transliteration: 'La ilaha illallah',             meaning: 'There is no god but Allah',          target: 100 },
-    { id: 'salawat',   arabic: 'اللَّهُمَّ صَلِّ عَلَى مُحَمَّد', transliteration: "Allahuma Salli 'ala Muhammad",  meaning: 'O Allah, send blessings upon Muhammad', target: 100 },
-];
+function getBuiltIn(): Dhikr[] {
+    return [
+        { id: 'subhan',    arabic: 'سُبْحَانَ اللَّهِ',              transliteration: 'SubhanAllah',                  meaning: t('tasbeeh.meaningSubhan'),     target: 33  },
+        { id: 'hamd',      arabic: 'الْحَمْدُ لِلَّهِ',              transliteration: 'Alhamdulillah',                 meaning: t('tasbeeh.meaningHamd'),       target: 33  },
+        { id: 'akbar',     arabic: 'اللَّهُ أَكْبَرُ',               transliteration: 'Allahu Akbar',                  meaning: t('tasbeeh.meaningAkbar'),      target: 34  },
+        { id: 'istighfar', arabic: 'أَسْتَغْفِرُ اللَّهَ',            transliteration: 'Astaghfirullah',                meaning: t('tasbeeh.meaningIstighfar'),  target: 100 },
+        { id: 'tahleel',   arabic: 'لَا إِلَٰهَ إِلَّا اللَّهُ',     transliteration: 'La ilaha illallah',             meaning: t('tasbeeh.meaningTahleel'),    target: 100 },
+        { id: 'salawat',   arabic: 'اللَّهُمَّ صَلِّ عَلَى مُحَمَّد', transliteration: "Allahuma Salli 'ala Muhammad",  meaning: t('tasbeeh.meaningSalawat'),    target: 100 },
+    ];
+}
 
 function todayKey() {
     return new Date().toDateString();
@@ -106,6 +109,7 @@ export function TasbeehCard() {
     const hasLoadedRef      = useRef(false);       // prevents celebration firing on initial mount
     const prevGoalRef       = useRef<number>(0);   // detects goal changes vs count crossings
 
+    const BUILT_IN = getBuiltIn();
     const allDhikrs: Dhikr[] = [...BUILT_IN, ...customDhikrs];
     const dhikr = allDhikrs[selectedIndex] ?? BUILT_IN[0];
 
@@ -155,7 +159,7 @@ export function TasbeehCard() {
         }
 
         // Pop + fade animation on the ring
-        setCelebText('🎉 Goal reached!');
+        setCelebText(t('tasbeeh.goalReached'));
         celebScale.value = withSequence(
             withSpring(1.18, { damping: 6, stiffness: 180 }),
             withSpring(1.0, { damping: 12 }),
@@ -192,7 +196,7 @@ export function TasbeehCard() {
         const key = d.toDateString();
         const total = sessions.filter(s => new Date(s.date).toDateString() === key)
             .reduce((sum, s) => sum + s.count, 0);
-        return { label: d.toLocaleDateString('en-GB', { weekday: 'short' }), total, isToday: i === 6 };
+        return { label: d.toLocaleDateString(getLocale(), { weekday: 'short' }), total, isToday: i === 6 };
     });
     const maxDay = Math.max(...last7.map(d => d.total), 1);
 
@@ -285,9 +289,9 @@ export function TasbeehCard() {
     };
 
     const deleteCustomDhikr = async (id: string) => {
-        Alert.alert('Delete dhikr?', 'This cannot be undone.', [
-            { text: 'Cancel', style: 'cancel' },
-            { text: 'Delete', style: 'destructive', onPress: async () => {
+        Alert.alert(t('tasbeeh.deleteDhikrTitle'), t('tasbeeh.cannotBeUndone'), [
+            { text: t('btn.cancel'), style: 'cancel' },
+            { text: t('btn.delete'), style: 'destructive', onPress: async () => {
                 const updated = customDhikrs.filter(d => d.id !== id);
                 setCustomDhikrs(updated);
                 setSelectedIndex(0); setCount(0); setRounds(0);
@@ -326,7 +330,7 @@ export function TasbeehCard() {
                 {/* Header: daily total + stats + goal button */}
                 <View style={styles.headerRow}>
                     <View>
-                        <Text style={[styles.headerLabel, { color: colors.secondaryText }]}>Today's Dhikr</Text>
+                        <Text style={[styles.headerLabel, { color: colors.secondaryText }]}>{t('tasbeeh.todaysDhikr')}</Text>
                         <Text style={[styles.headerTotal, { color: dailyGoal > 0 && dailyTotal >= dailyGoal ? colors.success : colors.accent }]}>
                             {dailyTotal.toLocaleString()}
                             {dailyGoal > 0 && <Text style={[styles.headerGoalOf, { color: colors.secondaryText }]}> / {dailyGoal.toLocaleString()}</Text>}
@@ -341,7 +345,7 @@ export function TasbeehCard() {
                                     setShowStats(s => !s);
                                     import('../utils/featureDiscovery').then(m => m.markFeatureUsed('tasbeeh_stats')).catch(() => {});
                                 } else {
-                                    openPaywall();
+                                    openPaywall('feature_gate:dhikr_stats');
                                 }
                             }}
                             style={[styles.goalBtn, { borderColor: showStats ? colors.accent + '55' : 'rgba(255,255,255,0.10)', backgroundColor: showStats ? colors.accent + '15' : 'rgba(255,255,255,0.04)' }]}
@@ -352,13 +356,13 @@ export function TasbeehCard() {
                                     ? <BarChart2 size={12} color={colors.secondaryText} />
                                     : <Lock size={11} color="#f59e0b" />}
                             <Text style={[styles.goalBtnText, { color: showStats ? colors.accent : colors.secondaryText }]}>
-                                {showStats ? 'Done' : 'Stats'}
+                                {showStats ? t('tasbeeh.doneBtn') : t('tasbeeh.statsBtn')}
                             </Text>
                         </TouchableOpacity>
                         <TouchableOpacity onPress={() => setShowGoalModal(true)} style={[styles.goalBtn, { borderColor: dailyGoal > 0 ? colors.accent + '55' : 'rgba(255,255,255,0.10)' }]}>
                             <Target size={12} color={dailyGoal > 0 ? colors.accent : colors.secondaryText} />
                             <Text style={[styles.goalBtnText, { color: dailyGoal > 0 ? colors.accent : colors.secondaryText }]}>
-                                {dailyGoal > 0 ? `Goal: ${dailyGoal.toLocaleString()}` : 'Goal'}
+                                {dailyGoal > 0 ? t('tasbeeh.goalWithN', { n: dailyGoal.toLocaleString() }) : t('tasbeeh.goalBtn')}
                             </Text>
                         </TouchableOpacity>
                     </View>
@@ -381,22 +385,22 @@ export function TasbeehCard() {
                         <View style={styles.statsTopRow}>
                             <View style={[styles.statBox, { borderColor: 'rgba(255,255,255,0.07)' }]}>
                                 <Text style={[styles.statBoxNum, { color: colors.accent }]}>{allTimeTotal.toLocaleString()}</Text>
-                                <Text style={[styles.statBoxLabel, { color: colors.secondaryText }]}>All time</Text>
+                                <Text style={[styles.statBoxLabel, { color: colors.secondaryText }]}>{t('tasbeeh.allTime')}</Text>
                             </View>
                             <View style={[styles.statBox, { borderColor: 'rgba(255,255,255,0.07)' }]}>
                                 <Text style={[styles.statBoxNum, { color: colors.accent }]}>{dailyStreak}</Text>
-                                <Text style={[styles.statBoxLabel, { color: colors.secondaryText }]}>Day streak 🔥</Text>
+                                <Text style={[styles.statBoxLabel, { color: colors.secondaryText }]}>{t('tasbeeh.dayStreak')}</Text>
                             </View>
                             {topDhikr && topDhikr[0] && (
                                 <View style={[styles.statBox, { borderColor: 'rgba(255,255,255,0.07)', flex: 1.4 }]}>
                                     <Text style={[styles.statBoxNum, { color: colors.accent }]} numberOfLines={1}>{topDhikr[0]}</Text>
-                                    <Text style={[styles.statBoxLabel, { color: colors.secondaryText }]}>Most recited</Text>
+                                    <Text style={[styles.statBoxLabel, { color: colors.secondaryText }]}>{t('tasbeeh.mostRecited')}</Text>
                                 </View>
                             )}
                         </View>
 
                         {/* 7-day bar chart */}
-                        <Text style={[styles.statsChartLabel, { color: colors.secondaryText }]}>LAST 7 DAYS</Text>
+                        <Text style={[styles.statsChartLabel, { color: colors.secondaryText }]}>{t('tasbeeh.last7Days')}</Text>
                         <View style={styles.barChart}>
                             {last7.map((d, i) => (
                                 <View key={i} style={styles.barCol}>
@@ -420,7 +424,7 @@ export function TasbeehCard() {
                         {/* Per-dhikr breakdown today */}
                         {Object.keys(dhikrTotals).length > 0 && (
                             <>
-                                <Text style={[styles.statsChartLabel, { color: colors.secondaryText }]}>ALL TIME BREAKDOWN</Text>
+                                <Text style={[styles.statsChartLabel, { color: colors.secondaryText }]}>{t('tasbeeh.allTimeBreakdown')}</Text>
                                 {Object.entries(dhikrTotals)
                                     .sort((a, b) => b[1] - a[1])
                                     .slice(0, 5)
@@ -464,7 +468,7 @@ export function TasbeehCard() {
                         </TouchableOpacity>
                     ))}
                     <TouchableOpacity
-                        onPress={() => isPremium ? setShowCustomModal(true) : openPaywall()}
+                        onPress={() => isPremium ? setShowCustomModal(true) : openPaywall('feature_gate:custom_dhikr')}
                         style={styles.pillAdd}
                     >
                         {isPremium
@@ -496,14 +500,14 @@ export function TasbeehCard() {
                         {celebText}
                     </Animated.Text>
                     <Animated.Text style={[styles.hintText, { color: rounds > 0 ? colors.success : '#334155' }, useAnimatedStyle(() => ({ opacity: 1 - celebOpacity.value }))]}>
-                        {rounds > 0 ? `${rounds}× round${rounds > 1 ? 's' : ''} completed` : 'Tap to count · Hold to reset'}
+                        {rounds > 0 ? (rounds > 1 ? t('tasbeeh.roundsCompletedPlural', { n: rounds }) : t('tasbeeh.roundsCompleted', { n: rounds })) : t('tasbeeh.tapToCountHint')}
                     </Animated.Text>
                 </View>
 
                 {/* Today's sessions — premium only */}
                 {isPremium && todaySessions.length > 0 && (
                     <View style={styles.sessionsSection}>
-                        <Text style={[styles.sessionsTitle, { color: colors.secondaryText }]}>Today's Sessions</Text>
+                        <Text style={[styles.sessionsTitle, { color: colors.secondaryText }]}>{t('tasbeeh.todaysSessions')}</Text>
                         {todaySessions.slice(0, 5).map((s, i) => (
                             <View key={i} style={styles.sessionRow}>
                                 <Text style={[styles.sessionLabel, { color: colors.primaryText }]}>{s.dhikrLabel}</Text>
@@ -511,7 +515,7 @@ export function TasbeehCard() {
                             </View>
                         ))}
                         {todaySessions.length > 5 && (
-                            <Text style={[styles.moreText, { color: '#475569' }]}>+{todaySessions.length - 5} more</Text>
+                            <Text style={[styles.moreText, { color: '#475569' }]}>{t('tasbeeh.moreCount', { n: todaySessions.length - 5 })}</Text>
                         )}
                     </View>
                 )}
@@ -523,23 +527,23 @@ export function TasbeehCard() {
                     <BlurView intensity={40} tint="dark" style={StyleSheet.absoluteFill} />
                     <View style={styles.modalContent}>
                         <View style={styles.modalHeader}>
-                            <Text style={[styles.modalTitle, { color: colors.primaryText }]}>New Dhikr</Text>
+                            <Text style={[styles.modalTitle, { color: colors.primaryText }]}>{t('tasbeeh.newDhikr')}</Text>
                             <TouchableOpacity onPress={() => setShowCustomModal(false)}>
                                 <X size={20} color={colors.secondaryText} />
                             </TouchableOpacity>
                         </View>
 
-                        <Text style={[styles.inputLabel, { color: colors.secondaryText }]}>Name *</Text>
+                        <Text style={[styles.inputLabel, { color: colors.secondaryText }]}>{t('tasbeeh.nameRequired')}</Text>
                         <TextInput
                             style={[styles.input, { color: colors.primaryText, borderColor: 'rgba(255,255,255,0.15)' }]}
-                            placeholder="e.g. HasbunAllah"
+                            placeholder={t('tasbeeh.namePlaceholder')}
                             placeholderTextColor="#475569"
                             value={newTranslit}
                             onChangeText={setNewTranslit}
                             autoFocus
                         />
 
-                        <Text style={[styles.inputLabel, { color: colors.secondaryText }]}>Arabic (optional)</Text>
+                        <Text style={[styles.inputLabel, { color: colors.secondaryText }]}>{t('tasbeeh.arabicOptional')}</Text>
                         <TextInput
                             style={[styles.input, styles.inputArabic, { color: colors.primaryText, borderColor: 'rgba(255,255,255,0.15)' }]}
                             placeholder="حَسْبُنَا اللَّهُ"
@@ -549,7 +553,7 @@ export function TasbeehCard() {
                             textAlign="right"
                         />
 
-                        <Text style={[styles.inputLabel, { color: colors.secondaryText }]}>Target count</Text>
+                        <Text style={[styles.inputLabel, { color: colors.secondaryText }]}>{t('tasbeeh.targetCount')}</Text>
                         <View style={styles.targetPresets}>
                             {[33, 34, 100, 1000].map(n => (
                                 <TouchableOpacity
@@ -563,7 +567,7 @@ export function TasbeehCard() {
                         </View>
                         <TextInput
                             style={[styles.input, { color: colors.primaryText, borderColor: 'rgba(255,255,255,0.15)' }]}
-                            placeholder="Or type custom number"
+                            placeholder={t('tasbeeh.customNumberPlaceholder')}
                             placeholderTextColor="#475569"
                             value={newTarget}
                             onChangeText={setNewTarget}
@@ -575,7 +579,7 @@ export function TasbeehCard() {
                             style={[styles.saveBtn, { backgroundColor: colors.accent }]}
                             activeOpacity={0.8}
                         >
-                            <Text style={styles.saveBtnText}>Add Dhikr</Text>
+                            <Text style={styles.saveBtnText}>{t('tasbeeh.addDhikr')}</Text>
                         </TouchableOpacity>
                     </View>
                 </KeyboardAvoidingView>
@@ -587,13 +591,13 @@ export function TasbeehCard() {
                     <BlurView intensity={40} tint="dark" style={StyleSheet.absoluteFill} />
                     <View style={styles.modalContent}>
                         <View style={styles.modalHeader}>
-                            <Text style={[styles.modalTitle, { color: colors.primaryText }]}>Daily Goal</Text>
+                            <Text style={[styles.modalTitle, { color: colors.primaryText }]}>{t('tasbeeh.dailyGoalTitle')}</Text>
                             <TouchableOpacity onPress={() => setShowGoalModal(false)}>
                                 <X size={20} color={colors.secondaryText} />
                             </TouchableOpacity>
                         </View>
                         <Text style={[styles.goalSubtitle, { color: colors.secondaryText }]}>
-                            Set a total daily dhikr target across all sessions
+                            {t('tasbeeh.goalSubtitle')}
                         </Text>
                         <View style={styles.goalPresets}>
                             {GOAL_PRESETS.map(n => (
@@ -603,16 +607,16 @@ export function TasbeehCard() {
                                     style={[styles.goalPresetBtn, dailyGoal === n && { backgroundColor: colors.accent + '25', borderColor: colors.accent + '66' }]}
                                 >
                                     <Text style={[styles.goalPresetNum, { color: dailyGoal === n ? colors.accent : colors.primaryText }]}>{n}</Text>
-                                    <Text style={[styles.goalPresetLabel, { color: colors.secondaryText }]}>dhikr</Text>
+                                    <Text style={[styles.goalPresetLabel, { color: colors.secondaryText }]}>{t('tasbeeh.dhikrWord')}</Text>
                                 </TouchableOpacity>
                             ))}
                         </View>
 
-                        <Text style={[styles.inputLabel, { color: colors.secondaryText }]}>Custom amount</Text>
+                        <Text style={[styles.inputLabel, { color: colors.secondaryText }]}>{t('tasbeeh.customAmount')}</Text>
                         <View style={styles.customGoalRow}>
                             <TextInput
                                 style={[styles.input, { flex: 1, color: colors.primaryText, borderColor: 'rgba(255,255,255,0.15)' }]}
-                                placeholder="e.g. 750"
+                                placeholder={t('tasbeeh.customGoalPlaceholder')}
                                 placeholderTextColor="#475569"
                                 value={customGoalInput}
                                 onChangeText={setCustomGoalInput}
@@ -623,13 +627,13 @@ export function TasbeehCard() {
                                 style={[styles.customGoalSaveBtn, { backgroundColor: colors.accent }]}
                                 activeOpacity={0.8}
                             >
-                                <Text style={styles.saveBtnText}>Set</Text>
+                                <Text style={styles.saveBtnText}>{t('tasbeeh.setBtn')}</Text>
                             </TouchableOpacity>
                         </View>
 
                         {dailyGoal > 0 && (
                             <TouchableOpacity onPress={() => saveGoal(0)} style={styles.removeGoalBtn}>
-                                <Text style={styles.removeGoalText}>Remove goal</Text>
+                                <Text style={styles.removeGoalText}>{t('tasbeeh.removeGoal')}</Text>
                             </TouchableOpacity>
                         )}
                     </View>

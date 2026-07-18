@@ -12,6 +12,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { X, LayoutDashboard } from 'lucide-react-native';
 import { useTheme } from '../context/ThemeContext';
+import { t } from '../utils/i18n';
 
 const DISMISSED_KEY = 'widget_promo_dismissed';
 
@@ -87,10 +88,10 @@ export function WidgetPromo({ onDismiss }: WidgetPromoProps) {
 
                     <View style={styles.textCol}>
                         <Text style={[styles.title, { color: colors.primaryText }]}>
-                            Add the Home Screen Widget 🌙
+                            {t('widgetPromo.title')}
                         </Text>
                         <Text style={[styles.body, { color: colors.secondaryText }]}>
-                            See your Tahajjud gate time and next prayer at a glance — no need to open the app.
+                            {t('widgetPromo.body')}
                         </Text>
                     </View>
                 </View>
@@ -98,10 +99,10 @@ export function WidgetPromo({ onDismiss }: WidgetPromoProps) {
                 {/* Step-by-step */}
                 <View style={styles.steps}>
                     {[
-                        'Long-press your home screen',
-                        'Tap  +  in the top-left corner',
-                        'Search "Tahajjud" → choose a size',
-                        'Tap  Add Widget  — done!',
+                        t('widgetPromo.step1'),
+                        t('widgetPromo.step2'),
+                        t('widgetPromo.step3'),
+                        t('widgetPromo.step4'),
                     ].map((step, i) => (
                         <View key={i} style={styles.stepRow}>
                             <View style={styles.stepNum}>
@@ -119,7 +120,7 @@ export function WidgetPromo({ onDismiss }: WidgetPromoProps) {
                         start={{ x: 0, y: 0 }}
                         end={{ x: 1, y: 0 }}
                     >
-                        <Text style={styles.gotItText}>Got it 👍</Text>
+                        <Text style={styles.gotItText}>{t('widgetPromo.gotIt')}</Text>
                     </LinearGradient>
                 </TouchableOpacity>
             </View>

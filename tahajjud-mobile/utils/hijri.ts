@@ -78,16 +78,3 @@ export function getEidToday(date: Date = new Date()): EidInfo | null {
     return null;
 }
 
-/** True if today is in the holy month of Ramadan. */
-export function isRamadan(date: Date = new Date()): boolean {
-    return toHijri(date).month === 9;
-}
-
-/**
- * White days (Ayyam al-Beed) — 13th, 14th, 15th of every Hijri month.
- * Fasting and night prayer are extra recommended on these days.
- */
-export function isWhiteDay(date: Date = new Date()): boolean {
-    const h = toHijri(date);
-    return h.day >= 13 && h.day <= 15;
-}

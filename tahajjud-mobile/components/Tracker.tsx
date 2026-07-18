@@ -5,7 +5,7 @@ import { TahajjudJournalModal } from './TahajjudJournalModal';
 import { TahajjudLetterModal } from './TahajjudLetterModal';
 import { StreakMilestoneModal } from './StreakMilestoneModal';
 import { AccountabilityPartner } from '../utils/accountabilityPartner';
-import { Flame, Trophy, AlertCircle, Star, Sunrise, ShieldCheck, Moon, PenTool, MessageSquarePlus, Snowflake } from "lucide-react-native";
+import { Flame, Trophy, AlertCircle, Star, Sunrise, ShieldCheck, Moon, PenTool, MessageSquarePlus, Snowflake, PauseCircle, PlayCircle, Heart } from "lucide-react-native";
 import { LinearGradient } from 'expo-linear-gradient';
 import { GlassBg as BlurView } from './GlassBg';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -14,13 +14,14 @@ import { useTheme } from '../context/ThemeContext';
 import { usePurchases } from '../context/PurchasesContext';
 import { haptic } from '../utils/haptic';
 import { getAchievements, checkAchievements, Achievement } from '../utils/achievements';
-import { calculateStreakWithGrace } from '../utils/graceDay';
+import { calculateStreakWithGrace, isStreakPaused, startStreakPause, endStreakPause, getActivePause, PauseReason } from '../utils/graceDay';
+import { logTahajjudToMap } from '../utils/tahajjudMap';
 import { refreshWeeklyDigest } from '../utils/weeklyDigest';
 import { TahajjudChallenge } from '../utils/tahajjudChallenge';
 import { localDateStr } from '../utils/localDate';
 import { track } from '../utils/analytics';
-import { maybeRequestWeeklyReview } from '../utils/weeklyReview';
-import { logTahajjudToMap } from '../utils/tahajjudMap';
+import { requestReviewAtMilestone } from '../utils/weeklyReview';
+import { t } from '../utils/i18n';
 
 const TRACKER_KEY    = 'prayer-tracker-v2';
 const BEST_STREAK_KEY = 'tahajjud-best-streak';
@@ -39,6 +40,13 @@ export const PRAYERS: { key: PrayerKey; label: string }[] = [
     { key: 'isha',     label: 'Isha'     },
     { key: 'tahajjud', label: 'Tahajjud' },
 ];
+
+// Live-translated prayer name — PRAYERS.label above stays English as a stable
+// fallback/key for non-UI consumers; UI code in this file should call this
+// instead so labels follow the current locale.
+function prayerLabel(key: PrayerKey): string {
+    return t(`prayer.${key}`);
+}
 
 const MILESTONES = [
     { days: 3,   label: '3',   color: '#94a3b8' },
@@ -134,6 +142,12 @@ export function Tracker() {
     const { colors, cardBg, blurIntensity } = useTheme();
     const { isPremium, openPaywall } = usePurchases();
     const [history, setHistory]           = useState<PrayerHistory>(emptyHistory());
+    // Mirrors `history` synchronously (no waiting for a re-render). Rapid
+    // taps on two DIFFERENT prayers before React re-renders would otherwise
+    // both read the same stale `history` closure value and the second
+    // save() would overwrite (drop) the first log — reading from this ref
+    // instead always sees the latest write immediately.
+    const historyRef = useRef<PrayerHistory>(history);
     const [streaks, setStreaks]            = useState<Record<PrayerKey, number>>({
         fajr: 0, dhuhr: 0, asr: 0, maghrib: 0, isha: 0, tahajjud: 0,
     });
@@ -142,7 +156,13 @@ export function Tracker() {
     const [showJournal, setShowJournal] = useState(false);
     const [showLetter, setShowLetter] = useState(false);
     const [milestoneToShow, setMilestoneToShow] = useState<number | null>(null);
+    // A streak paywall queued to open AFTER the letter modal closes. Opening it
+    // while the letter modal is still up would put two modals on screen at once
+    // and freeze the UI, so we defer it to the letter's onClose.
+    const pendingPaywallRef = useRef<string | null>(null);
     const [freezeAvailable, setFreezeAvailable] = useState(true);
+    const [paused, setPaused] = useState(false);
+    const [pauseModalVisible, setPauseModalVisible] = useState(false);
     const loggingRef = useRef<Set<string>>(new Set()); // prevents race on rapid double-tap
     const [achievements, setAchievements] = useState<Achievement[]>([]);
     const [badgeDetail, setBadgeDetail] = useState<Achievement | null>(null);
@@ -163,6 +183,13 @@ export function Tracker() {
 
     useEffect(() => { load(); getAchievements().then(setAchievements).catch(() => {}); }, []);
 
+    // When the cloud restore merges anything new into local storage (fresh
+    // reinstall, second device), re-read so the streak reappears instantly.
+    useEffect(() => {
+        const sub = DeviceEventEmitter.addListener('prayerHistoryRestored', () => { load(); });
+        return () => sub.remove();
+    }, []);
+
     const load = async () => {
         try {
             const [raw, rawBest, oldRaw] = await Promise.all([
@@ -177,8 +204,11 @@ export function Tracker() {
                 parsed.tahajjud = JSON.parse(oldRaw);
                 await AsyncStorage.setItem(TRACKER_KEY, JSON.stringify(parsed));
             }
+            historyRef.current = parsed;
             setHistory(parsed);
-            recalcStreaks(parsed);
+            const isPaused = await isStreakPaused();
+            setPaused(isPaused);
+            recalcStreaks(parsed, isPaused);
             if (rawBest) setBestStreak(parseInt(rawBest, 10));
         } catch (e) {
             console.error('Failed to load tracker', e);
@@ -187,28 +217,67 @@ export function Tracker() {
 
     const [graceUsedToday, setGraceUsedToday] = useState(false);
 
-    const recalcStreaks = (h: PrayerHistory) => {
+    const recalcStreaks = (h: PrayerHistory, isPaused: boolean = paused) => {
         const s = {} as Record<PrayerKey, number>;
         for (const p of PRAYERS) s[p.key] = calculateStreak(h[p.key]);
         setStreaks(s);
         // Apply weekly freeze to Tahajjud streak — keeps a streak alive across
         // one missed night per ISO week so users aren't punished for one slip.
+        // Exempt (paused) days are bridged inside calculateStreakWithGrace.
         calculateStreakWithGrace(h.tahajjud, new Date(), isPremium ? 2 : 1).then(({ streak, graceUsedToday: usedNow, freezeAvailable: freezeOk }) => {
             setStreaks(prev => ({ ...prev, tahajjud: streak }));
             setGraceUsedToday(usedNow);
             setFreezeAvailable(freezeOk);
             // Streak-at-risk reminder: if they have a streak but haven't prayed
             // tonight yet, remind them this evening so they don't lose it.
+            // While paused (e.g. menstruation), never nudge — there is no
+            // obligation to pray, so a guilt reminder would be wrong.
             const prayedTonight = isLoggedToday(h.tahajjud);
             import('../utils/streakReminder').then(m => {
-                if (streak >= 2 && !prayedTonight) m.scheduleStreakAtRisk(streak);
+                if (!isPaused && streak >= 2 && !prayedTonight) m.scheduleStreakAtRisk(streak);
                 else m.cancelStreakAtRisk();
+            }).catch(() => {});
+            // Win-back reminders — anchored to the last Tahajjud log, so
+            // logging again automatically pushes both further into the
+            // future. See utils/winBackReminder.ts for the full design.
+            // Math.max guards against `bestStreak` state lagging a render
+            // behind a just-set new record (save() updates it after this runs).
+            import('../utils/winBackReminder').then(m => {
+                m.scheduleWinBack(h.tahajjud, Math.max(bestStreak, streak), isPaused);
             }).catch(() => {});
         }).catch(() => {});
     };
 
 
+    // Begin a pause with the chosen (optional) reason — streak bridges these days.
+    const beginPause = async (reason: PauseReason) => {
+        haptic.light();
+        await startStreakPause(reason);
+        setPaused(true);
+        setPauseModalVisible(false);
+        recalcStreaks(history, true);
+        track('streak_pause_started', { reason });
+        // Stop any pending streak-at-risk nudge immediately.
+        import('../utils/streakReminder').then(m => m.cancelStreakAtRisk()).catch(() => {});
+    };
+
+    // Resume — from today onward prayers count again; paused days stay bridged.
+    const resumeStreak = async () => {
+        haptic.light();
+        await endStreakPause();
+        setPaused(false);
+        recalcStreaks(history, false);
+        track('streak_pause_ended');
+    };
+
+    const onTogglePause = () => {
+        haptic.light();
+        if (paused) resumeStreak();
+        else setPauseModalVisible(true);
+    };
+
     const maybeShowMilestone = async (newStreak: number) => {
+        maybeNudgeSignIn(newStreak).catch(() => {});
         const target = MILESTONE_NIGHTS.find(m => m === newStreak);
         if (!target) return;
         try {
@@ -221,6 +290,26 @@ export function Tracker() {
         } catch { /* ignore */ }
     };
 
+    // Loss-aversion sign-in nudge: fires ONCE, at a 3-night streak, only for
+    // users without a linked account. A cold onboarding auth ask gets skipped;
+    // "protect the streak you just built" converts. Streak data is cloud-backed
+    // per Firebase uid, but only a real sign-in survives a reinstall.
+    const maybeNudgeSignIn = async (newStreak: number) => {
+        if (newStreak < 3) return;
+        const NUDGE_KEY = 'signin-nudge-shown-v1';
+        if (await AsyncStorage.getItem(NUDGE_KEY)) return;
+        const { getFirebaseAuth } = await import('../utils/firebase');
+        const user = getFirebaseAuth()?.currentUser;
+        if (user && !user.isAnonymous) return; // already signed in
+        await AsyncStorage.setItem(NUDGE_KEY, 'true');
+        track('signin_nudge_shown', { streak: newStreak });
+        Alert.alert(
+            t('tracker.protectStreakTitle', { n: newStreak }),
+            t('tracker.protectStreakBody'),
+            [{ text: t('tracker.later'), style: 'cancel' }, { text: t('btn.ok') }],
+        );
+    };
+
     // Show paywall to free users at streak milestones (3, 7 nights).
     // Each milestone shown at most once.
     const PAYWALL_STREAK_KEY = 'paywall-streak-shown-v1';
@@ -231,13 +320,20 @@ export function Tracker() {
             const streak = calculateStreak(tahajjudDates);
             const target = PAYWALL_STREAKS.find(n => streak === n);
             if (!target) return;
+            // At a milestone night (7/30/100) the StreakMilestoneModal already
+            // shows with its own "Unlock Premium" CTA. Auto-opening the paywall
+            // on top of that modal collides (two modals) and freezes the UI, so
+            // skip it here — the milestone modal handles the upsell.
+            if (MILESTONE_NIGHTS.includes(target)) return;
             const raw = await AsyncStorage.getItem(PAYWALL_STREAK_KEY);
             const seen = raw ? raw.split(',').map(Number) : [];
             if (seen.includes(target)) return;
             await AsyncStorage.setItem(PAYWALL_STREAK_KEY, [...seen, target].join(','));
             track('paywall_shown', { trigger: `streak_${target}` });
-            // Slight delay so the letter modal has time to close first
-            setTimeout(() => openPaywall(), 1800);
+            // Queue the paywall to open when the letter modal closes (see the
+            // TahajjudLetterModal onClose). A fixed timer could fire while the
+            // letter is still open → two modals → frozen UI.
+            pendingPaywallRef.current = `streak_milestone_${target}`;
         } catch { /* ignore */ }
     };
 
@@ -259,8 +355,8 @@ export function Tracker() {
             const Notifications = await import('expo-notifications');
             await Notifications.scheduleNotificationAsync({
                 content: {
-                    title: '5 nights of Tahajjud 🌙',
-                    body: "Masha'Allah. Your journal and full history are waiting — try premium free for 7 days.",
+                    title: t('tracker.fiveNightsTitle'),
+                    body: t('tracker.fiveNightsBody'),
                     sound: 'default',
                     data: { type: 'streak_paywall' },
                 },
@@ -274,6 +370,7 @@ export function Tracker() {
     };
 
     const save = async (updated: PrayerHistory) => {
+        historyRef.current = updated;
         setHistory(updated);
         recalcStreaks(updated);
         await AsyncStorage.setItem(TRACKER_KEY, JSON.stringify(updated));
@@ -286,10 +383,14 @@ export function Tracker() {
             setBestStreak(s);
             await AsyncStorage.setItem(BEST_STREAK_KEY, s.toString());
         }
+
+        // Back up to the cloud — fire-and-forget, so a lost phone can never
+        // erase a streak again.
+        import('../utils/prayerHistorySync').then(m => m.pushPrayerHistory()).catch(() => {});
     };
 
     const logPrayer = async (key: PrayerKey) => {
-        if (isLoggedToday(history[key])) return;
+        if (isLoggedToday(historyRef.current[key])) return;
         if (loggingRef.current.has(key)) return; // already in-flight
         loggingRef.current.add(key);
 
@@ -297,19 +398,23 @@ export function Tracker() {
         // Isha at 10am). If we don't have today's prayer times yet, allow it
         // — better to not block legitimate logs while data is loading.
         if (startTimes && new Date() < startTimes[key]) {
-            const label = PRAYERS.find(p => p.key === key)?.label ?? 'This prayer';
+            const label = PRAYERS.find(p => p.key === key) ? prayerLabel(key) : t('tracker.thisPrayerFallback');
             const fmt = startTimes[key].toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
             haptic.medium();
-            Alert.alert(`${label} hasn't started yet`, `${label} time begins at ${fmt} today. Come back then.`);
+            Alert.alert(t('tracker.notStartedTitle', { label }), t('tracker.notStartedBody', { label, time: fmt }));
             loggingRef.current.delete(key);
             return;
         }
 
         haptic.light();
-        const isFirstTahajjudEver = key === 'tahajjud' && history.tahajjud.length === 0;
+        const isFirstTahajjudEver = key === 'tahajjud' && historyRef.current.tahajjud.length === 0;
+        // Read from historyRef, not the `history` closure — two different
+        // prayers logged back-to-back before a re-render would otherwise
+        // both build `updated` from the same stale snapshot, and the
+        // second save() would silently overwrite (drop) the first log.
         const updated: PrayerHistory = {
-            ...history,
-            [key]: [...history[key], new Date().toISOString()],
+            ...historyRef.current,
+            [key]: [...historyRef.current[key], new Date().toISOString()],
         };
         try {
             await save(updated);
@@ -319,29 +424,44 @@ export function Tracker() {
             loggingRef.current.delete(key);
         }
         track('prayer_logged', { prayer: key });
-
-        // Weekly review prompt — fires at most once a week, only after 3+ total prayers
-        const totalLogged = Object.values(updated).flat().length;
-        maybeRequestWeeklyReview(totalLogged).catch(() => {});
         if (key === 'tahajjud') {
             // Check prayer achievements — show upsell to free users
             const totalTahajjud = updated.tahajjud.length;
             checkAchievements('prayer', totalTahajjud)
-                .then(newAchievement => {
+                .then(newlyUnlocked => {
                     getAchievements().then(setAchievements).catch(() => {});
-                    if (newAchievement) {
-                        if (!isPremium) {
-                            Alert.alert(
-                                `🏅 ${newAchievement.title}`,
-                                `${newAchievement.description}\n\nUnlock Premium to see your full journey — every prayer, every night, every achievement.`,
-                                [
-                                    { text: 'MashAllah!', style: 'cancel' },
-                                    { text: 'Unlock Premium ⭐', onPress: openPaywall },
-                                ]
-                            );
-                        } else {
-                            Alert.alert(`🏅 ${newAchievement.title}`, `MashAllah! ${newAchievement.description}`, [{ text: 'MashAllah!' }]);
-                        }
+                    if (newlyUnlocked.length > 0) {
+                        // On a milestone night (7/30/100) the StreakMilestoneModal
+                        // is the celebration. Showing this achievement alert at the
+                        // same moment races the modal's presentation and can freeze
+                        // the UI, so suppress the alert here (the achievement is
+                        // still recorded). It surfaces in the achievements list.
+                        const streakNow = calculateStreak(updated.tahajjud);
+                        if (MILESTONE_NIGHTS.includes(streakNow)) return;
+                        // A bulk restore can cross several thresholds in one go —
+                        // show each newly-earned badge one at a time so none of
+                        // them go unnoticed.
+                        const showNext = (i: number) => {
+                            if (i >= newlyUnlocked.length) return;
+                            const newAchievement = newlyUnlocked[i];
+                            if (!isPremium) {
+                                Alert.alert(
+                                    `🏅 ${newAchievement.title}`,
+                                    `${newAchievement.description}\n\n${t('tracker.unlockPremiumJourney')}`,
+                                    [
+                                        { text: t('tracker.mashallahExclaim'), style: 'cancel', onPress: () => showNext(i + 1) },
+                                        { text: t('tracker.unlockPremiumBtn'), onPress: openPaywall },
+                                    ]
+                                );
+                            } else {
+                                Alert.alert(
+                                    `🏅 ${newAchievement.title}`,
+                                    `${t('tracker.mashallahExclaim')} ${newAchievement.description}`,
+                                    [{ text: t('tracker.mashallahExclaim'), onPress: () => showNext(i + 1) }]
+                                );
+                            }
+                        };
+                        showNext(0);
                     }
                 })
                 .catch(() => {});
@@ -380,21 +500,25 @@ export function Tracker() {
     };
 
     const unlogPrayer = (key: PrayerKey) => {
-        if (!isLoggedToday(history[key])) return;
+        if (!isLoggedToday(historyRef.current[key])) return;
         Alert.alert(
-            'Remove log?',
-            `Remove today's ${PRAYERS.find(p => p.key === key)?.label} log?`,
+            t('tracker.removeLogTitle'),
+            t('tracker.removeLogBody', { label: prayerLabel(key) }),
             [
-                { text: 'Cancel', style: 'cancel' },
+                { text: t('btn.cancel'), style: 'cancel' },
                 {
-                    text: 'Remove',
+                    text: t('tracker.removeBtn'),
                     style: 'destructive',
                     onPress: async () => {
                         haptic.light();
                         const today = todayStr();
+                        // Read from historyRef — the confirmation dialog leaves
+                        // plenty of time for a different prayer to be logged in
+                        // the meantime, and building `updated` from a stale
+                        // `history` closure would silently drop that log.
                         const updated: PrayerHistory = {
-                            ...history,
-                            [key]: history[key].filter(d => localDateStr(d) !== today),
+                            ...historyRef.current,
+                            [key]: historyRef.current[key].filter(d => localDateStr(d) !== today),
                         };
                         await save(updated);
                     },
@@ -415,6 +539,13 @@ export function Tracker() {
     const tahajjudStreak = streaks.tahajjud;
     const milestone      = getMilestone(tahajjudStreak);
     const todayCount     = PRAYERS.filter(p => isLoggedToday(history[p.key])).length;
+
+    // Softer secondary metric — a number that survives a broken streak so a
+    // single bad week never reads as total failure.
+    const monthPrefix = localDateStr(new Date()).slice(0, 7); // YYYY-MM
+    const nightsThisMonth = new Set(
+        history.tahajjud.filter(d => localDateStr(d).startsWith(monthPrefix)).map(d => localDateStr(d))
+    ).size;
 
     return (
         <>
@@ -439,12 +570,17 @@ export function Tracker() {
                                 {tahajjudStreak}
                             </Text>
                             <Text style={[styles.streakUnit, { color: colors.secondaryText }]}>
-                                {tahajjudStreak === 1 ? 'day' : 'days'}
+                                {tahajjudStreak === 1 ? t('tracker.dayUnit') : t('tracker.daysUnit')}
                             </Text>
                         </View>
                         <View style={styles.freezeRow}>
-                            <Text style={[styles.streakLabel, { color: colors.secondaryText }]}>Tahajjud streak</Text>
-                            {tahajjudStreak > 0 && (
+                            <Text style={[styles.streakLabel, { color: colors.secondaryText }]}>{t('tracker.tahajjudStreak')}</Text>
+                            {paused ? (
+                                <View style={[styles.freezePill, { backgroundColor: 'rgba(167,139,250,0.14)', borderColor: 'rgba(167,139,250,0.34)' }]}>
+                                    <PauseCircle size={9} color="#a78bfa" />
+                                    <Text style={[styles.freezePillText, { color: '#a78bfa' }]}>{t('tracker.pausedSafe')}</Text>
+                                </View>
+                            ) : tahajjudStreak > 0 && (
                                 <View style={[
                                     styles.freezePill,
                                     freezeAvailable
@@ -454,11 +590,33 @@ export function Tracker() {
                                     <Snowflake size={9} color={freezeAvailable ? '#38bdf8' : '#475569'} />
                                     <Text style={[styles.freezePillText, { color: freezeAvailable ? '#38bdf8' : '#475569' }]}>
                                         {freezeAvailable
-                                            ? isPremium ? '2 freezes/week' : 'Freeze ready'
-                                            : 'Used this week'}
+                                            ? isPremium ? t('tracker.freezesPerWeek') : t('tracker.freezeReady')
+                                            : t('tracker.usedThisWeek')}
                                     </Text>
                                 </View>
                             )}
+                        </View>
+                        {/* Softer fallback metric + pause control */}
+                        <View style={styles.metaRow}>
+                            {nightsThisMonth > 0 && (
+                                <Text style={[styles.monthMetric, { color: colors.secondaryText }]}>
+                                    {nightsThisMonth === 1 ? t('tracker.nightThisMonth') : t('tracker.nightsThisMonth', { n: nightsThisMonth })}
+                                </Text>
+                            )}
+                            <TouchableOpacity
+                                onPress={onTogglePause}
+                                hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                                style={styles.pauseToggle}
+                                accessibilityRole="button"
+                                accessibilityLabel={paused ? 'Resume streak' : 'Pause streak'}
+                            >
+                                {paused
+                                    ? <PlayCircle size={11} color={colors.accent} />
+                                    : <PauseCircle size={11} color={colors.secondaryText} />}
+                                <Text style={[styles.pauseToggleText, { color: paused ? colors.accent : colors.secondaryText }]}>
+                                    {paused ? t('tracker.resume') : t('tracker.pause')}
+                                </Text>
+                            </TouchableOpacity>
                         </View>
                     </View>
 
@@ -466,7 +624,7 @@ export function Tracker() {
                         <Text style={[styles.todayCount, { color: todayCount === 6 ? colors.success : colors.accent }]}>
                             {todayCount}/6
                         </Text>
-                        <Text style={[styles.todayLabel, { color: colors.secondaryText }]}>today</Text>
+                        <Text style={[styles.todayLabel, { color: colors.secondaryText }]}>{t('tracker.today')}</Text>
                     </View>
                 </View>
 
@@ -494,7 +652,7 @@ export function Tracker() {
                     <View style={styles.missedBanner}>
                         <AlertCircle size={11} color="#f59e0b" />
                         <Text style={styles.missedText}>
-                            Missed yesterday: {missedYesterday.map(p => p.label).join(', ')}
+                            {t('tracker.missedYesterday', { list: missedYesterday.map(p => prayerLabel(p.key)).join(', ') })}
                         </Text>
                     </View>
                 )}
@@ -543,7 +701,7 @@ export function Tracker() {
                                         styles.nodeLabel,
                                         { color: logged ? (isTahajjud ? colors.accent : colors.success) : colors.secondaryText },
                                     ]} numberOfLines={1}>
-                                        {p.label}
+                                        {prayerLabel(p.key)}
                                     </Text>
                                     <Text style={[styles.nodeStreak, { color: streak > 0 ? '#64748b' : 'transparent' }]}>
                                         {streak > 0 ? `${streak}d` : '·'}
@@ -556,7 +714,7 @@ export function Tracker() {
 
                 {/* Achievements */}
                 <View style={styles.achievementsSection}>
-                    <Text style={[styles.achievementsTitle, { color: colors.secondaryText }]}>BADGES · TAP TO VIEW</Text>
+                    <Text style={[styles.achievementsTitle, { color: colors.secondaryText }]}>{t('tracker.badgesTapToView')}</Text>
                     <View style={styles.achievementsRow}>
                         {achievements.map(a => {
                             const IconComp = ACHIEVEMENT_ICONS[a.icon];
@@ -583,19 +741,81 @@ export function Tracker() {
                     </View>
                 </View>
 
-                <Text style={[styles.hint, { color: '#334155' }]}>Tap to log · Hold to undo</Text>
+                <Text style={[styles.hint, { color: '#334155' }]}>{t('tracker.tapToLogHoldToUndo')}</Text>
             </View>
         </View>
+
+        {/* Pause reason picker — every option is optional & private. */}
+        <Modal
+            visible={pauseModalVisible}
+            transparent
+            animationType="fade"
+            onRequestClose={() => setPauseModalVisible(false)}
+        >
+            <TouchableOpacity style={pauseStyles.backdrop} activeOpacity={1} onPress={() => setPauseModalVisible(false)}>
+                <TouchableOpacity activeOpacity={1} style={[pauseStyles.card, { backgroundColor: '#0a1228', borderColor: colors.accent + '33' }]}>
+                    <View style={[pauseStyles.iconWrap, { backgroundColor: '#a78bfa22', borderColor: '#a78bfa44' }]}>
+                        <Heart size={20} color="#a78bfa" />
+                    </View>
+                    <Text style={[pauseStyles.title, { color: colors.primaryText }]}>{t('tracker.pauseYourStreak')}</Text>
+                    <Text style={[pauseStyles.body, { color: colors.secondaryText }]}>
+                        {t('tracker.pauseBody')}
+                    </Text>
+                    {([
+                        { r: 'period' as PauseReason, label: t('tracker.reasonMenstruation') },
+                        { r: 'postpartum' as PauseReason, label: t('tracker.reasonPostpartum') },
+                        { r: 'illness' as PauseReason, label: t('tracker.reasonIllness') },
+                        { r: 'unspecified' as PauseReason, label: t('tracker.reasonUnspecified') },
+                    ]).map(opt => (
+                        <TouchableOpacity
+                            key={opt.r}
+                            style={[pauseStyles.option, { borderColor: colors.accent + '2a' }]}
+                            onPress={() => beginPause(opt.r)}
+                            activeOpacity={0.7}
+                        >
+                            <Text style={[pauseStyles.optionText, { color: colors.primaryText }]}>{opt.label}</Text>
+                        </TouchableOpacity>
+                    ))}
+                    <TouchableOpacity onPress={() => setPauseModalVisible(false)} style={pauseStyles.cancel}>
+                        <Text style={[pauseStyles.cancelText, { color: colors.secondaryText }]}>{t('btn.cancel')}</Text>
+                    </TouchableOpacity>
+                </TouchableOpacity>
+            </TouchableOpacity>
+        </Modal>
 
         {showWidgetPromo && (
             <WidgetPromo onDismiss={() => setShowWidgetPromo(false)} />
         )}
-        <TahajjudJournalModal visible={showJournal} onClose={() => setShowJournal(false)} />
-        <TahajjudLetterModal visible={showLetter} onClose={() => setShowLetter(false)} />
+        {/* The journal/letter modals are gated on `milestoneToShow === null` so
+            they NEVER present at the same time as the milestone modal. Two RN
+            modals presenting at once freezes the UI (a dimmed overlay traps all
+            touches) — that was the "completed 7-night streak → tapped MashAllah →
+            frozen" bug. When the milestone modal is dismissed, the still-pending
+            journal/letter (showJournal/showLetter) then presents on its own. */}
+        <TahajjudJournalModal visible={showJournal && milestoneToShow === null} onClose={() => setShowJournal(false)} />
+        <TahajjudLetterModal
+            visible={showLetter && milestoneToShow === null}
+            onClose={() => {
+                setShowLetter(false);
+                // Open any queued streak paywall now that the letter is closing,
+                // so the two modals never overlap (which would freeze the UI).
+                const pending = pendingPaywallRef.current;
+                if (pending) {
+                    pendingPaywallRef.current = null;
+                    setTimeout(() => openPaywall(pending), 350);
+                }
+            }}
+        />
         <StreakMilestoneModal
             visible={milestoneToShow !== null}
             nights={milestoneToShow ?? 0}
-            onClose={() => setMilestoneToShow(null)}
+            onClose={() => {
+                const nights = milestoneToShow ?? 0;
+                setMilestoneToShow(null);
+                // Ask for a rating right after the celebration — the emotional
+                // peak — instead of at a random prayer log.
+                if (nights > 0) requestReviewAtMilestone(nights).catch(() => {});
+            }}
         />
 
         {/* Badge detail — shows how to earn / when earned */}
@@ -636,11 +856,11 @@ export function Tracker() {
                             ]}>
                                 <Text style={[badgeStyles.statusText, { color: unlocked ? colors.accent : '#94a3b8' }]}>
                                     {unlocked
-                                        ? `✓ Earned ${new Date(badgeDetail.unlockedAt!).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}`
-                                        : 'Not yet earned'}
+                                        ? t('tracker.earnedOn', { date: new Date(badgeDetail.unlockedAt!).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) })
+                                        : t('tracker.notYetEarned')}
                                 </Text>
                             </View>
-                            <Text style={badgeStyles.dismissHint}>Tap anywhere to close</Text>
+                            <Text style={badgeStyles.dismissHint}>{t('tracker.tapToClose')}</Text>
                         </TouchableOpacity>
                     );
                 })()}
@@ -704,6 +924,26 @@ const styles = StyleSheet.create({
         fontSize: 9,
         fontWeight: '700',
         letterSpacing: 0.4,
+    },
+    metaRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 10,
+        marginTop: 6,
+        flexWrap: 'wrap',
+    },
+    monthMetric: {
+        fontSize: 11,
+        fontWeight: '600',
+    },
+    pauseToggle: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 3,
+    },
+    pauseToggleText: {
+        fontSize: 11,
+        fontWeight: '700',
     },
     todaySide: {
         alignItems: 'flex-end',
@@ -808,6 +1048,43 @@ const styles = StyleSheet.create({
         alignItems: 'center', justifyContent: 'center',
         minHeight: 40,
     },
+});
+
+const pauseStyles = StyleSheet.create({
+    backdrop: {
+        flex: 1,
+        backgroundColor: 'rgba(0,0,0,0.65)',
+        alignItems: 'center',
+        justifyContent: 'center',
+        paddingHorizontal: 28,
+    },
+    card: {
+        width: '100%',
+        maxWidth: 340,
+        borderRadius: 22,
+        borderWidth: 1,
+        padding: 22,
+        alignItems: 'center',
+    },
+    iconWrap: {
+        width: 44, height: 44, borderRadius: 22, borderWidth: 1,
+        alignItems: 'center', justifyContent: 'center',
+        marginBottom: 12,
+    },
+    title: { fontSize: 18, fontWeight: '800', letterSpacing: -0.3, marginBottom: 8 },
+    body: { fontSize: 13, lineHeight: 19, textAlign: 'center', marginBottom: 18 },
+    option: {
+        width: '100%',
+        borderWidth: 1,
+        borderRadius: 14,
+        paddingVertical: 13,
+        paddingHorizontal: 16,
+        marginBottom: 8,
+        alignItems: 'center',
+    },
+    optionText: { fontSize: 14, fontWeight: '700' },
+    cancel: { paddingVertical: 10, marginTop: 2 },
+    cancelText: { fontSize: 13, fontWeight: '600' },
 });
 
 const badgeStyles = StyleSheet.create({

@@ -11,15 +11,18 @@ import { tabletContentStyle } from '../utils/layout';
 import { useTheme } from '../context/ThemeContext';
 import { usePurchases } from '../context/PurchasesContext';
 import { Lock } from 'lucide-react-native';
+import { t, getLocale } from '../utils/i18n';
 
 type PrayerSubTab = 'tracker' | 'history' | 'qibla' | 'stats';
 
-const TABS: { key: PrayerSubTab; label: string; premium?: boolean }[] = [
-    { key: 'tracker', label: 'Tracker'  },
-    { key: 'history', label: 'History'  },
-    { key: 'qibla',   label: 'Qibla'    },
-    { key: 'stats',   label: 'Stats', premium: true },
-];
+function getTabs(): { key: PrayerSubTab; label: string; premium?: boolean }[] {
+    return [
+        { key: 'tracker', label: t('prayersTab.tabTracker') },
+        { key: 'history', label: t('prayersTab.tabHistory') },
+        { key: 'qibla',   label: t('prayersTab.tabQibla')   },
+        { key: 'stats',   label: t('prayersTab.tabStats'), premium: true },
+    ];
+}
 
 const PRAYER_QUOTES = [
     {
@@ -55,7 +58,7 @@ function PrayerQuotes() {
     return (
         <View style={styles.quotesSection}>
             <Text style={[styles.quotesHeading, { color: colors.secondaryText }]}>
-                On the Weight of Prayer
+                {t('prayersTab.quotesHeading')}
             </Text>
             {PRAYER_QUOTES.map((q, i) => (
                 <View key={i} style={styles.quoteCard}>
@@ -95,6 +98,7 @@ export function PrayersTab() {
     const [activeTab, setActiveTab] = useState<PrayerSubTab>('tracker');
     const [statsIsNew, setStatsIsNew] = useState(false);
     const scrollRef = useRef<ScrollView>(null);
+    const TABS = getTabs();
 
     // Show a "NEW" dot on Stats until the user has opened it — checked once on
     // mount. Dismissal happens synchronously in the onPress handler below so the
@@ -123,9 +127,9 @@ export function PrayersTab() {
         <SafeAreaView style={styles.safe} edges={['top']}>
             {/* Page header */}
             <View style={[styles.header, tabletContentStyle()]}>
-                <Text style={[styles.pageTitle, { color: colors.primaryText }]}>Prayers</Text>
+                <Text style={[styles.pageTitle, { color: colors.primaryText }]}>{t('prayersTab.title')}</Text>
                 <Text style={[styles.pageDate, { color: colors.secondaryText }]}>
-                    {new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })}
+                    {new Date().toLocaleDateString(getLocale(), { weekday: 'long', month: 'long', day: 'numeric' })}
                 </Text>
 
                 {/* Sub-tab pills */}
@@ -137,7 +141,7 @@ export function PrayersTab() {
                             <TouchableOpacity
                                 key={tab.key}
                                 onPress={() => {
-                                    if (locked) { openPaywall(); return; }
+                                    if (locked) { openPaywall('feature_gate:prayer_stats'); return; }
                                     setActiveTab(tab.key);
                                     if (tab.key === 'stats') {
                                         setStatsIsNew(false); // clear the NEW dot instantly

@@ -5,13 +5,14 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { useTheme } from '../context/ThemeContext';
 import { PrayerTimes } from '../lib/prayer-times';
 import { format } from 'date-fns';
+import { t } from '../utils/i18n';
 
 const PRAYER_ORDER = [
-    { key: 'fajr',    label: 'Fajr'    },
-    { key: 'dhuhr',   label: 'Dhuhr'   },
-    { key: 'asr',     label: 'Asr'     },
-    { key: 'maghrib', label: 'Maghrib' },
-    { key: 'isha',    label: 'Isha'    },
+    { key: 'fajr'    },
+    { key: 'dhuhr'   },
+    { key: 'asr'     },
+    { key: 'maghrib' },
+    { key: 'isha'    },
 ] as const;
 
 function formatCountdown(ms: number): string {
@@ -41,7 +42,7 @@ export function PrayerCountdown({ prayerTimes }: Props) {
     // Find next prayer
     const prayers = PRAYER_ORDER.map(p => ({
         key: p.key,
-        label: p.label,
+        label: t(`prayer.${p.key}`),
         time: prayerTimes[p.key] as Date,
     }));
 
@@ -64,7 +65,7 @@ export function PrayerCountdown({ prayerTimes }: Props) {
                 {/* Left: next prayer info */}
                 <View style={styles.left}>
                     <Text style={[styles.nextLabel, { color: colors.secondaryText }]}>
-                        {next ? 'Next prayer' : 'All done today'}
+                        {next ? t('countdown.nextPrayer') : t('countdown.allDoneToday')}
                     </Text>
                     <Text style={[styles.nextName, { color: colors.primaryText }]}>
                         {next?.label ?? '🌙'}

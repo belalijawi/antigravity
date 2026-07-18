@@ -298,10 +298,21 @@ export function QuranAudioProvider({ children }: { children: ReactNode }) {
             // finishes. We cap at 4 parallel downloads to avoid saturating the
             // JS bridge (Al-Baqarah has 286 ayahs; firing all at once hangs the UI).
             const CACHE_CONCURRENCY = 4;
-            const processAyah = async (a: AyahTrack, i: number) => {
+            // Downloading can safely happen in parallel (that's the actual
+            // bottleneck), but swapping tracks in the TrackPlayer queue
+            // (remove-then-add-at-same-index) must NOT overlap: removing at
+            // index i shifts every later index down by one, so if two swaps
+            // for different indices interleave, the second one's `remove`
+            // targets whatever track has shifted into its stale index —
+            // silently corrupting or dropping the wrong ayah. Downloads stay
+            // concurrent; the queue swap itself is applied one at a time.
+            const downloadAyah = async (a: AyahTrack, i: number): Promise<{ i: number; localUri: string } | null> => {
                 const localUri = await downloadAyahToCache(a.url, reciterId, surahNumber, a.ayahNumber)
                     .catch(() => null);
-                if (!localUri || !localUri.startsWith(AYAH_CACHE_DIR)) return;
+                if (!localUri || !localUri.startsWith(AYAH_CACHE_DIR)) return null;
+                return { i, localUri };
+            };
+            const swapAyah = async (i: number, localUri: string) => {
                 try {
                     const activeIdx = await TrackPlayer.getActiveTrackIndex();
                     if (typeof activeIdx !== 'number' || i <= activeIdx) return;
@@ -319,9 +330,12 @@ export function QuranAudioProvider({ children }: { children: ReactNode }) {
             };
             (async () => {
                 for (let b = 0; b < ayahs.length; b += CACHE_CONCURRENCY) {
-                    await Promise.all(
-                        ayahs.slice(b, b + CACHE_CONCURRENCY).map((a, j) => processAyah(a, b + j))
+                    const results = await Promise.all(
+                        ayahs.slice(b, b + CACHE_CONCURRENCY).map((a, j) => downloadAyah(a, b + j))
                     );
+                    for (const r of results) {
+                        if (r) await swapAyah(r.i, r.localUri);
+                    }
                 }
             })().catch(() => {});
         } catch (e) {

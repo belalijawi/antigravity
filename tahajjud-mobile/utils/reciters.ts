@@ -87,10 +87,6 @@ export function getCurrentReciter(): Reciter {
     return RECITERS.find(r => r.id === currentReciterId) ?? RECITERS[0];
 }
 
-export function getReciter(id: string): Reciter | undefined {
-    return RECITERS.find(r => r.id === id);
-}
-
 export async function setCurrentReciter(id: string): Promise<void> {
     if (!RECITERS.some(r => r.id === id)) return;
     if (id === currentReciterId) return;

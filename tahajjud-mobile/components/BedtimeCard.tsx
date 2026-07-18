@@ -8,6 +8,7 @@ import Animated, { FadeInDown } from 'react-native-reanimated';
 import { useTheme } from '../context/ThemeContext';
 import { SleepIntelligence, SleepSuggestion } from '../services/SleepIntelligence';
 import { NightCalculation } from '../lib/prayer-times';
+import { t } from '../utils/i18n';
 
 interface Props { nightCalc: NightCalculation | null; }
 
@@ -58,10 +59,10 @@ export function BedtimeCard({ nightCalc }: Props) {
     if (minsTillBed < -120) return null;
 
     const sourceLabel = suggestion.source === 'healthkit'
-        ? `Apple Health · ${suggestion.nightsAnalyzed} nights`
+        ? t('bedtime.sourceHealth', { n: suggestion.nightsAnalyzed })
         : suggestion.source === 'self-reported'
-            ? 'Based on your reported sleep'
-            : 'Default 6.5h';
+            ? t('bedtime.sourceSelfReported')
+            : t('bedtime.sourceDefault');
 
     const bedtimeDisplay = format(suggestion.bedtime, 'h:mm a');
     const wakeDisplay = format(suggestion.suggestedWake, 'h:mm a');
@@ -77,11 +78,11 @@ export function BedtimeCard({ nightCalc }: Props) {
 
     let countdown: string;
     if (minsTillBed <= 0) {
-        countdown = `Past bedtime by ${Math.abs(minsTillBed)} min`;
+        countdown = t('bedtime.pastBedtimeBy', { n: Math.abs(minsTillBed) });
     } else if (minsTillBed < 60) {
-        countdown = `In ${minsTillBed} min`;
+        countdown = t('bedtime.inMin', { n: minsTillBed });
     } else {
-        countdown = `In ${Math.floor(minsTillBed / 60)}h ${minsTillBed % 60}m`;
+        countdown = t('bedtime.inHm', { h: Math.floor(minsTillBed / 60), m: minsTillBed % 60 });
     }
 
     return (
@@ -96,13 +97,13 @@ export function BedtimeCard({ nightCalc }: Props) {
                 <View style={[styles.iconWrap, { backgroundColor: colors.accent + '22', borderColor: colors.accent + '44' }]}>
                     <Bed size={14} color={colors.accent} />
                 </View>
-                <Text style={[styles.kicker, { color: colors.accent }]}>TONIGHT'S SCHEDULE</Text>
+                <Text style={[styles.kicker, { color: colors.accent }]}>{t('bedtime.kicker')}</Text>
             </View>
 
             {/* Four phases — biphasic sleep with a Tahajjud-Fajr interruption */}
             <View style={styles.timesRow}>
                 <View style={styles.timeBlock}>
-                    <Text style={styles.timeLabel}>1 · SLEEP</Text>
+                    <Text style={styles.timeLabel}>{t('bedtime.step1')}</Text>
                     <Text style={styles.timeValue}>{bedtimeDisplay}</Text>
                     <Text style={[styles.timeSub, { color: minsTillBed > 0 ? colors.accent : '#475569' }]}>
                         {countdown}
@@ -114,36 +115,36 @@ export function BedtimeCard({ nightCalc }: Props) {
                 <View style={styles.timeBlock}>
                     <View style={styles.wakeHeader}>
                         <Moon size={11} color={colors.accent} />
-                        <Text style={styles.timeLabel}>2 · TAHAJJUD</Text>
+                        <Text style={styles.timeLabel}>{t('bedtime.step2')}</Text>
                     </View>
                     <Text style={styles.timeValue}>{wakeDisplay}</Text>
-                    <Text style={[styles.timeSub, { color: colors.accent }]}>wake briefly</Text>
+                    <Text style={[styles.timeSub, { color: colors.accent }]}>{t('bedtime.wakeBriefly')}</Text>
                 </View>
 
                 <View style={styles.divider} />
 
                 <View style={styles.timeBlock}>
-                    <Text style={styles.timeLabel}>3 · FAJR</Text>
+                    <Text style={styles.timeLabel}>{t('bedtime.step3')}</Text>
                     <Text style={styles.timeValue}>{nightCalc ? format(nightCalc.nightEnd, 'h:mm a') : '—'}</Text>
-                    <Text style={styles.timeSub}>morning prayer</Text>
+                    <Text style={styles.timeSub}>{t('bedtime.morningPrayer')}</Text>
                 </View>
 
                 <View style={styles.divider} />
 
                 <View style={styles.timeBlock}>
-                    <Text style={styles.timeLabel}>4 · WAKE</Text>
+                    <Text style={styles.timeLabel}>{t('bedtime.step4')}</Text>
                     <Text style={styles.timeValue}>{morningWakeDisplay}</Text>
-                    <Text style={styles.timeSub}>start your day</Text>
+                    <Text style={styles.timeSub}>{t('bedtime.startYourDay')}</Text>
                 </View>
             </View>
 
             {/* Plain-language explanation of the routine */}
             <Text style={[styles.flow, { color: colors.secondaryText }]}>
-                Sleep → wake briefly for Tahajjud + Fajr → back to sleep → wake up for the day.
+                {t('bedtime.flow')}
             </Text>
 
             <Text style={styles.source}>
-                {Math.round(suggestion.avgSleepMinutes / 60 * 10) / 10}h sleep · {sourceLabel}
+                {t('bedtime.sourceSummary', { h: Math.round(suggestion.avgSleepMinutes / 60 * 10) / 10, source: sourceLabel })}
             </Text>
         </Animated.View>
     );

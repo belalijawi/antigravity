@@ -14,17 +14,13 @@ import { useProgress } from 'react-native-track-player';
 import { useQuranAudio } from '../context/QuranAudioContext';
 import { useTheme } from '../context/ThemeContext';
 import { getCurrentReciter, subscribeReciter } from '../utils/reciters';
+import { t } from '../utils/i18n';
+import { formatMinSec as fmt } from '../utils/timeFormat';
 
 interface Props { visible: boolean; onClose: () => void; }
 
 const PLAYBACK_RATES = [0.75, 0.9, 1.0, 1.25, 1.5];
 const SLEEP_OPTIONS: Array<0 | 15 | 30 | 60> = [0, 15, 30, 60];
-
-function fmt(seconds: number): string {
-    const m = Math.floor(seconds / 60);
-    const s = Math.floor(seconds % 60);
-    return `${m}:${s.toString().padStart(2, '0')}`;
-}
 
 export function FullScreenPlayer({ visible, onClose }: Props) {
     const audio = useQuranAudio();
@@ -60,7 +56,7 @@ export function FullScreenPlayer({ visible, onClose }: Props) {
                         <ChevronDown size={26} color="#94a3b8" />
                     </TouchableOpacity>
                     <View style={styles.topMeta}>
-                        <Text style={styles.kicker}>NOW PLAYING</Text>
+                        <Text style={styles.kicker}>{t('fsPlayer.nowPlaying')}</Text>
                         <Text style={styles.reciter} numberOfLines={1}>{reciterName}</Text>
                     </View>
                     <View style={{ width: 40 }} />
@@ -77,8 +73,8 @@ export function FullScreenPlayer({ visible, onClose }: Props) {
                     </Text>
                     <Text style={styles.queueIndicator}>
                         {audio.playlistName && audio.queueTotal > 0
-                            ? `${audio.playlistName} · ${audio.queueIndex + 1} of ${audio.queueTotal}`
-                            : 'Quran'}
+                            ? t('fsPlayer.playlistOf', { playlist: audio.playlistName, index: audio.queueIndex + 1, total: audio.queueTotal })
+                            : t('fsPlayer.quranFallback')}
                     </Text>
                 </View>
 
@@ -145,7 +141,7 @@ export function FullScreenPlayer({ visible, onClose }: Props) {
                     <View style={[styles.toolCard, { borderColor: 'rgba(255,255,255,0.06)' }]}>
                         <View style={styles.toolHeader}>
                             <Gauge size={14} color={colors.accent} />
-                            <Text style={styles.toolLabel}>SPEED</Text>
+                            <Text style={styles.toolLabel}>{t('fsPlayer.speed')}</Text>
                         </View>
                         <View style={styles.toolPills}>
                             {PLAYBACK_RATES.map(r => (
@@ -172,7 +168,7 @@ export function FullScreenPlayer({ visible, onClose }: Props) {
                         <View style={styles.toolHeader}>
                             <Moon size={14} color={colors.accent} />
                             <Text style={styles.toolLabel}>
-                                SLEEP {audio.sleepSecondsLeft > 0 && `· ${fmt(audio.sleepSecondsLeft)}`}
+                                {t('fsPlayer.sleep')} {audio.sleepSecondsLeft > 0 && `· ${fmt(audio.sleepSecondsLeft)}`}
                             </Text>
                         </View>
                         <View style={styles.toolPills}>
@@ -188,7 +184,7 @@ export function FullScreenPlayer({ visible, onClose }: Props) {
                                     ]}
                                 >
                                     <Text style={[styles.pillText, { color: audio.sleepTimerMins === m ? '#0a1228' : '#cbd5e1' }]}>
-                                        {m === 0 ? 'Off' : `${m}m`}
+                                        {m === 0 ? t('fsPlayer.off') : `${m}m`}
                                     </Text>
                                 </TouchableOpacity>
                             ))}
@@ -199,7 +195,7 @@ export function FullScreenPlayer({ visible, onClose }: Props) {
                 {/* Stop button */}
                 <TouchableOpacity onPress={() => { audio.stop(); onClose(); }} style={styles.stopBtn}>
                     <X size={14} color="#64748b" />
-                    <Text style={styles.stopText}>Stop & close</Text>
+                    <Text style={styles.stopText}>{t('fsPlayer.stopClose')}</Text>
                 </TouchableOpacity>
             </View>
         </Modal>

@@ -5,7 +5,7 @@
 import React, { useState, useRef } from 'react';
 import {
     Modal, View, Text, TextInput, TouchableOpacity,
-    StyleSheet, KeyboardAvoidingView, Platform, TouchableWithoutFeedback, Keyboard,
+    StyleSheet, KeyboardAvoidingView, Platform, TouchableWithoutFeedback, Keyboard, Alert,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { X, Check } from 'lucide-react-native';
@@ -14,6 +14,7 @@ import { savePersonalDua } from '../utils/personalDuas';
 import { haptic } from '../utils/haptic';
 import { getPromptForDate } from '../utils/journalPrompts';
 import { format } from 'date-fns';
+import { t } from '../utils/i18n';
 
 interface Props {
     visible: boolean;
@@ -28,16 +29,20 @@ export function TahajjudLetterModal({ visible, onClose }: Props) {
     const now = new Date();
 
     const handleSave = async () => {
-        haptic.success();
-        await savePersonalDua({
+        const ok = await savePersonalDua({
             id: `tahajjud_letter_${Date.now()}`,
-            title: `Tahajjud · ${format(now, 'MMM d, yyyy')}`,
+            title: t('letterModal.tahajjudDateTitle', { date: format(now, 'MMM d, yyyy') }),
             arabic: '',
             transliteration: '',
-            translation: text.trim() || '(No dua written)',
+            translation: text.trim() || t('letterModal.noDuaWrittenParen'),
             notes: '',
             createdAt: Date.now(),
         });
+        if (!ok) {
+            Alert.alert(t('letterModal.saveFailedTitle'), t('letterModal.saveFailedBody'));
+            return;
+        }
+        haptic.success();
         setDone(true);
         setTimeout(() => {
             setDone(false);
@@ -68,7 +73,7 @@ export function TahajjudLetterModal({ visible, onClose }: Props) {
                                     onPress={handleSave}
                                     style={[styles.saveBtn, { backgroundColor: colors.accent }]}
                                 >
-                                    <Text style={styles.saveBtnText}>Save</Text>
+                                    <Text style={styles.saveBtnText}>{t('playlistBuilder.saveBtn')}</Text>
                                 </TouchableOpacity>
                             </View>
 
@@ -78,12 +83,12 @@ export function TahajjudLetterModal({ visible, onClose }: Props) {
                                 <View style={styles.writeArea}>
                                     <Text style={styles.bismillah}>بِسْمِ اللَّهِ</Text>
                                     <Text style={styles.dateLabel}>{format(now, 'EEEE, MMMM d')}</Text>
-                                    <Text style={styles.alhamdulillah}>Alhamdulillah 🤲</Text>
+                                    <Text style={styles.alhamdulillah}>{t('journalModal.alhamdulillahEmoji')}</Text>
                                     <Text style={styles.prompt}>{getPromptForDate()}</Text>
                                     <TextInput
                                         ref={inputRef}
                                         style={styles.input}
-                                        placeholder="Write whatever is on your heart…"
+                                        placeholder={t('journalModal.writePlaceholder')}
                                         placeholderTextColor="#1e3a5f"
                                         multiline
                                         value={text}
@@ -95,7 +100,7 @@ export function TahajjudLetterModal({ visible, onClose }: Props) {
                             </TouchableWithoutFeedback>
 
                             <TouchableOpacity onPress={handleClose} style={styles.skipBtn}>
-                                <Text style={styles.skipText}>Skip</Text>
+                                <Text style={styles.skipText}>{t('letterModal.skip')}</Text>
                             </TouchableOpacity>
                         </>
                     ) : (
@@ -103,8 +108,8 @@ export function TahajjudLetterModal({ visible, onClose }: Props) {
                             <View style={[styles.doneCircle, { borderColor: '#22c55e44', backgroundColor: '#22c55e12' }]}>
                                 <Check size={40} color="#22c55e" />
                             </View>
-                            <Text style={styles.doneTitle}>Saved 🌙</Text>
-                            <Text style={styles.doneSub}>May Allah accept your Tahajjud</Text>
+                            <Text style={styles.doneTitle}>{t('journalModal.savedMoon')}</Text>
+                            <Text style={styles.doneSub}>{t('journalModal.mayAllahAccept')}</Text>
                         </View>
                     )}
                 </LinearGradient>

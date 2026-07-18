@@ -207,7 +207,28 @@ export async function getPrayerTimes(latitude: number, longitude: number, date?:
         const stale = await loadAnyCacheForLocation(latitude, longitude, method);
         if (stale) {
             console.log('[api] Network failed — falling back to stale cached prayer times');
-            return stale;
+            // Rebase the clock times onto the REQUESTED date. The cache entry
+            // belongs to another day, so its Date objects carry that day's
+            // date — returning them as-is puts every prayer in the past and
+            // breaks countdowns and the night-window calculation.
+            const rebase = (t: Date) => {
+                const nd = new Date(d);
+                nd.setHours(t.getHours(), t.getMinutes(), 0, 0);
+                return nd;
+            };
+            const rebased: PrayerTimes = {
+                fajr: rebase(stale.fajr),
+                sunrise: rebase(stale.sunrise),
+                dhuhr: rebase(stale.dhuhr),
+                asr: rebase(stale.asr),
+                maghrib: rebase(stale.maghrib),
+                isha: rebase(stale.isha),
+            };
+            // Same high-latitude midnight-crossing fix as the fresh path
+            if (rebased.isha.getTime() <= rebased.maghrib.getTime()) {
+                rebased.isha = new Date(rebased.isha.getTime() + 24 * 60 * 60 * 1000);
+            }
+            return rebased;
         }
 
         throw error;

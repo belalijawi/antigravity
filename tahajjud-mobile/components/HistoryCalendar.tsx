@@ -9,12 +9,12 @@ import { useTheme } from '../context/ThemeContext';
 import { usePurchases } from '../context/PurchasesContext';
 import type { PrayerKey } from './Tracker';
 import { localDateStr } from '../utils/localDate';
+import { t, getLocale } from '../utils/i18n';
 
 const DAYS = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
-const MONTHS = [
-    'January', 'February', 'March', 'April', 'May', 'June',
-    'July', 'August', 'September', 'October', 'November', 'December',
-];
+function getMonths(): string[] {
+    return ['jan','feb','mar','apr','may','jun','jul','aug','sep','oct','nov','dec'].map(k => t(`months.${k}`));
+}
 
 const PRAYER_KEYS: PrayerKey[] = ['fajr', 'dhuhr', 'asr', 'maghrib', 'isha', 'tahajjud'];
 
@@ -65,7 +65,7 @@ function YearHeatmap({ dateMap, colors }: { dateMap: DateMap; colors: any }) {
         const firstDay = week[0];
         if (firstDay.getDate() <= 7) {
             monthLabels.push({
-                label: firstDay.toLocaleString('default', { month: 'short' }),
+                label: firstDay.toLocaleString(getLocale(), { month: 'short' }),
                 weekIdx: wi,
             });
         }
@@ -125,11 +125,11 @@ function YearHeatmap({ dateMap, colors }: { dateMap: DateMap; colors: any }) {
 
                 {/* Legend */}
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 8 }}>
-                    <Text style={{ fontSize: 9, color: '#475569' }}>Less</Text>
+                    <Text style={{ fontSize: 9, color: '#475569' }}>{t('historyCal.less')}</Text>
                     {[0, 1, 2, 4, 6].map(count => (
                         <View key={count} style={{ width: CELL, height: CELL, borderRadius: 2, backgroundColor: prayerCountColor(count) }} />
                     ))}
-                    <Text style={{ fontSize: 9, color: '#475569' }}>More</Text>
+                    <Text style={{ fontSize: 9, color: '#475569' }}>{t('historyCal.more')}</Text>
                 </View>
             </View>
         </ScrollView>
@@ -146,6 +146,7 @@ function getFirstDayOfWeek(year: number, month: number) {
 export function HistoryCalendar() {
     const { colors, cardBg, blurIntensity } = useTheme();
     const { isPremium, openPaywall } = usePurchases();
+    const MONTHS = getMonths();
     const today = new Date();
     const [viewYear, setViewYear]   = useState(today.getFullYear());
     const [viewMonth, setViewMonth] = useState(today.getMonth());
@@ -247,7 +248,7 @@ export function HistoryCalendar() {
             <View style={styles.content}>
                 {/* Header */}
                 <View style={styles.header}>
-                    <Text style={[styles.title, { color: colors.accent }]}>Prayer History</Text>
+                    <Text style={[styles.title, { color: colors.accent }]}>{t('historyCal.title')}</Text>
                     {viewMode === 'month' && (
                         <View style={styles.navRow}>
                             <TouchableOpacity onPress={prevMonth} style={styles.navButton} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
@@ -276,7 +277,7 @@ export function HistoryCalendar() {
                         return (
                             <TouchableOpacity
                                 key={mode}
-                                onPress={() => locked ? openPaywall() : setViewMode(mode)}
+                                onPress={() => locked ? openPaywall('feature_gate:history_view') : setViewMode(mode)}
                                 style={[
                                     styles.toggleBtn,
                                     active && { backgroundColor: colors.accent + '22', borderColor: colors.accent + '55' },
@@ -284,7 +285,7 @@ export function HistoryCalendar() {
                             >
                                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
                                     <Text style={[styles.toggleText, { color: active ? colors.accent : locked ? '#334155' : colors.secondaryText }]}>
-                                        {mode.charAt(0).toUpperCase() + mode.slice(1)}
+                                        {mode === 'week' ? t('historyCal.viewWeek') : mode === 'month' ? t('historyCal.viewMonth') : t('historyCal.viewYear')}
                                     </Text>
                                     {locked && <Lock size={9} color="#f59e0b" />}
                                 </View>
@@ -304,7 +305,7 @@ export function HistoryCalendar() {
                                 const isToday = ds === todayStr;
                                 const isSelected = selectedDate === ds;
                                 const bgOpacity = count / 6 * 0.3;
-                                const dayName = date.toLocaleDateString('en-US', { weekday: 'short' });
+                                const dayName = date.toLocaleDateString(getLocale(), { weekday: 'short' });
                                 return (
                                     <TouchableOpacity
                                         key={ds}
@@ -364,14 +365,14 @@ export function HistoryCalendar() {
                                                 <View key={pk} style={styles.detailItem}>
                                                     <View style={[styles.detailDot, { backgroundColor: done ? PRAYER_COLORS[pk] : 'rgba(255,255,255,0.08)' }]} />
                                                     <Text style={[styles.detailLabel, { color: done ? PRAYER_COLORS[pk] : '#334155' }]}>
-                                                        {pk.charAt(0).toUpperCase() + pk.slice(1)}
+                                                        {t(`prayer.${pk}`)}
                                                     </Text>
                                                 </View>
                                             );
                                         })}
                                     </View>
                                     <Text style={[styles.detailSummary, { color: colors.secondaryText }]}>
-                                        {prayers.size}/6 prayers logged
+                                        {t('historyCal.prayersLogged', { n: prayers.size })}
                                     </Text>
                                 </View>
                             );
@@ -383,7 +384,7 @@ export function HistoryCalendar() {
                                 <View key={pk} style={styles.legendItem}>
                                     <View style={[styles.legendDot, { backgroundColor: PRAYER_COLORS[pk] }]} />
                                     <Text style={[styles.legendText, { color: colors.secondaryText }]}>
-                                        {pk.charAt(0).toUpperCase() + pk.slice(1)}
+                                        {t(`prayer.${pk}`)}
                                     </Text>
                                 </View>
                             ))}
@@ -391,7 +392,7 @@ export function HistoryCalendar() {
 
                         {/* Week footer */}
                         <View style={styles.footer}>
-                            <Text style={[styles.footerLabel, { color: colors.secondaryText }]}>This week's completion</Text>
+                            <Text style={[styles.footerLabel, { color: colors.secondaryText }]}>{t('historyCal.thisWeekCompletion')}</Text>
                             <Text style={[styles.footerValue, { color: weekPct >= 80 ? colors.success : colors.accent }]}>
                                 {weekPct}%
                             </Text>
@@ -476,14 +477,14 @@ export function HistoryCalendar() {
                                                 <View key={pk} style={styles.detailItem}>
                                                     <View style={[styles.detailDot, { backgroundColor: done ? PRAYER_COLORS[pk] : 'rgba(255,255,255,0.08)' }]} />
                                                     <Text style={[styles.detailLabel, { color: done ? PRAYER_COLORS[pk] : '#334155' }]}>
-                                                        {pk.charAt(0).toUpperCase() + pk.slice(1)}
+                                                        {t(`prayer.${pk}`)}
                                                     </Text>
                                                 </View>
                                             );
                                         })}
                                     </View>
                                     <Text style={[styles.detailSummary, { color: colors.secondaryText }]}>
-                                        {prayers.size}/6 prayers logged
+                                        {t('historyCal.prayersLogged', { n: prayers.size })}
                                     </Text>
                                 </View>
                             );
@@ -494,14 +495,14 @@ export function HistoryCalendar() {
                                 <View key={pk} style={styles.legendItem}>
                                     <View style={[styles.legendDot, { backgroundColor: PRAYER_COLORS[pk] }]} />
                                     <Text style={[styles.legendText, { color: colors.secondaryText }]}>
-                                        {pk.charAt(0).toUpperCase() + pk.slice(1)}
+                                        {t(`prayer.${pk}`)}
                                     </Text>
                                 </View>
                             ))}
                         </View>
 
                         <View style={styles.footer}>
-                            <Text style={[styles.footerLabel, { color: colors.secondaryText }]}>This month's completion</Text>
+                            <Text style={[styles.footerLabel, { color: colors.secondaryText }]}>{t('historyCal.thisMonthCompletion')}</Text>
                             <Text style={[styles.footerValue, { color: avgPct >= 80 ? colors.success : colors.accent }]}>
                                 {avgPct}%
                             </Text>
@@ -512,10 +513,10 @@ export function HistoryCalendar() {
                             <BlurView intensity={18} tint="dark" style={StyleSheet.absoluteFill} />
                             <View style={styles.lockedContent}>
                                 <Lock size={22} color="#f59e0b" />
-                                <Text style={styles.lockedTitle}>Your month is right there</Text>
-                                <Text style={styles.lockedSub}>Every prayer, every day. Unlock to see and track your full history.</Text>
-                                <TouchableOpacity style={[styles.lockedBtn, { backgroundColor: colors.accent }]} onPress={openPaywall}>
-                                    <Text style={styles.lockedBtnText}>Unlock — 7 days free</Text>
+                                <Text style={styles.lockedTitle}>{t('historyCal.lockedMonthTitle')}</Text>
+                                <Text style={styles.lockedSub}>{t('historyCal.lockedMonthSub')}</Text>
+                                <TouchableOpacity style={[styles.lockedBtn, { backgroundColor: colors.accent }]} onPress={() => openPaywall('feature_gate:history_month')}>
+                                    <Text style={styles.lockedBtnText}>{t('historyCal.unlockBtn')}</Text>
                                 </TouchableOpacity>
                             </View>
                         </View>
@@ -532,10 +533,10 @@ export function HistoryCalendar() {
                                 <BlurView intensity={18} tint="dark" style={StyleSheet.absoluteFill} />
                                 <View style={styles.lockedContent}>
                                     <Lock size={22} color="#f59e0b" />
-                                    <Text style={styles.lockedTitle}>Your full year is waiting</Text>
-                                    <Text style={styles.lockedSub}>Every night of Tahajjud you've prayed — all in one view.</Text>
-                                    <TouchableOpacity style={[styles.lockedBtn, { backgroundColor: colors.accent }]} onPress={openPaywall}>
-                                        <Text style={styles.lockedBtnText}>Unlock — 7 days free</Text>
+                                    <Text style={styles.lockedTitle}>{t('historyCal.lockedYearTitle')}</Text>
+                                    <Text style={styles.lockedSub}>{t('historyCal.lockedYearSub')}</Text>
+                                    <TouchableOpacity style={[styles.lockedBtn, { backgroundColor: colors.accent }]} onPress={() => openPaywall('feature_gate:history_year')}>
+                                        <Text style={styles.lockedBtnText}>{t('historyCal.unlockBtn')}</Text>
                                     </TouchableOpacity>
                                 </View>
                             </View>

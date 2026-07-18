@@ -6,15 +6,18 @@ import { TestimoniesTab } from './TestimoniesTab';
 import { EducationalContent } from './EducationalContent';
 import { useTheme } from '../context/ThemeContext';
 import { tabletContentStyle } from '../utils/layout';
+import { t } from '../utils/i18n';
 
 export function GuideTab() {
     const { colors } = useTheme();
     const [activeSection, setActiveSection] = useState<'info' | 'testimonies' | 'guide'>('info');
 
-    // Deep-link from feature discovery to the Stories (testimonies) section
+    // Deep-link from feature discovery to the Stories (testimonies) section,
+    // or from the Home beginner card to the how-to Guide section.
     useEffect(() => {
-        const sub = DeviceEventEmitter.addListener('guide:openStories', () => setActiveSection('testimonies'));
-        return () => sub.remove();
+        const subStories = DeviceEventEmitter.addListener('guide:openStories', () => setActiveSection('testimonies'));
+        const subGuide = DeviceEventEmitter.addListener('guide:openGuide', () => setActiveSection('guide'));
+        return () => { subStories.remove(); subGuide.remove(); };
     }, []);
 
     // Mark Stories discovered once the user views that section
@@ -33,19 +36,19 @@ export function GuideTab() {
                             style={[styles.pill, activeSection === 'info' && { backgroundColor: '#f8fafc' }]}
                             onPress={() => setActiveSection('info')}
                         >
-                            <Text style={[styles.pillText, activeSection === 'info' && { color: '#020617' }]}>Wisdom</Text>
+                            <Text style={[styles.pillText, activeSection === 'info' && { color: '#020617' }]}>{t('guideTab.wisdom')}</Text>
                         </TouchableOpacity>
                         <TouchableOpacity
                             style={[styles.pill, activeSection === 'guide' && { backgroundColor: '#f8fafc' }]}
                             onPress={() => setActiveSection('guide')}
                         >
-                            <Text style={[styles.pillText, activeSection === 'guide' && { color: '#020617' }]}>Guide</Text>
+                            <Text style={[styles.pillText, activeSection === 'guide' && { color: '#020617' }]}>{t('guideTab.guide')}</Text>
                         </TouchableOpacity>
                         <TouchableOpacity
                             style={[styles.pill, activeSection === 'testimonies' && { backgroundColor: '#f8fafc' }]}
                             onPress={() => setActiveSection('testimonies')}
                         >
-                            <Text style={[styles.pillText, activeSection === 'testimonies' && { color: '#020617' }]}>Stories</Text>
+                            <Text style={[styles.pillText, activeSection === 'testimonies' && { color: '#020617' }]}>{t('guideTab.stories')}</Text>
                         </TouchableOpacity>
                     </View>
                 </View>

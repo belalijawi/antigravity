@@ -16,24 +16,43 @@ import { BlurView } from 'expo-blur';
 import RevenueCatService, { ENTITLEMENT_ID } from '../services/revenueCat';
 import { usePurchases } from '../context/PurchasesContext';
 import { useTheme } from '../context/ThemeContext';
-import { PurchasesPackage } from 'react-native-purchases';
+import { PurchasesPackage, PurchasesWinBackOffer } from 'react-native-purchases';
 import { APP_URLS } from '../utils/urls';
 import { track } from '../utils/analytics';
+import { t } from '../utils/i18n';
 
 interface PaywallProps {
     onClose: () => void;
+    /** Where this paywall presentation was triggered from, e.g. 'settings',
+     *  'streak_milestone', 'scheduled_5day', 'onboarding', 'feature_gate:hifz'.
+     *  Lets PostHog answer "which entry points actually convert?" */
+    source?: string;
 }
 
-const Paywall: React.FC<PaywallProps> = ({ onClose }) => {
+const Paywall: React.FC<PaywallProps> = ({ onClose, source = 'unknown' }) => {
     const [packages, setPackages] = useState<PurchasesPackage[]>([]);
     const [loading, setLoading] = useState(true);
     const [purchasing, setPurchasing] = useState(false);
+    const [converted, setConverted] = useState(false);
+    // Win-back offers, keyed by package identifier — only populated when this
+    // paywall was opened from a win-back notification tap (source === 'winback')
+    // and the subscriber is actually eligible per App Store Connect / Play Console.
+    const [winBackOffers, setWinBackOffers] = useState<Record<string, PurchasesWinBackOffer>>({});
     const { isPremium, checkPremiumStatus } = usePurchases();
     const { colors } = useTheme();
 
     useEffect(() => {
         loadOfferings();
-        track('paywall_viewed');
+        track('paywall_viewed', { source });
+        // Fires only if the paywall unmounts WITHOUT a completed purchase —
+        // i.e. the user closed it. Pairs with paywall_viewed for a true
+        // view -> dismiss / convert funnel per source.
+        return () => {
+            if (!converted) {
+                track('paywall_dismissed', { source });
+            }
+        };
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
     const loadOfferings = async () => {
@@ -47,6 +66,21 @@ const Paywall: React.FC<PaywallProps> = ({ onClose }) => {
                 price: p.product.priceString,
             })));
             setPackages(offerings.availablePackages);
+
+            // Only worth checking win-back eligibility when the user actually
+            // arrived via a win-back notification — avoids a needless
+            // StoreKit round-trip for every other paywall open.
+            if (source === 'winback') {
+                const entries = await Promise.all(offerings.availablePackages.map(async (pkg) => {
+                    const offer = await RevenueCatService.getEligibleWinBackOffer(pkg);
+                    return [pkg.identifier, offer] as const;
+                }));
+                const found = Object.fromEntries(entries.filter(([, offer]) => !!offer)) as Record<string, PurchasesWinBackOffer>;
+                setWinBackOffers(found);
+                if (Object.keys(found).length > 0) {
+                    track('winback_offer_shown', { packages: Object.keys(found).join(',') });
+                }
+            }
         } else {
             console.log('[Paywall] No offering returned from RevenueCat');
         }
@@ -55,11 +89,15 @@ const Paywall: React.FC<PaywallProps> = ({ onClose }) => {
 
     const handlePurchase = async (pkg: PurchasesPackage) => {
         setPurchasing(true);
-        track('purchase_started', { package: pkg.identifier });
+        const winBackOffer = winBackOffers[pkg.identifier];
+        track('purchase_started', { package: pkg.identifier, source, via: winBackOffer ? 'winback_offer' : 'standard' });
         try {
-            const customerInfo = await RevenueCatService.purchasePackage(pkg);
+            const customerInfo = winBackOffer
+                ? await RevenueCatService.purchaseWithWinBackOffer(pkg, winBackOffer)
+                : await RevenueCatService.purchasePackage(pkg);
             if (customerInfo) {
-                track('purchase_completed', { package: pkg.identifier });
+                track('purchase_completed', { package: pkg.identifier, source, price: winBackOffer ? winBackOffer.price : pkg.product.price, currency: pkg.product.currencyCode, via: winBackOffer ? 'winback_offer' : 'standard' });
+                setConverted(true);
                 // If this was a free-trial purchase, schedule the "trial ends soon"
                 // reminder so the paywall's promise is genuinely kept.
                 const intro: any = (pkg.product as any).introPrice;
@@ -73,13 +111,14 @@ const Paywall: React.FC<PaywallProps> = ({ onClose }) => {
                 }
                 await checkPremiumStatus();
                 onClose();
-                Alert.alert('Welcome to Tahajjud+', 'Your premium features are now active. JazakAllah Khair for your support!');
+                Alert.alert(t('paywall.welcomeTitle'), t('paywall.welcomeBody'));
             } else {
                 // null = user cancelled — no alert needed, just dismiss spinner
-                track('purchase_cancelled', { package: pkg.identifier });
+                track('purchase_cancelled', { package: pkg.identifier, source });
             }
-        } catch {
-            Alert.alert('Purchase failed', 'Something went wrong. Please check your connection and try again.');
+        } catch (e: any) {
+            track('purchase_failed', { package: pkg.identifier, source, error: String(e?.code ?? e?.message ?? 'unknown') });
+            Alert.alert(t('paywall.purchaseFailedTitle'), t('paywall.checkConnectionBody'));
         } finally {
             setPurchasing(false);
         }
@@ -87,21 +126,27 @@ const Paywall: React.FC<PaywallProps> = ({ onClose }) => {
 
     const handleRestore = async () => {
         setPurchasing(true);
+        track('restore_started', { source });
         try {
             const customerInfo = await RevenueCatService.restorePurchases();
             if (customerInfo) {
                 await checkPremiumStatus();
                 if (typeof customerInfo.entitlements.active[ENTITLEMENT_ID] !== 'undefined') {
-                    Alert.alert('Restored', 'Your premium access has been restored.');
+                    track('restore_succeeded', { source });
+                    setConverted(true);
+                    Alert.alert(t('paywall.restoredTitle'), t('paywall.restoredBody'));
                     onClose();
                 } else {
-                    Alert.alert('No subscription found', 'We could not find any active subscriptions for this Apple ID.');
+                    track('restore_no_subscription', { source });
+                    Alert.alert(t('paywall.noSubscriptionTitle'), t('paywall.noSubscriptionBody', { account: Platform.OS === 'ios' ? 'Apple ID' : t('paywall.googleAccount') }));
                 }
             } else {
-                Alert.alert('Restore failed', 'Something went wrong. Please check your connection and try again.');
+                track('restore_failed', { source });
+                Alert.alert(t('paywall.restoreFailedTitle'), t('paywall.checkConnectionBody'));
             }
         } catch {
-            Alert.alert('Restore failed', 'Something went wrong. Please check your connection and try again.');
+            track('restore_failed', { source });
+            Alert.alert(t('paywall.restoreFailedTitle'), t('paywall.checkConnectionBody'));
         } finally {
             setPurchasing(false);
         }
@@ -110,43 +155,43 @@ const Paywall: React.FC<PaywallProps> = ({ onClose }) => {
     const features = [
         {
             icon: <Moon size={20} color={colors.accent} />,
-            title: 'Night Journal',
-            desc: 'Reflect after every Tahajjud — log your mood, rakats, and duas. Build a record of your nights with Allah.',
+            title: t('paywall.f1t'),
+            desc: t('paywall.f1d'),
         },
         {
             icon: <CalendarDays size={20} color={colors.accent} />,
-            title: 'Full Prayer History',
-            desc: 'Month and year views of every prayer logged. Watch your consistency build over weeks and months.',
+            title: t('paywall.f2t'),
+            desc: t('paywall.f2d'),
         },
         {
             icon: <Users size={20} color={colors.accent} />,
-            title: 'Accountability Circle',
-            desc: 'Up to 5 partners. See who prayed tonight, send wake-up calls, hold each other to the last third.',
+            title: t('paywall.f3t'),
+            desc: t('paywall.f3d'),
         },
         {
             icon: <WifiOff size={20} color={colors.accent} />,
-            title: 'Offline Quran + All Reciters',
-            desc: 'Download full surahs, unlock all 7 reciters, build custom playlists — no signal needed.',
+            title: t('paywall.f4t'),
+            desc: t('paywall.f4d'),
         },
         {
             icon: <Brain size={20} color={colors.accent} />,
-            title: 'Hifz Mode',
-            desc: 'Structured memorization with progressive locking and spaced repetition. Serious hifdh, simplified.',
+            title: t('paywall.f5t'),
+            desc: t('paywall.f5d'),
         },
         {
             icon: <MapPin size={20} color={colors.accent} />,
-            title: 'Mosque Timetable',
-            desc: 'Photograph your mosque\'s monthly timetable and the app reads all the times automatically — exact prayer times, no calculations.',
+            title: t('paywall.f6t'),
+            desc: t('paywall.f6d'),
         },
         {
             icon: <Star size={20} color={colors.accent} />,
-            title: 'Prayer Analytics',
-            desc: 'See your consistency per prayer, strongest and weakest salah, best day of the week, and 30-day trends.',
+            title: t('paywall.f7t'),
+            desc: t('paywall.f7d'),
         },
         {
             icon: <Star size={20} color={colors.accent} />,
-            title: 'Dhikr Stats & Custom Dhikr',
-            desc: 'Track your all-time dhikr count, daily streak, 7-day chart, and add your own custom dhikr with personal targets.',
+            title: t('paywall.f8t'),
+            desc: t('paywall.f8d'),
         },
     ];
 
@@ -170,9 +215,9 @@ const Paywall: React.FC<PaywallProps> = ({ onClose }) => {
             <ScrollView contentContainerStyle={styles.scrollContent}>
                 <View style={styles.heroSection}>
                     <Star color={colors.accent} size={48} fill={colors.accent} style={styles.heroIcon} />
-                    <Text style={styles.heroTitle}>You're building something real.</Text>
-                    <Text style={styles.heroSubtitle}>Unlock the tools to go deeper — journal your nights, track your full history, and pray with your circle.</Text>
-                    <Text style={[styles.heroTrial, { color: colors.accent }]}>Free for 7 days · cancel anytime, no charge</Text>
+                    <Text style={styles.heroTitle}>{t('paywall.heroTitle')}</Text>
+                    <Text style={styles.heroSubtitle}>{t('paywall.heroSubtitle')}</Text>
+                    <Text style={[styles.heroTrial, { color: colors.accent }]}>{t('paywall.heroTrial')}</Text>
                 </View>
 
                 <View style={styles.featuresList}>
@@ -185,21 +230,36 @@ const Paywall: React.FC<PaywallProps> = ({ onClose }) => {
                             </View>
                         </View>
                     ))}
-                    <Text style={styles.andMore}>+ premium themes, stacked reminders & more</Text>
+                    <Text style={styles.andMore}>{t('paywall.andMore')}</Text>
                 </View>
 
                 {/* Trust reassurance — removes the #1 fear of free trials */}
                 <View style={[styles.reassureBox, { borderColor: colors.accent + '33', backgroundColor: colors.accent + '0d' }]}>
                     <BellRing size={18} color={colors.accent} />
                     <Text style={styles.reassureText}>
-                        We'll remind you 2 days before your trial ends — so you're never charged by surprise.
+                        {t('paywall.reassure')}
                     </Text>
                 </View>
 
                 <View style={styles.pricingSection}>
-                    {packages.map((pkg) => {
+                    {/* Annual first: with near-zero churn an annual sub locks ~12
+                        months of revenue, so it leads and carries the emphasis. */}
+                    {[...packages].sort((a, b) => {
+                        const rank = (p: typeof a) =>
+                            p.packageType === 'ANNUAL' || p.identifier === '$rc_annual' ? 0
+                            : p.packageType === 'MONTHLY' || p.identifier === '$rc_monthly' ? 1 : 2;
+                        return rank(a) - rank(b);
+                    }).map((pkg) => {
                         const isAnnual = pkg.packageType === 'ANNUAL' || pkg.identifier === '$rc_annual';
                         const isLifetime = pkg.packageType === 'LIFETIME' || pkg.identifier === '$rc_lifetime';
+                        const weeklyEquivalent = isAnnual && pkg.product.currencyCode
+                            ? (() => { try { return new Intl.NumberFormat('en', {
+                                style: 'currency',
+                                currency: pkg.product.currencyCode,
+                                minimumFractionDigits: 2,
+                                maximumFractionDigits: 2,
+                              }).format(pkg.product.price / 52); } catch { return null; } })()
+                            : null;
                         const monthlyEquivalent = isAnnual
                             ? pkg.product.currencyCode
                                 ? (() => { try { return new Intl.NumberFormat('en', {
@@ -213,17 +273,24 @@ const Paywall: React.FC<PaywallProps> = ({ onClose }) => {
 
                         const intro: any = (pkg.product as any).introPrice;
                         const isFreeTrial = !isLifetime && !!intro && intro.price === 0;
-                        const trialLabel = isFreeTrial && intro?.periodNumberOfUnits && intro?.periodUnit
-                            ? `${intro.periodNumberOfUnits} ${String(intro.periodUnit).toLowerCase()}${intro.periodNumberOfUnits > 1 ? 's' : ''} free`
-                            : 'Free trial';
+                        const introDays = intro?.periodNumberOfUnits
+                            ? intro.periodNumberOfUnits * ({ DAY: 1, WEEK: 7, MONTH: 30 } as Record<string, number>)[String(intro?.periodUnit)] || 0
+                            : 0;
+                        const trialLabel = isFreeTrial && introDays > 0
+                            ? t('paywall.daysFree', { n: introDays })
+                            : t('paywall.freeTrial');
 
-                        const badge = isFreeTrial
-                            ? { text: `🎁 ${trialLabel.toUpperCase()}` }
-                            : isLifetime
-                                ? { text: '♾️ FOREVER' }
-                                : isAnnual
-                                    ? { text: '⭐ BEST VALUE' }
-                                    : null;
+                        const winBackOffer = winBackOffers[pkg.identifier];
+
+                        const badge = winBackOffer
+                            ? { text: `🎉 ${t('paywall.winbackBadge').toUpperCase()}` }
+                            : isAnnual
+                                ? { text: isFreeTrial ? t('paywall.bestValueTrial') : t('paywall.bestValue') }
+                                : isFreeTrial
+                                    ? { text: `🎁 ${trialLabel.toUpperCase()}` }
+                                    : isLifetime
+                                        ? { text: t('paywall.forever') }
+                                        : null;
 
                         return (
                             <View key={pkg.identifier} style={styles.packageWrapper}>
@@ -236,25 +303,36 @@ const Paywall: React.FC<PaywallProps> = ({ onClose }) => {
                                     style={[
                                         styles.packageCard,
                                         { borderColor: colors.accent },
-                                        (isAnnual || isFreeTrial || isLifetime) && styles.packageCardHighlighted,
+                                        // Annual (and lifetime) carry the visual emphasis — the
+                                        // monthly trial badge alone was steering 90% to monthly.
+                                        (isAnnual || isLifetime) && styles.packageCardHighlighted,
                                     ]}
                                     onPress={() => handlePurchase(pkg)}
                                     disabled={purchasing}
                                 >
                                     <View style={styles.packageInfo}>
                                         <Text style={styles.packageTitle}>{(pkg.product.title ?? 'Premium').split(' (')[0]}</Text>
-                                        {isFreeTrial ? (
+                                        {winBackOffer ? (
                                             <Text style={[styles.packageDesc, { color: colors.accent }]}>
-                                                {trialLabel}, then {pkg.product.priceString}
-                                                {isAnnual ? '/year' : '/month'}
+                                                {t('paywall.winbackPriceFor', { price: winBackOffer.priceString, n: winBackOffer.cycles })}
+                                            </Text>
+                                        ) : isFreeTrial && isAnnual ? (
+                                            <Text style={[styles.packageDesc, { color: colors.accent }]}>
+                                                {weeklyEquivalent
+                                                    ? t('paywall.trialThenAnnual', { trial: trialLabel, weekly: weeklyEquivalent, yearly: pkg.product.priceString })
+                                                    : t('paywall.trialThen', { trial: trialLabel, price: pkg.product.priceString, period: t('paywall.perYear') })}
+                                            </Text>
+                                        ) : isFreeTrial ? (
+                                            <Text style={[styles.packageDesc, { color: colors.accent }]}>
+                                                {t('paywall.trialThen', { trial: trialLabel, price: pkg.product.priceString, period: isAnnual ? t('paywall.perYear') : t('paywall.perMonth') })}
                                             </Text>
                                         ) : isLifetime ? (
                                             <Text style={[styles.packageDesc, { color: colors.accent }]}>
-                                                One-time payment · No renewal
+                                                {t('paywall.oneTime')}
                                             </Text>
                                         ) : isAnnual && monthlyEquivalent ? (
                                             <Text style={[styles.packageDesc, { color: colors.accent }]}>
-                                                Only {monthlyEquivalent}/month — save vs monthly
+                                                {t('paywall.monthlyEquiv', { price: monthlyEquivalent })}
                                             </Text>
                                         ) : (
                                             <Text style={styles.packageDesc}>{pkg.product.description}</Text>
@@ -262,9 +340,9 @@ const Paywall: React.FC<PaywallProps> = ({ onClose }) => {
                                     </View>
                                     <View style={[styles.priceBadge, { backgroundColor: colors.accent }]}>
                                         <Text style={styles.priceText}>
-                                            {isFreeTrial ? 'Start Free' : pkg.product.priceString}
+                                            {winBackOffer ? winBackOffer.priceString : isFreeTrial ? t('paywall.startFree') : pkg.product.priceString}
                                         </Text>
-                                        {!isFreeTrial && isAnnual && <Text style={styles.priceSubText}>/ year</Text>}
+                                        {!winBackOffer && !isFreeTrial && isAnnual && <Text style={styles.priceSubText}>{t('paywall.perYearBadge')}</Text>}
                                     </View>
                                 </TouchableOpacity>
                             </View>
@@ -273,39 +351,39 @@ const Paywall: React.FC<PaywallProps> = ({ onClose }) => {
 
                     {packages.length === 0 && (
                         <View style={styles.emptyPackages}>
-                            <Text style={styles.emptyText}>No premium packages available at the moment. Please check back later.</Text>
+                            <Text style={styles.emptyText}>{t('paywall.noPackagesBody')}</Text>
                         </View>
                     )}
 
                     <TouchableOpacity onPress={handleRestore} style={styles.restoreButton} disabled={purchasing}>
-                        <Text style={styles.restoreText}>Already a member? Restore Purchases</Text>
+                        <Text style={styles.restoreText}>{t('paywall.restore')}</Text>
                     </TouchableOpacity>
 
                     {/* Clear, obvious way to continue without subscribing —
                         especially important when the paywall is the last
                         onboarding step. Also App Store compliant. */}
                     <TouchableOpacity onPress={onClose} style={styles.maybeLaterButton} disabled={purchasing}>
-                        <Text style={styles.maybeLaterText}>Maybe later</Text>
+                        <Text style={styles.maybeLaterText}>{t('supportModal.maybeLater')}</Text>
                     </TouchableOpacity>
                 </View>
 
                 <View style={styles.footer}>
                     <Text style={styles.footerText}>
-                        Your 7-day free trial converts to a paid subscription unless canceled at least 24 hours before it ends. Manage or cancel anytime in your iPhone's Settings → Apple ID → Subscriptions. By subscribing you agree to our{' '}
+                        {t('paywall.footerIntro', { manageLocation: Platform.OS === 'ios' ? t('paywall.manageIOS') : t('paywall.manageAndroid') })}
                         <Text
                             style={[styles.footerText, { color: colors.accent, textDecorationLine: 'underline' }]}
                             onPress={() => Linking.openURL(APP_URLS.terms)}
                             accessibilityRole="link"
                         >
-                            Terms of Use
+                            {t('settings.termsOfUse')}
                         </Text>
-                        {' '}and{' '}
+                        {' '}{t('paywall.and')}{' '}
                         <Text
                             style={[styles.footerText, { color: colors.accent, textDecorationLine: 'underline' }]}
                             onPress={() => Linking.openURL(APP_URLS.privacy)}
                             accessibilityRole="link"
                         >
-                            Privacy Policy
+                            {t('settings.privacyPolicy')}
                         </Text>
                         .
                     </Text>

@@ -13,6 +13,8 @@ import {
 } from '../utils/mosqueTimetable';
 import { localDateStr } from '../utils/localDate';
 import { DeviceEventEmitter } from 'react-native';
+import { t, getLocale } from '../utils/i18n';
+import { format12Hour } from '../utils/timeFormat';
 
 interface Props {
     visible: boolean;
@@ -21,25 +23,23 @@ interface Props {
 
 type Step = 'idle' | 'processing' | 'preview' | 'success' | 'error';
 
-const MONTH_NAMES = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
-
-function fmt24(t: string | undefined): string {
-    // Convert "HH:MM" 24h to "H:MM am/pm". Guard against missing/partial times
-    // (the AI extraction can return days with some prayers absent).
-    if (!t || !/^\d{1,2}:\d{2}$/.test(t)) return '--:--';
-    const [h, m] = t.split(':').map(Number);
-    const ampm = h >= 12 ? 'pm' : 'am';
-    const hour = h % 12 || 12;
-    return `${hour}:${m.toString().padStart(2, '0')} ${ampm}`;
-}
-
 function monthLabel(month: string): string {
     try {
         const [y, mo] = month.split('-').map(Number);
-        const name = MONTH_NAMES[mo - 1];
-        if (!name || isNaN(y)) return month; // fallback to raw string
-        return `${name} ${y}`;
+        if (isNaN(y) || isNaN(mo)) return month; // fallback to raw string
+        return new Date(y, mo - 1, 1).toLocaleDateString(getLocale(), { month: 'short', year: 'numeric' });
     } catch { return month; }
+}
+
+function prayerLabel(p: string): string {
+    switch (p) {
+        case 'fajr': return t('prayer.fajr');
+        case 'dhuhr': return t('prayer.dhuhr');
+        case 'asr': return t('prayer.asr');
+        case 'maghrib': return t('prayer.maghrib');
+        case 'isha': return t('prayer.isha');
+        default: return p;
+    }
 }
 
 export function MosqueImportModal({ visible, onClose }: Props) {
@@ -64,7 +64,7 @@ export function MosqueImportModal({ visible, onClose }: Props) {
             if (fromCamera) {
                 const { status } = await ImagePicker.requestCameraPermissionsAsync();
                 if (status !== 'granted') {
-                    Alert.alert('Camera access needed', 'Please allow camera access in Settings to photograph your timetable.');
+                    Alert.alert(t('mosqueImport.cameraNeededTitle'), t('mosqueImport.cameraNeededBody'));
                     return;
                 }
                 result = await ImagePicker.launchCameraAsync({
@@ -75,7 +75,7 @@ export function MosqueImportModal({ visible, onClose }: Props) {
             } else {
                 const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
                 if (status !== 'granted') {
-                    Alert.alert('Photo library access needed', 'Please allow photo access in Settings.');
+                    Alert.alert(t('mosqueImport.libraryNeededTitle'), t('mosqueImport.libraryNeededBody'));
                     return;
                 }
                 result = await ImagePicker.launchImageLibraryAsync({
@@ -94,11 +94,11 @@ export function MosqueImportModal({ visible, onClose }: Props) {
             // be slow or timeout. Advise user to retake at lower resolution.
             if (base64.length > 4_000_000) {
                 Alert.alert(
-                    'Image is very large',
-                    'This photo is quite large and may take longer to process. For best results, take a new photo closer to the timetable rather than using a high-resolution library photo.',
+                    t('mosqueImport.imageLargeTitle'),
+                    t('mosqueImport.imageLargeBody'),
                     [
-                        { text: 'Cancel', style: 'cancel' },
-                        { text: 'Continue anyway', onPress: async () => { try { await processImage(base64, result.assets![0].mimeType); } catch { setErrorMsg('Something went wrong. Please try again.'); setStep('error'); } } },
+                        { text: t('btn.cancel'), style: 'cancel' },
+                        { text: t('mosqueImport.continueAnyway'), onPress: async () => { try { await processImage(base64, result.assets![0].mimeType); } catch { setErrorMsg(t('mosqueImport.genericError')); setStep('error'); } } },
                     ]
                 );
                 return;
@@ -106,7 +106,7 @@ export function MosqueImportModal({ visible, onClose }: Props) {
 
             await processImage(base64, result.assets[0].mimeType);
         } catch (e: any) {
-            setErrorMsg('Something went wrong. Please try again.');
+            setErrorMsg(t('mosqueImport.genericError'));
             setStep('error');
         }
     };
@@ -118,11 +118,11 @@ export function MosqueImportModal({ visible, onClose }: Props) {
             const extracted = await extractTimetableFromImage(base64, mediaType);
 
             if (!extracted.ok) {
-                let msg = 'Something went wrong. Please try again.';
-                if (extracted.error === 'no_key') msg = 'Anthropic API key not configured. Add EXPO_PUBLIC_ANTHROPIC_KEY to your .env file.';
-                else if (extracted.error === 'not_a_timetable') msg = "This doesn't look like a prayer timetable. Try a clearer photo of your mosque's monthly schedule.";
-                else if (extracted.error === 'image_unclear') msg = 'The image is too blurry to read. Try a clearer, well-lit photo.';
-                else if (extracted.error === 'network') msg = 'Network error. Check your internet connection and try again.';
+                let msg = t('mosqueImport.genericError');
+                if (extracted.error === 'no_key') msg = t('mosqueImport.errNoKey');
+                else if (extracted.error === 'not_a_timetable') msg = t('mosqueImport.errNotTimetable');
+                else if (extracted.error === 'image_unclear') msg = t('mosqueImport.errImageUnclear');
+                else if (extracted.error === 'network') msg = t('mosqueImport.errNetwork');
                 setErrorMsg(msg);
                 setStep('error');
                 return;
@@ -131,7 +131,7 @@ export function MosqueImportModal({ visible, onClose }: Props) {
             setPreview(extracted.timetable);
             setStep('preview');
         } catch {
-            setErrorMsg('Something went wrong. Please try again.');
+            setErrorMsg(t('mosqueImport.genericError'));
             setStep('error');
         }
     };
@@ -145,18 +145,18 @@ export function MosqueImportModal({ visible, onClose }: Props) {
             DeviceEventEmitter.emit('mosqueTimetableUpdated');
             import('../utils/featureDiscovery').then(m => m.markFeatureUsed('mosque_timetable')).catch(() => {});
         } catch {
-            Alert.alert('Save failed', 'Could not save the timetable. Please try again.');
+            Alert.alert(t('mosqueImport.saveFailedTitle'), t('mosqueImport.saveFailedBody'));
         }
     };
 
     const handleDelete = () => {
         Alert.alert(
-            'Remove mosque timetable?',
-            'The app will go back to calculated prayer times.',
+            t('mosqueImport.removeTitle'),
+            t('mosqueImport.removeBody'),
             [
-                { text: 'Cancel', style: 'cancel' },
+                { text: t('btn.cancel'), style: 'cancel' },
                 {
-                    text: 'Remove', style: 'destructive',
+                    text: t('mosqueImport.removeBtn'), style: 'destructive',
                     onPress: async () => {
                         await clearMosqueTimetable();
                         setExistingTimetable(null);
@@ -184,7 +184,7 @@ export function MosqueImportModal({ visible, onClose }: Props) {
                     <TouchableOpacity onPress={onClose} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
                         <X size={20} color="#64748b" />
                     </TouchableOpacity>
-                    <Text style={styles.headerTitle}>Mosque Timetable</Text>
+                    <Text style={styles.headerTitle}>{t('mosqueImport.mosqueTimetableHeader')}</Text>
                     <View style={{ width: 28 }} />
                 </View>
 
@@ -199,14 +199,14 @@ export function MosqueImportModal({ visible, onClose }: Props) {
                                     <View style={styles.existingRow}>
                                         <View style={{ flex: 1 }}>
                                             <Text style={styles.existingTitle}>
-                                                {existingTimetable.mosqueName ?? 'Mosque timetable'}
+                                                {existingTimetable.mosqueName ?? t('mosqueEdit.mosqueTimetableFallback')}
                                             </Text>
                                             <Text style={styles.existingSub}>
-                                                {monthLabel(existingTimetable.month)} · {Object.keys(existingTimetable.times).length} days loaded
+                                                {t('mosqueImport.daysLoaded', { month: monthLabel(existingTimetable.month), n: Object.keys(existingTimetable.times).length })}
                                             </Text>
                                             {existingTimetable.times[today] && (
                                                 <Text style={[styles.existingSub, { color: '#22c55e', marginTop: 4 }]}>
-                                                    ✓ Active today
+                                                    {t('mosqueImport.activeToday')}
                                                 </Text>
                                             )}
                                         </View>
@@ -220,8 +220,8 @@ export function MosqueImportModal({ visible, onClose }: Props) {
                                             <View style={styles.todayRow}>
                                                 {(['fajr','dhuhr','asr','maghrib','isha'] as const).map(p => (
                                                     <View key={p} style={styles.todayCell}>
-                                                        <Text style={styles.todayPrayer}>{p.charAt(0).toUpperCase() + p.slice(1)}</Text>
-                                                        <Text style={styles.todayTime}>{fmt24(t[p])}</Text>
+                                                        <Text style={styles.todayPrayer}>{prayerLabel(p)}</Text>
+                                                        <Text style={styles.todayTime}>{format12Hour(t[p])}</Text>
                                                     </View>
                                                 ))}
                                             </View>
@@ -230,15 +230,15 @@ export function MosqueImportModal({ visible, onClose }: Props) {
                                 </View>
                             ) : (
                                 <View style={styles.emptyState}>
-                                    <Text style={styles.emptyTitle}>No mosque timetable</Text>
+                                    <Text style={styles.emptyTitle}>{t('mosqueImport.noTimetable')}</Text>
                                     <Text style={styles.emptySub}>
-                                        Photograph your mosque's monthly prayer timetable. The app will read all the times automatically and use them instead of calculated times.
+                                        {t('mosqueImport.noTimetableBody')}
                                     </Text>
                                 </View>
                             )}
 
                             <Text style={styles.sectionLabel}>
-                                {existingTimetable ? 'Import new timetable' : 'Import timetable'}
+                                {existingTimetable ? t('mosqueImport.importNewTimetable') : t('mosqueImport.importTimetable')}
                             </Text>
 
                             <TouchableOpacity
@@ -247,7 +247,7 @@ export function MosqueImportModal({ visible, onClose }: Props) {
                                 activeOpacity={0.85}
                             >
                                 <Camera size={20} color="#fff" />
-                                <Text style={styles.importBtnText}>Take a photo</Text>
+                                <Text style={styles.importBtnText}>{t('mosqueImport.takePhoto')}</Text>
                             </TouchableOpacity>
 
                             <TouchableOpacity
@@ -256,11 +256,11 @@ export function MosqueImportModal({ visible, onClose }: Props) {
                                 activeOpacity={0.85}
                             >
                                 <ImageIcon size={20} color={colors.accent} />
-                                <Text style={[styles.importBtnText, { color: colors.accent }]}>Choose from library</Text>
+                                <Text style={[styles.importBtnText, { color: colors.accent }]}>{t('mosqueImport.chooseFromLibrary')}</Text>
                             </TouchableOpacity>
 
                             <Text style={styles.tip}>
-                                Tip: take the photo in good light, ensure the whole timetable is visible, and hold the phone steady.
+                                {t('mosqueImport.tip')}
                             </Text>
                         </>
                     )}
@@ -269,8 +269,8 @@ export function MosqueImportModal({ visible, onClose }: Props) {
                     {step === 'processing' && (
                         <View style={styles.centred}>
                             <ActivityIndicator size="large" color={colors.accent} />
-                            <Text style={styles.processingTitle}>Reading your timetable…</Text>
-                            <Text style={styles.processingSub}>This takes about 10 seconds</Text>
+                            <Text style={styles.processingTitle}>{t('mosqueImport.readingTimetable')}</Text>
+                            <Text style={styles.processingSub}>{t('mosqueImport.takesAbout10s')}</Text>
                         </View>
                     )}
 
@@ -279,10 +279,10 @@ export function MosqueImportModal({ visible, onClose }: Props) {
                         <>
                             <View style={styles.previewHeader}>
                                 <Text style={styles.previewTitle}>
-                                    {preview.mosqueName ?? 'Timetable found'}
+                                    {preview.mosqueName ?? t('mosqueImport.timetableFound')}
                                 </Text>
                                 <Text style={styles.previewSub}>
-                                    {monthLabel(preview.month)} · {Object.keys(preview.times).length} days extracted
+                                    {t('mosqueImport.daysExtracted', { month: monthLabel(preview.month), n: Object.keys(preview.times).length })}
                                 </Text>
                             </View>
 
@@ -298,13 +298,13 @@ export function MosqueImportModal({ visible, onClose }: Props) {
                                     <View style={styles.warningBox}>
                                         <AlertCircle size={14} color="#f59e0b" />
                                         <Text style={styles.warningText}>
-                                            {missing} day{missing > 1 ? 's' : ''} couldn't be read — the app will use calculated times for those days. If this seems wrong, retake the photo with better lighting.
+                                            {t(missing > 1 ? 'mosqueImport.daysCouldntBeReadPlural' : 'mosqueImport.daysCouldntBeRead', { n: missing })}
                                         </Text>
                                     </View>
                                 );
                             })()}
 
-                            <Text style={styles.sectionLabel}>Preview (first 5 days)</Text>
+                            <Text style={styles.sectionLabel}>{t('mosqueImport.previewFirst5')}</Text>
 
                             {previewDays.map(([date, times]) => {
                                 const [, , d] = date.split('-');
@@ -322,7 +322,7 @@ export function MosqueImportModal({ visible, onClose }: Props) {
                             })}
 
                             <Text style={styles.previewNote}>
-                                Does this look right? Check a few dates against your timetable before confirming.
+                                {t('mosqueImport.previewNote')}
                             </Text>
 
                             <TouchableOpacity
@@ -331,7 +331,7 @@ export function MosqueImportModal({ visible, onClose }: Props) {
                                 activeOpacity={0.85}
                             >
                                 <Check size={20} color="#fff" />
-                                <Text style={styles.importBtnText}>Save timetable</Text>
+                                <Text style={styles.importBtnText}>{t('mosqueImport.saveTimetable')}</Text>
                             </TouchableOpacity>
 
                             <TouchableOpacity
@@ -339,7 +339,7 @@ export function MosqueImportModal({ visible, onClose }: Props) {
                                 onPress={() => setStep('idle')}
                                 activeOpacity={0.85}
                             >
-                                <Text style={[styles.importBtnText, { color: '#64748b' }]}>Retake photo</Text>
+                                <Text style={[styles.importBtnText, { color: '#64748b' }]}>{t('mosqueImport.retakePhoto')}</Text>
                             </TouchableOpacity>
                         </>
                     )}
@@ -350,9 +350,9 @@ export function MosqueImportModal({ visible, onClose }: Props) {
                             <View style={[styles.successCircle, { borderColor: '#22c55e55', backgroundColor: '#22c55e12' }]}>
                                 <Check size={44} color="#22c55e" />
                             </View>
-                            <Text style={styles.successTitle}>Timetable saved 🕌</Text>
+                            <Text style={styles.successTitle}>{t('mosqueImport.timetableSaved')}</Text>
                             <Text style={styles.processingSub}>
-                                The app will now use your mosque's exact times instead of calculated ones.
+                                {t('mosqueImport.savedBody')}
                             </Text>
                             <TouchableOpacity
                                 style={[styles.fullBtn, { backgroundColor: colors.accent, marginTop: 16 }]}
@@ -360,7 +360,7 @@ export function MosqueImportModal({ visible, onClose }: Props) {
                                 activeOpacity={0.85}
                             >
                                 <Check size={18} color="#0a1228" strokeWidth={3} />
-                                <Text style={styles.fullBtnText}>Done</Text>
+                                <Text style={styles.fullBtnText}>{t('btn.done')}</Text>
                             </TouchableOpacity>
                         </View>
                     )}
@@ -371,14 +371,14 @@ export function MosqueImportModal({ visible, onClose }: Props) {
                             <View style={[styles.successCircle, { borderColor: '#ef444455', backgroundColor: '#ef444412' }]}>
                                 <AlertCircle size={44} color="#ef4444" />
                             </View>
-                            <Text style={[styles.processingTitle, { color: '#ef4444' }]}>Couldn't read timetable</Text>
+                            <Text style={[styles.processingTitle, { color: '#ef4444' }]}>{t('mosqueImport.couldntRead')}</Text>
                             <Text style={styles.processingSub}>{errorMsg}</Text>
                             <TouchableOpacity
                                 style={[styles.fullBtn, { backgroundColor: colors.accent, marginTop: 16 }]}
                                 onPress={() => setStep('idle')}
                                 activeOpacity={0.85}
                             >
-                                <Text style={styles.fullBtnText}>Try again</Text>
+                                <Text style={styles.fullBtnText}>{t('mosqueImport.tryAgain')}</Text>
                             </TouchableOpacity>
                         </View>
                     )}

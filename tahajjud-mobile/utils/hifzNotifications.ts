@@ -49,19 +49,23 @@ export async function scheduleHifzNotifications(
         const fireDate = new Date(y, m - 1, d, 9, 0, 0, 0);
         if (fireDate <= now) continue;
 
-        await Notifications.scheduleNotificationAsync({
-            content: {
-                title: '📿 Hifz review due',
-                body: `${count} ayah${count !== 1 ? 's' : ''} ready for review`,
-                data: { type: HIFZ_NOTIF_TAG },
-                sound: true,
-            },
-            trigger: {
-                type: Notifications.SchedulableTriggerInputTypes.DATE,
-                date: fireDate,
-                ...(Platform.OS === 'android' && { channelId: 'prayers' }),
-            },
-        });
+        // One failed date must not stop the remaining days in this loop from
+        // being scheduled (mirrors cancelHifzNotifications' own try/catch).
+        try {
+            await Notifications.scheduleNotificationAsync({
+                content: {
+                    title: '📿 Hifz review due',
+                    body: `${count} ayah${count !== 1 ? 's' : ''} ready for review`,
+                    data: { type: HIFZ_NOTIF_TAG },
+                    sound: true,
+                },
+                trigger: {
+                    type: Notifications.SchedulableTriggerInputTypes.DATE,
+                    date: fireDate,
+                    ...(Platform.OS === 'android' && { channelId: 'prayers' }),
+                },
+            });
+        } catch { /* best-effort — continue scheduling the remaining days */ }
     }
 }
 
