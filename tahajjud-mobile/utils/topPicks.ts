@@ -1,5 +1,5 @@
 import { doc, getDoc, setDoc, onSnapshot, serverTimestamp } from 'firebase/firestore';
-import { getFirebaseDb } from './firebase';
+import { getFirebaseDb, ensureSignedIn } from './firebase';
 
 /**
  * Admin-curated "Top Dua of the Day" / "Top Story of the Day" picks.
@@ -34,11 +34,23 @@ export const TopPicksService = {
     subscribe(cb: (picks: TopPicks) => void): () => void {
         const db = getFirebaseDb();
         if (!db) { cb(EMPTY); return () => {}; }
-        return onSnapshot(
-            ref(db),
-            snap => cb(snap.exists() ? fromSnapshotData(snap.data()) : EMPTY),
-            () => cb(EMPTY),
-        );
+
+        // Firestore rules require auth to read app_config. A permission-denied
+        // error permanently closes an onSnapshot listener, and on a cold start
+        // the anonymous sign-in may still be in flight — attaching before it
+        // resolves meant a top pick never showed up at all. Wait for auth first
+        // (matches subscribeTahajjudMap's fix for the same failure mode).
+        let cancelled = false;
+        let unsubSnap: (() => void) | null = null;
+        ensureSignedIn().finally(() => {
+            if (cancelled) return;
+            unsubSnap = onSnapshot(
+                ref(db),
+                snap => cb(snap.exists() ? fromSnapshotData(snap.data()) : EMPTY),
+                () => cb(EMPTY),
+            );
+        });
+        return () => { cancelled = true; unsubSnap?.(); };
     },
 
     async get(): Promise<TopPicks> {

@@ -136,34 +136,47 @@ export const DuaWall = {
      */
     subscribeWall(maxItems: number, cb: (duas: PublicDua[], fromCache: boolean) => void): () => void {
         const db = getFirebaseDb();
-        const q = query(
-            collection(db, 'public-duas'),
-            where('hidden', '==', false),
-            orderBy('createdAt', 'desc'),
-            limit(maxItems),
-        );
-        const unsub = onSnapshot(q, (snap: QuerySnapshot<DocumentData>) => {
-            const list: PublicDua[] = [];
-            snap.forEach(d => {
-                const data = d.data() as any;
-                list.push({
-                    id: d.id,
-                    text: data.text ?? '',
-                    ameenCount: data.ameenCount ?? 0,
-                    prayCount: data.prayCount ?? 0,
-                    reportCount: data.reportCount ?? 0,
-                    createdAt: data.createdAt?.toDate?.() ?? new Date(),
-                    hidden: data.hidden ?? false,
+        if (!db) { cb([], false); return () => {}; }
+
+        // Firestore rules require auth to read this collection. A
+        // permission-denied error permanently closes an onSnapshot listener,
+        // and on a cold start the anonymous sign-in may still be in flight —
+        // attaching before it resolves left the wall stuck on "Loading
+        // tonight's duas…" forever. Wait for auth first (matches
+        // subscribeTahajjudMap's fix for the same failure mode).
+        let cancelled = false;
+        let unsubSnap: (() => void) | null = null;
+        ensureSignedIn().finally(() => {
+            if (cancelled) return;
+            const q = query(
+                collection(db, 'public-duas'),
+                where('hidden', '==', false),
+                orderBy('createdAt', 'desc'),
+                limit(maxItems),
+            );
+            unsubSnap = onSnapshot(q, (snap: QuerySnapshot<DocumentData>) => {
+                const list: PublicDua[] = [];
+                snap.forEach(d => {
+                    const data = d.data() as any;
+                    list.push({
+                        id: d.id,
+                        text: data.text ?? '',
+                        ameenCount: data.ameenCount ?? 0,
+                        prayCount: data.prayCount ?? 0,
+                        reportCount: data.reportCount ?? 0,
+                        createdAt: data.createdAt?.toDate?.() ?? new Date(),
+                        hidden: data.hidden ?? false,
+                    });
                 });
+                cb(list, snap.metadata.fromCache);
+            }, err => {
+                console.error('[DuaWall] subscribe error', err);
+                // Surface the error as a settled (non-cache) empty result so the UI
+                // stops showing a perpetual spinner and falls back to seed duas.
+                cb([], false);
             });
-            cb(list, snap.metadata.fromCache);
-        }, err => {
-            console.error('[DuaWall] subscribe error', err);
-            // Surface the error as a settled (non-cache) empty result so the UI
-            // stops showing a perpetual spinner and falls back to seed duas.
-            cb([], false);
         });
-        return unsub;
+        return () => { cancelled = true; unsubSnap?.(); };
     },
 
     /** Admin-only: look up a dua's authorId so the "you were chosen" push can
