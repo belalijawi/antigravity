@@ -2,7 +2,7 @@
   "expo": {
     "name": "Tahajjud+",
     "slug": "tahajjud-plus",
-    "version": "1.8.0",
+    "version": "1.8.7",
     "scheme": "tahajjud-plus",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
@@ -17,7 +17,7 @@
       "supportsTablet": true,
       "bundleIdentifier": "com.tahajjudplus.app",
       "appStoreUrl": "https://apps.apple.com/app/id6759176533",
-      "buildNumber": "32",
+      "buildNumber": "63",
       "googleServicesFile": "./GoogleService-Info.plist",
       "entitlements": {
         "com.apple.developer.usernotifications.time-sensitive": true
@@ -45,6 +45,11 @@
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#020617"
       },
+      "config": {
+        "googleMaps": {
+          "apiKey": "AIzaSyATN6fPE8umtsJRPFxvQttrPsEMWvo0Ln4"
+        }
+      },
       "permissions": [
         "ACCESS_COARSE_LOCATION",
         "ACCESS_FINE_LOCATION",
@@ -58,7 +63,7 @@
         "FOREGROUND_SERVICE_MEDIA_PLAYBACK"
       ],
       "package": "com.tahajjudplus.app",
-      "versionCode": 14,
+      "versionCode": 29,
       "googleServicesFile": "./google-services.json",
       "edgeToEdgeEnabled": true,
       "predictiveBackGestureEnabled": false
@@ -74,7 +79,7 @@
           "icon": "./assets/adaptive-icon.png",
           "color": "#020617",
           "sounds": [
-            "./assets/sounds/tahajjud_alert.m4a"
+            "./assets/sounds/tahajjud_alert.caf"
           ]
         }
       ],

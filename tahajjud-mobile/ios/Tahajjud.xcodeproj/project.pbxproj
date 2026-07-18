@@ -14,9 +14,11 @@
 		8DB72B680107BD5F14B69BCD /* libPods-Tahajjud.a in Frameworks */ = {isa = PBXBuildFile; fileRef = 2ABB6DD117259387A8FAFFA2 /* libPods-Tahajjud.a */; };
 		ABF17ADE5F108452BECB4E78 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = 8AC6A4CC4115B3C68EBC2067 /* PrivacyInfo.xcprivacy */; };
 		BB2F792D24A3F905000567C9 /* Expo.plist in Resources */ = {isa = PBXBuildFile; fileRef = BB2F792C24A3F905000567C9 /* Expo.plist */; };
+		BF01CAF29A11CE0000000001 /* tahajjud_alert.caf in Resources */ = {isa = PBXBuildFile; fileRef = BF01CAF29A11CE0000000002 /* tahajjud_alert.caf */; };
 		C80F360C4EF4440A9816D5BB /* TahajjudWidgetBundle.swift in Sources */ = {isa = PBXBuildFile; fileRef = DECBBC45A7104AE9A68A319E /* TahajjudWidgetBundle.swift */; };
 		E873A3A7895FED118B811B77 /* ExpoModulesProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A6C640DD6018E117B64E3D9 /* ExpoModulesProvider.swift */; };
 		F11748422D0307B40044C1D9 /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = F11748412D0307B40044C1D9 /* AppDelegate.swift */; };
+		F3E41BE8FDFA4059AB37332B /* GoogleService-Info.plist in Resources */ = {isa = PBXBuildFile; fileRef = CB18CE23D898427C8E36EEB8 /* GoogleService-Info.plist */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -57,6 +59,8 @@
 		AA286B85B6C04FC6940260E9 /* SplashScreen.storyboard */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = file.storyboard; name = SplashScreen.storyboard; path = Tahajjud/SplashScreen.storyboard; sourceTree = "<group>"; };
 		B9796F11B5C6D61F770C3C62 /* Pods-Tahajjud.release.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-Tahajjud.release.xcconfig"; path = "Target Support Files/Pods-Tahajjud/Pods-Tahajjud.release.xcconfig"; sourceTree = "<group>"; };
 		BB2F792C24A3F905000567C9 /* Expo.plist */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.plist.xml; path = Expo.plist; sourceTree = "<group>"; };
+		BF01CAF29A11CE0000000002 /* tahajjud_alert.caf */ = {isa = PBXFileReference; explicitFileType = undefined; fileEncoding = 9; includeInIndex = 0; lastKnownFileType = unknown; name = tahajjud_alert.caf; path = Tahajjud/tahajjud_alert.caf; sourceTree = "<group>"; };
+		CB18CE23D898427C8E36EEB8 /* GoogleService-Info.plist */ = {isa = PBXFileReference; explicitFileType = undefined; fileEncoding = 4; includeInIndex = 0; lastKnownFileType = text.plist.xml; name = "GoogleService-Info.plist"; path = "Tahajjud/GoogleService-Info.plist"; sourceTree = "<group>"; };
 		DB571EBED09F4E2DA011C5A4 /* TahajjudWidget.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = TahajjudWidget.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		DECBBC45A7104AE9A68A319E /* TahajjudWidgetBundle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TahajjudWidgetBundle.swift; sourceTree = "<group>"; };
 		ED297162215061F000B7C4FE /* JavaScriptCore.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = JavaScriptCore.framework; path = System/Library/Frameworks/JavaScriptCore.framework; sourceTree = SDKROOT; };
@@ -103,6 +107,8 @@
 				13B07FB61A68108700A75B9A /* Info.plist */,
 				AA286B85B6C04FC6940260E9 /* SplashScreen.storyboard */,
 				8AC6A4CC4115B3C68EBC2067 /* PrivacyInfo.xcprivacy */,
+				CB18CE23D898427C8E36EEB8 /* GoogleService-Info.plist */,
+				BF01CAF29A11CE0000000002 /* tahajjud_alert.caf */,
 			);
 			name = Tahajjud;
 			sourceTree = "<group>";
@@ -235,10 +241,11 @@
 		83CBB9F71A601CBA00E9B192 /* Project object */ = {
 			isa = PBXProject;
 			attributes = {
-				LastUpgradeCheck = 1130;
+				BuildIndependentTargetsInParallel = YES;
+				LastUpgradeCheck = 2650;
 				TargetAttributes = {
 					13B07F861A680F5B00A75B9A = {
-						DevelopmentTeam = 73Y2B8DNY2;
+						DevelopmentTeam = W4T3LVN8DC;
 						LastSwiftMigration = 1250;
 						ProvisioningStyle = Automatic;
 					};
@@ -272,6 +279,8 @@
 				13B07FBF1A68108700A75B9A /* Images.xcassets in Resources */,
 				3E461D99554A48A4959DE609 /* SplashScreen.storyboard in Resources */,
 				ABF17ADE5F108452BECB4E78 /* PrivacyInfo.xcprivacy in Resources */,
+				F3E41BE8FDFA4059AB37332B /* GoogleService-Info.plist in Resources */,
+				BF01CAF29A11CE0000000001 /* tahajjud_alert.caf in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -474,7 +483,7 @@
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 24;
-				DEVELOPMENT_TEAM = 73Y2B8DNY2;
+				DEVELOPMENT_TEAM = W4T3LVN8DC;
 				GCC_PREPROCESSOR_DEFINITIONS = (
 					"$(inherited)",
 					"FB_SONARKIT_ENABLED=1",
@@ -512,7 +521,7 @@
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 24;
-				DEVELOPMENT_TEAM = 73Y2B8DNY2;
+				DEVELOPMENT_TEAM = W4T3LVN8DC;
 				INFOPLIST_FILE = Tahajjud/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 15.1;
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -541,7 +550,7 @@
 				CODE_SIGN_ENTITLEMENTS = TahajjudWidget/TahajjudWidget.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 24;
-				DEVELOPMENT_TEAM = 73Y2B8DNY2;
+				DEVELOPMENT_TEAM = W4T3LVN8DC;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = TahajjudWidget/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
@@ -562,7 +571,7 @@
 				CODE_SIGN_ENTITLEMENTS = TahajjudWidget/TahajjudWidget.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 24;
-				DEVELOPMENT_TEAM = 73Y2B8DNY2;
+				DEVELOPMENT_TEAM = W4T3LVN8DC;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = TahajjudWidget/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
