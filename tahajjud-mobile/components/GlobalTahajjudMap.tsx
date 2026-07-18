@@ -94,10 +94,14 @@ export function GlobalTahajjudMap({ visible, onClose, onLiveTotal }: Props) {
 
     const zoom = (direction: 'in' | 'out') => {
         const factor = direction === 'in' ? 0.4 : 2.5;
+        // 150 was tighter than the native map's own minimum zoom, so "zoom
+        // out" repeatedly hit our clamp before ever reaching a full-globe
+        // view. 300 is comfortably past what a real device/tablet can need —
+        // the map provider's own minimum zoom is the real limit now.
         const next: Region = {
             ...region,
-            latitudeDelta:  Math.min(Math.max(region.latitudeDelta  * factor, 0.5), 150),
-            longitudeDelta: Math.min(Math.max(region.longitudeDelta * factor, 0.5), 150),
+            latitudeDelta:  Math.min(Math.max(region.latitudeDelta  * factor, 0.5), 300),
+            longitudeDelta: Math.min(Math.max(region.longitudeDelta * factor, 0.5), 300),
         };
         setRegion(next);
         mapRef.current?.animateToRegion(next, 300);
