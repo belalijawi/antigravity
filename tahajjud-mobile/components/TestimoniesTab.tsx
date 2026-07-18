@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { View, Text, FlatList, TouchableOpacity, StyleSheet, Linking, Share, ScrollView, Platform, Alert, RefreshControl, DeviceEventEmitter, Dimensions, NativeSyntheticEvent, NativeScrollEvent } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Heart, Send, Share2, BookHeart, Sparkles, PenLine } from 'lucide-react-native';
+import { Heart, Send, Share2, BookHeart, Sparkles, PenLine, Star } from 'lucide-react-native';
 import { SubmitTestimonyModal } from './SubmitTestimonyModal';
 import { GlassBg as BlurView } from './GlassBg';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -36,7 +36,7 @@ async function setTestimonyLiked(id: string, liked: boolean): Promise<void> {
     } catch {}
 }
 
-const TestimonyCard = ({ item, onShare }: { item: Testimony, onShare: (item: Testimony) => void }) => {
+const TestimonyCard = ({ item, onShare, isTopStory }: { item: Testimony, onShare: (item: Testimony) => void, isTopStory?: boolean }) => {
     const [liked, setLiked] = useState(false);
     const [count, setCount] = useState(item.reactions);
     // Latest desired like-state, updated synchronously on every tap so taps are
@@ -145,6 +145,12 @@ const TestimonyCard = ({ item, onShare }: { item: Testimony, onShare: (item: Tes
             />
 
             <View style={styles.cardContent}>
+                {isTopStory && (
+                    <View style={styles.topPickBadgeRow}>
+                        <Star size={12} color="#facc15" fill="#facc15" />
+                        <Text style={styles.topPickBadgeText}>{t('testimoniesTab.topPickBadge')}</Text>
+                    </View>
+                )}
                 <View style={styles.cardHeader}>
                     <Text style={styles.title} numberOfLines={2} ellipsizeMode="tail">{item.title}</Text>
                     <TouchableOpacity onPress={() => onShare(item)} style={styles.iconButton}>
@@ -395,7 +401,9 @@ export function TestimoniesTab() {
                 ref={flatListRef}
                 style={{ flex: 1 }}
                 data={orderedStories}
-                renderItem={({ item }) => <TestimonyCard item={item} onShare={handleShareQuote} />}
+                renderItem={({ item }) => (
+                    <TestimonyCard item={item} onShare={handleShareQuote} isTopStory={!!topStory && item.id === topStory.id} />
+                )}
                 keyExtractor={item => item.id}
                 contentContainerStyle={[styles.listContent, { flexGrow: 1 }]}
                 removeClippedSubviews={Platform.OS === 'android'}
@@ -551,6 +559,16 @@ const styles = StyleSheet.create({
     listContent: {
         paddingHorizontal: 20,
         paddingBottom: 180,
+    },
+    // ── Top Story of the Day badge — sits inside the card itself now (the
+    // card is just a normal first list item, not a separate pinned section).
+    topPickBadgeRow: {
+        flexDirection: 'row', alignItems: 'center', gap: 5,
+        marginBottom: 12,
+    },
+    topPickBadgeText: {
+        fontSize: 11, fontWeight: '800', letterSpacing: 0.5,
+        color: '#facc15', textTransform: 'uppercase',
     },
     card: {
         borderRadius: 24,
