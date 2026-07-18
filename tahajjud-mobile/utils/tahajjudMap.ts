@@ -5,7 +5,7 @@
  * Privacy:
  *  - Coordinates rounded to 1 decimal place (~11km grid, city-level only)
  *  - No user ID, no name, no device ID stored
- *  - Documents auto-filtered to the last 90 minutes (Tahajjud window)
+ *  - Documents auto-filtered to the last 24 hours (rolling Tahajjud window)
  *
  * Firestore structure:
  *   tahajjud_map/{auto-id} {
@@ -17,11 +17,18 @@
 
 import { collection, addDoc, query, where, limit, getCountFromServer,
          onSnapshot, Timestamp, serverTimestamp } from 'firebase/firestore';
-import { getFirebaseDb } from './firebase';
+import { getFirebaseDb, ensureSignedIn } from './firebase';
 
 // Hard caps so a large collection can never blow the Firestore read quota.
 const MAP_DOT_LIMIT = 500;   // dots rendered on the live map
 const COUNT_LIMIT = 1000;    // ceiling for the "today" counter
+// Rolling window for the map. Kept in sync with the home card's daily total
+// (subscribeDailyTotal) so the dots on the map and the "X prayed in the last
+// 24h" headline always describe the same set of people. Exported so callers
+// backfilling a map entry for an already-logged prayer (Siri, cloud restore)
+// can check the original prayer time is still within this window before
+// logging it — logging an old prayer "now" would misrepresent it as current.
+export const MAP_WINDOW_MS = 24 * 60 * 60 * 1000;
 import * as Location from 'expo-location';
 
 export interface MapDot {
@@ -38,8 +45,20 @@ export async function logTahajjudToMap(): Promise<void> {
         const db = getFirebaseDb();
         if (!db) return;
 
-        // Use last known position — no permission prompt, no delay
-        const pos = await Location.getLastKnownPositionAsync({});
+        // Prefer the last known position — no permission prompt, no delay.
+        // Tahajjud is logged after hours of inactivity/sleep, so a lot of
+        // phones won't have a recent cached fix; fall back to asking for a
+        // fresh one rather than silently dropping a real submission. Never
+        // request permission here — this fires from a background flow right
+        // after logging a prayer, and popping an OS prompt at that moment
+        // would be jarring and inconsistent with how this app always ties
+        // permission requests to an explicit, user-initiated screen.
+        let pos = await Location.getLastKnownPositionAsync({});
+        if (!pos) {
+            const { status } = await Location.getForegroundPermissionsAsync();
+            if (status !== 'granted') return;
+            pos = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Lowest });
+        }
         if (!pos) return;
 
         // Round to 1dp for city-level anonymity (~11km)
@@ -51,7 +70,7 @@ export async function logTahajjudToMap(): Promise<void> {
 }
 
 /**
- * Subscribes to all Tahajjud logs from the last 90 minutes globally.
+ * Subscribes to all Tahajjud logs from the last 24 hours globally.
  * Returns an unsubscribe function.
  */
 export function subscribeTahajjudMap(
@@ -61,20 +80,30 @@ export function subscribeTahajjudMap(
         const db = getFirebaseDb();
         if (!db) { onUpdate([], 0); return () => {}; }
 
-        // Initial cutoff — also filtered client-side so the window stays accurate
-        const cutoff = Timestamp.fromDate(new Date(Date.now() - 90 * 60 * 1000));
-        const q = query(collection(db, COLLECTION), where('ts', '>=', cutoff), limit(MAP_DOT_LIMIT));
+        // Firestore rules require auth to read this collection, and a
+        // permission-denied error permanently closes an onSnapshot listener.
+        // On a cold start the anonymous sign-in may still be in flight, so
+        // wait for it before attaching.
+        let cancelled = false;
+        let unsubSnap: (() => void) | null = null;
+        ensureSignedIn().finally(() => {
+            if (cancelled) return;
+            // Initial cutoff — also filtered client-side so the window stays accurate
+            const cutoff = Timestamp.fromDate(new Date(Date.now() - MAP_WINDOW_MS));
+            const q = query(collection(db, COLLECTION), where('ts', '>=', cutoff), limit(MAP_DOT_LIMIT));
 
-        return onSnapshot(q, snap => {
-            const windowStart = Date.now() - 90 * 60 * 1000; // re-evaluated on each update
-            const dots: MapDot[] = snap.docs
-                .filter(d => d.data().ts?.toMillis() >= windowStart)
-                .map(d => ({ id: d.id, lat: d.data().lat, lng: d.data().lng }))
-                // Drop malformed docs — undefined/NaN coords crash react-native-maps
-                .filter(dot => typeof dot.lat === 'number' && typeof dot.lng === 'number'
-                    && !isNaN(dot.lat) && !isNaN(dot.lng));
-            onUpdate(dots, dots.length);
-        }, () => onUpdate([], 0));
+            unsubSnap = onSnapshot(q, snap => {
+                const windowStart = Date.now() - MAP_WINDOW_MS; // re-evaluated on each update
+                const dots: MapDot[] = snap.docs
+                    .filter(d => d.data().ts?.toMillis() >= windowStart)
+                    .map(d => ({ id: d.id, lat: d.data().lat, lng: d.data().lng }))
+                    // Drop malformed docs — undefined/NaN coords crash react-native-maps
+                    .filter(dot => typeof dot.lat === 'number' && typeof dot.lng === 'number'
+                        && !isNaN(dot.lat) && !isNaN(dot.lng));
+                onUpdate(dots, dots.length);
+            }, () => onUpdate([], 0));
+        });
+        return () => { cancelled = true; unsubSnap?.(); };
     } catch {
         onUpdate([], 0);
         return () => {};
@@ -87,17 +116,34 @@ export function subscribeDailyTotal(onUpdate: (total: number) => void): () => vo
         const db = getFirebaseDb();
         if (!db) { onUpdate(0); return () => {}; }
 
-        const cutoff = Timestamp.fromDate(new Date(Date.now() - 24 * 60 * 60 * 1000));
-        const q = query(collection(db, COLLECTION), where('ts', '>=', cutoff), limit(COUNT_LIMIT));
-
-        // One-time server-side count instead of a permanent onSnapshot listener.
-        // The map card is only a passive indicator (hidden until 50+), so a live
-        // listener that re-renders the heavy Home screen on every change isn't
-        // worth the cost. getCountFromServer is a single cheap aggregation query.
+        // Periodic server-side count instead of a permanent onSnapshot listener
+        // (a live listener re-rendering the heavy Home screen on every write
+        // isn't worth it — getCountFromServer is a single cheap aggregation).
+        // It MUST re-count though: the 24h window is rolling, so a one-time
+        // count goes stale while the Home tab stays mounted — the card was
+        // showing more people than the map because aged-out logs were never
+        // dropped from its number. The cutoff is recomputed on every tick.
         let cancelled = false;
-        getCountFromServer(q)
-            .then(snap => { if (!cancelled) onUpdate(snap.data().count); })
-            .catch(() => { if (!cancelled) onUpdate(0); });
-        return () => { cancelled = true; };
+        let retryTimer: ReturnType<typeof setTimeout> | undefined;
+        let retryDelay = 10 * 1000;
+        const refresh = () => {
+            const cutoff = Timestamp.fromDate(new Date(Date.now() - MAP_WINDOW_MS));
+            const q = query(collection(db, COLLECTION), where('ts', '>=', cutoff), limit(COUNT_LIMIT));
+            getCountFromServer(q)
+                .then(snap => { if (!cancelled) { retryDelay = 10 * 1000; onUpdate(snap.data().count); } })
+                .catch(() => {
+                    // Keep the previous value, but retry with backoff instead of
+                    // waiting the full 5 minutes — at cold start "previous" is 0,
+                    // which hides the Home map card behind its >= 50 gate.
+                    if (cancelled) return;
+                    retryTimer = setTimeout(refresh, retryDelay);
+                    retryDelay = Math.min(retryDelay * 2, 5 * 60 * 1000);
+                });
+        };
+        // Rules require auth to read the collection — on a cold start this
+        // subscription can beat the background anonymous sign-in, so wait.
+        ensureSignedIn().finally(() => { if (!cancelled) refresh(); });
+        const interval = setInterval(refresh, 5 * 60 * 1000);
+        return () => { cancelled = true; clearInterval(interval); if (retryTimer) clearTimeout(retryTimer); };
     } catch { onUpdate(0); return () => {}; }
 }

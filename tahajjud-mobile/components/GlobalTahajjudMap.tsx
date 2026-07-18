@@ -1,22 +1,27 @@
 /**
  * GlobalTahajjudMap — full-screen modal showing anonymous city-level dots
- * of Muslims praying Tahajjud around the world right now.
+ * of Muslims who prayed Tahajjud around the world in the last 24 hours.
  */
 
 import React, { useEffect, useRef, useState } from 'react';
 import {
     Modal, View, Text, StyleSheet, TouchableOpacity,
-    Platform, Animated,
+    Platform, Animated, Linking,
 } from 'react-native';
 import MapView, { Circle, PROVIDER_DEFAULT, Region } from 'react-native-maps';
+import * as Location from 'expo-location';
 import { GlassBg as BlurView } from './GlassBg';
-import { X, Moon, Plus, Minus, Globe } from 'lucide-react-native';
+import { X, Moon, Plus, Minus, Globe, MapPin } from 'lucide-react-native';
 import { useTheme } from '../context/ThemeContext';
 import { subscribeTahajjudMap, MapDot } from '../utils/tahajjudMap';
+import { t } from '../utils/i18n';
 
 interface Props {
     visible: boolean;
     onClose: () => void;
+    /** Live headcount from the map's own subscription — lets the Home card
+     *  sync to the exact number shown here, so the two never disagree. */
+    onLiveTotal?: (total: number) => void;
 }
 
 // Dark map style matching the app aesthetic
@@ -33,17 +38,59 @@ const DARK_MAP_STYLE = [
       stylers: [{ color: '#1e3a5f', weight: 0.8 }] },
 ];
 
-export function GlobalTahajjudMap({ visible, onClose }: Props) {
+// Golden angle (radians) — sunflower-spiral spacing packs any number of
+// same-cell dots evenly without two ever landing on the same spot.
+const GOLDEN_ANGLE = 2.399963;
+
+/**
+ * Coordinates are rounded to ~11km cells for privacy, so everyone in the same
+ * city shares one exact point and their dots stack invisibly. Spread each
+ * cell's dots in a deterministic spiral instead — offsets stay within the
+ * ~0.1° (~11km) the stored coordinates are already blurred to, so this adds
+ * no location precision. Sorted by doc id so a dot keeps its spot across
+ * snapshot updates instead of dancing.
+ */
+function spreadStackedDots(dots: MapDot[]): MapDot[] {
+    const byCell = new Map<string, MapDot[]>();
+    for (const d of dots) {
+        const key = `${d.lat},${d.lng}`;
+        const cell = byCell.get(key);
+        if (cell) cell.push(d); else byCell.set(key, [d]);
+    }
+    const out: MapDot[] = [];
+    for (const cell of byCell.values()) {
+        cell.sort((a, b) => (a.id < b.id ? -1 : 1));
+        cell.forEach((d, i) => {
+            if (i === 0) { out.push(d); return; }
+            const r = Math.min(0.032 * Math.sqrt(i), 0.1);
+            const a = i * GOLDEN_ANGLE;
+            out.push({ ...d, lat: d.lat + r * Math.cos(a), lng: d.lng + r * Math.sin(a) });
+        });
+    }
+    return out;
+}
+
+export function GlobalTahajjudMap({ visible, onClose, onLiveTotal }: Props) {
     const { colors } = useTheme();
     const [dots, setDots] = useState<MapDot[]>([]);
     const [total, setTotal] = useState(0);
     const [mapReady, setMapReady] = useState(false);
+    const [locationStatus, setLocationStatus] = useState<Location.PermissionStatus | null>(null);
+    const [showLocationPrompt, setShowLocationPrompt] = useState(true);
     const [region, setRegion] = useState<Region>({
         latitude: 25, longitude: 20, latitudeDelta: 120, longitudeDelta: 120,
     });
     const fadeAnim = useRef(new Animated.Value(0)).current;
     const mapFade  = useRef(new Animated.Value(0)).current;
     const mapRef   = useRef<MapView>(null);
+
+    const spreadDots = React.useMemo(() => spreadStackedDots(dots), [dots]);
+    // Circle radius is in meters, so a fixed size that looks right on the
+    // world view swallows whole regions once zoomed in. Scale with the
+    // visible region so dots stay a few screen-pixels at every zoom level —
+    // that's what lets the spread-out same-city dots actually separate.
+    const dotRadius  = Math.max(1500, region.latitudeDelta * 500);
+    const glowRadius = dotRadius * 3;
 
     const zoom = (direction: 'in' | 'out') => {
         const factor = direction === 'in' ? 0.4 : 2.5;
@@ -62,13 +109,28 @@ export function GlobalTahajjudMap({ visible, onClose }: Props) {
 
         setMapReady(false);
         mapFade.setValue(0);
-        const unsub = subscribeTahajjudMap((d, t) => { setDots(d); setTotal(t); });
+        setShowLocationPrompt(true);
+        Location.getForegroundPermissionsAsync().then(({ status }) => setLocationStatus(status));
+        const unsub = subscribeTahajjudMap((d, t) => { setDots(d); setTotal(t); onLiveTotal?.(t); });
         return () => {
             unsub();
             fadeAnim.stopAnimation();
             mapFade.stopAnimation();
         };
     }, [visible]);
+
+    // "undetermined" → the OS prompt has never been shown, so requesting it
+    // now will surface it. Once a user has said no, iOS/Android won't show
+    // that dialog again — the only way back in is the system Settings app.
+    const handleEnableLocation = async () => {
+        if (locationStatus === 'undetermined') {
+            const { status } = await Location.requestForegroundPermissionsAsync();
+            setLocationStatus(status);
+            if (status === 'granted') setShowLocationPrompt(false);
+        } else {
+            Linking.openSettings();
+        }
+    };
 
     return (
         <Modal visible={visible} animationType="slide" presentationStyle="fullScreen" onRequestClose={onClose}>
@@ -101,19 +163,19 @@ export function GlobalTahajjudMap({ visible, onClose }: Props) {
                         Animated.timing(mapFade, { toValue: 1, duration: 500, useNativeDriver: false }).start();
                     }}
                 >
-                    {dots.map(dot => (
+                    {spreadDots.map(dot => (
                         <React.Fragment key={dot.id}>
                             {/* Outer glow */}
                             <Circle
                                 center={{ latitude: dot.lat, longitude: dot.lng }}
-                                radius={180000}
+                                radius={glowRadius}
                                 fillColor={colors.accent + '15'}
                                 strokeColor="transparent"
                             />
                             {/* Inner dot */}
                             <Circle
                                 center={{ latitude: dot.lat, longitude: dot.lng }}
-                                radius={60000}
+                                radius={dotRadius}
                                 fillColor={colors.accent + 'cc'}
                                 strokeColor={colors.accent}
                                 strokeWidth={1}
@@ -127,7 +189,7 @@ export function GlobalTahajjudMap({ visible, onClose }: Props) {
                 {!mapReady && (
                     <View style={styles.loadingOverlay}>
                         <Moon size={32} color="#1e3a5f" />
-                        <Text style={styles.loadingText}>Loading map…</Text>
+                        <Text style={styles.loadingText}>{t('globalMap.loadingMap')}</Text>
                     </View>
                 )}
 
@@ -138,13 +200,13 @@ export function GlobalTahajjudMap({ visible, onClose }: Props) {
                         <View>
                             <View style={styles.liveRow}>
                                 <View style={[styles.liveDot, { backgroundColor: total > 0 ? '#22c55e' : '#475569' }]} />
-                                <Text style={styles.liveLabel}>{total > 0 ? 'LIVE' : 'QUIET'}</Text>
+                                <Text style={styles.liveLabel}>{total > 0 ? t('globalMap.live') : t('globalMap.quiet')}</Text>
                             </View>
                             <Text style={[styles.count, { color: colors.accent }]}>
                                 {total.toLocaleString()}
                             </Text>
                             <Text style={styles.countSub}>
-                                Muslim{total !== 1 ? 's' : ''} praying Tahajjud right now
+                                {t('globalMap.prayedCount', { n: total.toLocaleString() })}
                             </Text>
                         </View>
                         <TouchableOpacity onPress={onClose} style={styles.closeBtn} hitSlop={12}>
@@ -152,6 +214,30 @@ export function GlobalTahajjudMap({ visible, onClose }: Props) {
                         </TouchableOpacity>
                     </View>
                 </Animated.View>
+
+                {/* Location permission prompt — only for users who haven't granted it */}
+                {mapReady && showLocationPrompt && locationStatus && locationStatus !== 'granted' && (
+                    <Animated.View style={[styles.locationPrompt, { opacity: fadeAnim }]}>
+                        <BlurView intensity={50} tint="dark" style={StyleSheet.absoluteFill} />
+                        <View style={styles.locationPromptRow}>
+                            <MapPin size={18} color={colors.accent} />
+                            <View style={styles.locationPromptText}>
+                                <Text style={styles.locationPromptTitle}>{t('globalMap.locationPrompt.title')}</Text>
+                                <Text style={styles.locationPromptBody}>{t('globalMap.locationPrompt.body')}</Text>
+                            </View>
+                            <TouchableOpacity onPress={() => setShowLocationPrompt(false)} hitSlop={10}>
+                                <X size={16} color="#64748b" />
+                            </TouchableOpacity>
+                        </View>
+                        <TouchableOpacity
+                            style={[styles.locationPromptBtn, { backgroundColor: colors.accent }]}
+                            onPress={handleEnableLocation}
+                            activeOpacity={0.85}
+                        >
+                            <Text style={styles.locationPromptBtnText}>{t('globalMap.locationPrompt.enable')}</Text>
+                        </TouchableOpacity>
+                    </Animated.View>
+                )}
 
                 {/* Zoom controls */}
                 {mapReady && (
@@ -182,7 +268,7 @@ export function GlobalTahajjudMap({ visible, onClose }: Props) {
                     <BlurView intensity={40} tint="dark" style={StyleSheet.absoluteFill} />
                     <Moon size={12} color="#475569" />
                     <Text style={styles.footerText}>
-                        City-level only · Anonymous · Last 90 minutes
+                        {t('globalMap.footer')}
                     </Text>
                 </Animated.View>
 
@@ -249,4 +335,25 @@ const styles = StyleSheet.create({
         backgroundColor: '#060b18',
     },
     loadingText: { color: '#1e3a5f', fontSize: 14, fontWeight: '600' },
+    locationPrompt: {
+        position: 'absolute',
+        top: Platform.OS === 'ios' ? 170 : 130,
+        left: 16, right: 16,
+        borderRadius: 16,
+        overflow: 'hidden',
+        borderWidth: 1,
+        borderColor: 'rgba(255,255,255,0.10)',
+        padding: 14,
+    },
+    locationPromptRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 10 },
+    locationPromptText: { flex: 1 },
+    locationPromptTitle: { color: '#f1f5f9', fontSize: 13, fontWeight: '700' },
+    locationPromptBody: { color: '#94a3b8', fontSize: 12, fontWeight: '500', marginTop: 2, lineHeight: 16 },
+    locationPromptBtn: {
+        marginTop: 12,
+        borderRadius: 10,
+        paddingVertical: 10,
+        alignItems: 'center',
+    },
+    locationPromptBtnText: { color: '#0a0f1e', fontSize: 13, fontWeight: '800' },
 });

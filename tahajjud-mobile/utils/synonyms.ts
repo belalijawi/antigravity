@@ -65,8 +65,8 @@ const RAW: Record<string, string[]> = {
     confused: ['guidance', 'lost', 'direction'],
 
     // ── Patience / sabr ──
-    patience: ['sabr', 'endurance', 'persistence'],
-    sabr: ['patience', 'endurance'],
+    patience: ['sabr', 'endurance', 'persistence', 'anger', 'calm'],
+    sabr: ['patience', 'endurance', 'anger'],
 
     // ── Health / sickness / healing ──
     health: ['sick', 'illness', 'healing', 'shifa', 'recovery', 'wellness', 'ill', 'disease'],
@@ -85,7 +85,10 @@ const RAW: Record<string, string[]> = {
     learn: ['knowledge', 'ilm', 'learning', 'study'],
     learning: ['knowledge', 'ilm', 'study', 'education'],
     study: ['knowledge', 'learning', 'ilm', 'exam', 'student'],
-    exam: ['knowledge', 'study', 'success', 'student'],
+    exam: ['knowledge', 'study', 'success', 'student', 'test', 'exams'],
+    exams: ['exam', 'test', 'study', 'student'],
+    test: ['exam', 'exams', 'study', 'student'],
+    revision: ['study', 'exam', 'exams', 'student'],
     school: ['knowledge', 'study', 'education', 'exam'],
     university: ['knowledge', 'study', 'education', 'exam'],
     student: ['knowledge', 'study', 'learning', 'exam'],
@@ -95,8 +98,36 @@ const RAW: Record<string, string[]> = {
     // ── Success / work / career ──
     success: ['barakah', 'blessing', 'victory', 'prosperity', 'achievement', 'win'],
     work: ['success', 'wealth', 'job', 'career', 'business', 'money'],
-    job: ['work', 'wealth', 'success', 'career', 'money'],
+    job: ['work', 'wealth', 'success', 'career', 'money', 'interview'],
     career: ['work', 'job', 'success', 'wealth'],
+    interview: ['job', 'work', 'career', 'exam'],
+    office: ['work', 'job', 'career'],
+
+    // ── Hajj / Umrah / pilgrimage ──
+    hajj: ['umrah', 'pilgrimage', 'makkah', 'kaaba', 'arafah', 'tawaf', 'zamzam', 'travel'],
+    umrah: ['hajj', 'pilgrimage', 'makkah', 'kaaba', 'tawaf'],
+    pilgrimage: ['hajj', 'umrah', 'makkah'],
+    makkah: ['hajj', 'umrah', 'kaaba', 'qibla'],
+    kaaba: ['hajj', 'umrah', 'makkah', 'qibla', 'tawaf'],
+    tawaf: ['hajj', 'umrah', 'kaaba'],
+    arafah: ['hajj', 'dua'],
+    zamzam: ['hajj', 'umrah', 'water'],
+    talbiyah: ['hajj', 'umrah'],
+
+    // ── Weather / nature ──
+    rain: ['weather', 'storm', 'nature'],
+    weather: ['rain', 'storm', 'wind', 'thunder', 'nature'],
+    storm: ['weather', 'rain', 'wind', 'thunder'],
+    thunder: ['weather', 'storm', 'rain'],
+    wind: ['weather', 'storm'],
+    drought: ['rain', 'weather'],
+    moon: ['weather', 'nature', 'ramadan'],
+
+    // ── Anger / temper ──
+    anger: ['angry', 'patience', 'temper', 'rage', 'calm'],
+    angry: ['anger', 'patience', 'temper', 'rage', 'calm'],
+    temper: ['anger', 'angry', 'patience'],
+    rage: ['anger', 'angry', 'patience'],
     victory: ['success', 'win', 'triumph'],
     blessing: ['barakah', 'success', 'gratitude'],
     barakah: ['blessing', 'success', 'wealth'],
@@ -224,12 +255,13 @@ const RAW: Record<string, string[]> = {
     drive: ['travel', 'car'],
 
     // ── Love / mercy ──
-    love: ['muhabbah', 'affection', 'compassion'],
+    love: ['muhabbah', 'affection', 'compassion', 'marriage', 'spouse', 'romance'],
     muhabbah: ['love'],
-
-    // ── Anger ──
-    anger: ['rage', 'temptation', 'sin', 'patience'],
-    rage: ['anger'],
+    romance: ['love', 'marriage', 'spouse'],
+    single: ['marriage', 'spouse', 'lonely', 'love'],
+    lonely: ['loneliness', 'single', 'sadness', 'love'],
+    engagement: ['marriage', 'nikah', 'wedding'],
+    wedding: ['marriage', 'nikah', 'spouse'],
 
     // ── Ruqyah / healing recitation ──
     ruqyah: ['healing', 'protection', 'evil eye', 'shifa', 'recitation', 'sick'],

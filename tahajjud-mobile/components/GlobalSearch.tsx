@@ -11,6 +11,7 @@ import { relatedTerms } from '../utils/synonyms';
 import { QuranService, SurahMeta } from '../services/QuranService';
 import { TahajjudJournal, JournalEntry } from '../utils/tahajjudJournal';
 import { getPersonalDuas, PersonalDua } from '../utils/personalDuas';
+import { t } from '../utils/i18n';
 
 interface Props { visible: boolean; onClose: () => void; onResultPress?: (result: SearchResult) => void; }
 
@@ -23,14 +24,34 @@ type SearchResult =
     | { kind: 'tab'; tabName: 'Home' | 'Guide' | 'Duas' | 'Quran' | 'Prayers'; label: string; subtitle: string };
 
 // Top-level destinations the user can search for by name ("quran", "duas",
-// "prayers", "qibla", "home"). Matched on any of the aliases.
-const TAB_DESTINATIONS: { tabName: 'Home' | 'Guide' | 'Duas' | 'Quran' | 'Prayers'; label: string; subtitle: string; aliases: string[] }[] = [
-    { tabName: 'Home',    label: 'Home',         subtitle: 'Tahajjud + tonight’s gate',           aliases: ['home', 'tahajjud', 'gate', 'tonight'] },
-    { tabName: 'Quran',   label: 'Quran',        subtitle: 'Read or play all 114 surahs',              aliases: ['quran', 'koran', 'mushaf', 'surah', 'surahs', 'recitation', 'reciter', 'audio'] },
-    { tabName: 'Duas',    label: 'Duas',         subtitle: 'Search every dua + your letters',          aliases: ['dua', 'duas', 'dhikr', 'wall', 'letter', 'letters', 'tasbeeh', 'tasbih', 'hifz', 'memorise', 'memorize'] },
-    { tabName: 'Prayers', label: 'Prayers',      subtitle: 'Tracker, history, Qibla',                  aliases: ['prayer', 'prayers', 'salah', 'salat', 'tracker', 'history', 'qibla', 'compass'] },
-    { tabName: 'Guide',   label: 'Guide & Why',  subtitle: 'Why tahajjud, hadiths, methodology',       aliases: ['guide', 'why', 'hadith', 'hadiths', 'learn', 'sources', 'methodology', 'about'] },
+// "prayers", "qibla", "home"). Matched on any of the aliases (kept in English
+// since these are internal search-matching keywords, not displayed text).
+const TAB_DESTINATIONS: { tabName: 'Home' | 'Guide' | 'Duas' | 'Quran' | 'Prayers'; aliases: string[] }[] = [
+    { tabName: 'Home',    aliases: ['home', 'tahajjud', 'gate', 'tonight'] },
+    { tabName: 'Quran',   aliases: ['quran', 'koran', 'mushaf', 'surah', 'surahs', 'recitation', 'reciter', 'audio'] },
+    { tabName: 'Duas',    aliases: ['dua', 'duas', 'dhikr', 'wall', 'letter', 'letters', 'tasbeeh', 'tasbih', 'hifz', 'memorise', 'memorize'] },
+    { tabName: 'Prayers', aliases: ['prayer', 'prayers', 'salah', 'salat', 'tracker', 'history', 'qibla', 'compass'] },
+    { tabName: 'Guide',   aliases: ['guide', 'why', 'hadith', 'hadiths', 'learn', 'sources', 'methodology', 'about'] },
 ];
+
+function tabLabel(tabName: 'Home' | 'Guide' | 'Duas' | 'Quran' | 'Prayers'): string {
+    switch (tabName) {
+        case 'Home': return t('globalSearch.tabHome');
+        case 'Quran': return t('globalSearch.tabQuran');
+        case 'Duas': return t('globalSearch.tabDuas');
+        case 'Prayers': return t('globalSearch.tabPrayers');
+        case 'Guide': return t('globalSearch.tabGuide');
+    }
+}
+function tabSubtitle(tabName: 'Home' | 'Guide' | 'Duas' | 'Quran' | 'Prayers'): string {
+    switch (tabName) {
+        case 'Home': return t('globalSearch.tabHomeSub');
+        case 'Quran': return t('globalSearch.tabQuranSub');
+        case 'Duas': return t('globalSearch.tabDuasSub');
+        case 'Prayers': return t('globalSearch.tabPrayersSub');
+        case 'Guide': return t('globalSearch.tabGuideSub');
+    }
+}
 
 const VERSE_REF_REGEX = /^\s*(\d{1,3})\s*:\s*(\d{1,3})\s*$/;
 
@@ -170,16 +191,16 @@ export function GlobalSearch({ visible, onClose, onResultPress }: Props) {
         // Tab destinations — surfaces "Open Quran tab" when user types "quran",
         // etc. Matches any alias substring after normalizing.
         const tabHits: SearchResult[] = TAB_DESTINATIONS
-            .filter(t => t.aliases.some(a => fuzzyMatch(a, q)))
-            .map(t => ({ kind: 'tab', tabName: t.tabName, label: t.label, subtitle: t.subtitle }));
+            .filter(dest => dest.aliases.some(a => fuzzyMatch(a, q)))
+            .map(dest => ({ kind: 'tab', tabName: dest.tabName, label: tabLabel(dest.tabName), subtitle: tabSubtitle(dest.tabName) }));
 
         const out: { title: string; data: SearchResult[] }[] = [];
-        if (verseSection.length) out.push({ title: 'Go to verse', data: verseSection });
-        if (tabHits.length) out.push({ title: 'Sections', data: tabHits });
-        if (surahHits.length) out.push({ title: 'Quran', data: surahHits });
-        if (duaHits.length) out.push({ title: 'Duas', data: duaHits });
-        if (letterHits.length) out.push({ title: 'Your letters', data: letterHits });
-        if (journalHits.length) out.push({ title: 'Journal', data: journalHits });
+        if (verseSection.length) out.push({ title: t('globalSearch.goToVerse'), data: verseSection });
+        if (tabHits.length) out.push({ title: t('globalSearch.sections'), data: tabHits });
+        if (surahHits.length) out.push({ title: t('globalSearch.tabQuran'), data: surahHits });
+        if (duaHits.length) out.push({ title: t('globalSearch.tabDuas'), data: duaHits });
+        if (letterHits.length) out.push({ title: t('globalSearch.yourLetters'), data: letterHits });
+        if (journalHits.length) out.push({ title: t('globalSearch.journal'), data: journalHits });
         return out;
     }, [query, surahs, letters, journal]);
 
@@ -196,7 +217,7 @@ export function GlobalSearch({ visible, onClose, onResultPress }: Props) {
                     </View>
                     <View style={{ flex: 1 }}>
                         <Text style={[styles.rowTitle, { color: colors.primaryText }]} numberOfLines={1}>
-                            Open {item.label}
+                            {t('globalSearch.openLabel', { label: item.label })}
                         </Text>
                         <Text style={[styles.rowSub, { color: colors.secondaryText }]} numberOfLines={1}>
                             {item.subtitle}
@@ -213,9 +234,9 @@ export function GlobalSearch({ visible, onClose, onResultPress }: Props) {
                     </View>
                     <View style={{ flex: 1 }}>
                         <Text style={[styles.rowTitle, { color: colors.primaryText }]}>
-                            Surah {item.surahNumber}, Ayah {item.ayahNumber}
+                            {t('globalSearch.surahAyah', { surah: item.surahNumber, ayah: item.ayahNumber })}
                         </Text>
-                        <Text style={[styles.rowSub, { color: colors.secondaryText }]}>Open in Quran reader</Text>
+                        <Text style={[styles.rowSub, { color: colors.secondaryText }]}>{t('globalSearch.openInReader')}</Text>
                     </View>
                 </TouchableOpacity>
             );
@@ -231,7 +252,7 @@ export function GlobalSearch({ visible, onClose, onResultPress }: Props) {
                             {item.surah.number}. {item.surah.englishName}
                         </Text>
                         <Text style={[styles.rowSub, { color: colors.secondaryText }]}>
-                            {item.surah.englishNameTranslation} · {item.surah.numberOfAyahs} ayahs
+                            {item.surah.englishNameTranslation} · {t('hifzTab.ayahsCount', { n: item.surah.numberOfAyahs })}
                         </Text>
                     </View>
                 </TouchableOpacity>
@@ -261,7 +282,7 @@ export function GlobalSearch({ visible, onClose, onResultPress }: Props) {
                     <View style={{ flex: 1 }}>
                         <Text style={[styles.rowTitle, { color: colors.primaryText }]} numberOfLines={1}>{item.letter.title}</Text>
                         <Text style={[styles.rowSub, { color: colors.secondaryText }]} numberOfLines={1}>
-                            {item.letter.translation?.slice(0, 60) ?? 'Personal letter'}
+                            {item.letter.translation?.slice(0, 60) ?? t('globalSearch.personalLetter')}
                         </Text>
                     </View>
                 </TouchableOpacity>
@@ -293,7 +314,7 @@ export function GlobalSearch({ visible, onClose, onResultPress }: Props) {
                             value={query}
                             onChangeText={setQuery}
                             autoFocus
-                            placeholder="Search anything…"
+                            placeholder={t('globalSearch.searchPlaceholder')}
                             placeholderTextColor="#475569"
                             style={[styles.searchInput, { color: colors.primaryText }]}
                             returnKeyType="search"
@@ -316,7 +337,7 @@ export function GlobalSearch({ visible, onClose, onResultPress }: Props) {
                             style={[styles.cancel, { color: colors.accent }]}
                             maxFontSizeMultiplier={1.2}
                         >
-                            Cancel
+                            {t('btn.cancel')}
                         </Text>
                     </TouchableOpacity>
                 </View>
@@ -325,15 +346,14 @@ export function GlobalSearch({ visible, onClose, onResultPress }: Props) {
                     <View style={styles.center}><ActivityIndicator color={colors.accent} /></View>
                 ) : query.trim().length === 0 ? (
                     <View style={styles.hint}>
-                        <Text style={[styles.hintTitle, { color: colors.primaryText }]}>Search anything</Text>
+                        <Text style={[styles.hintTitle, { color: colors.primaryText }]}>{t('globalSearch.searchAnything')}</Text>
                         <Text style={[styles.hintBody, { color: colors.secondaryText }]}>
-                            Surah names, dua keywords, your letters, journal reflections.{'\n\n'}
-                            Tip: type "67:1" to jump straight to a verse.
+                            {t('globalSearch.hintBody')}
                         </Text>
                     </View>
                 ) : sections.length === 0 ? (
                     <View style={styles.hint}>
-                        <Text style={[styles.hintTitle, { color: colors.secondaryText }]}>No results</Text>
+                        <Text style={[styles.hintTitle, { color: colors.secondaryText }]}>{t('globalSearch.noResults')}</Text>
                     </View>
                 ) : (
                     <SectionList

@@ -100,13 +100,20 @@ service cloud.firestore {
         && request.resource.data.text.size() >= 5
         && request.resource.data.text.size() <= 280;
 
-      // Regular users can only bump ameenCount, prayCount, or reportCount.
-      // Admins can change anything (including hidden flag for moderation).
-      // The auto-hide Cloud Function runs with service-account credentials,
-      // so it bypasses these rules entirely.
+      // Regular users can bump ameenCount, prayCount, or reportCount.
+      // They may also set hidden=true alongside a reportCount bump ONLY when
+      // the existing reportCount is already at REPORT_THRESHOLD - 1 (i.e. this
+      // report is the one that crosses the line). This replaces the Cloud
+      // Function auto-hide that requires a paid Blaze plan.
+      // Admins can change anything.
       allow update: if (request.auth != null
           && request.resource.data.diff(resource.data).affectedKeys()
               .hasOnly(['ameenCount', 'prayCount', 'reportCount']))
+        || (request.auth != null
+            && request.resource.data.diff(resource.data).affectedKeys()
+                .hasOnly(['reportCount', 'hidden'])
+            && request.resource.data.hidden == true
+            && resource.data.reportCount >= 4)  // 4 existing + this one = 5 = REPORT_THRESHOLD
         || isAdmin();
 
       allow delete: if isAdmin();
@@ -161,11 +168,25 @@ service cloud.firestore {
     // ─── Accountability partner: bidirectional partner lists ───────
     // partnerships/{uid} stores that user's list of connected partners.
     // When user A connects user B, BOTH docs need to update (A adds B
-    // to its list, A also writes to B's list). So writes are permitted
-    // for any authenticated user — the data is non-sensitive (just
-    // names + codes already shared willingly).
+    // to its list, A also writes to B's list). Reads stay open to any
+    // authenticated user — the data is non-sensitive (just names + codes
+    // already shared willingly) and connect/disconnect needs to read the
+    // OTHER user's existing list before appending/removing an entry.
+    // Writes to someone else's doc are scoped to ONLY the `partners`
+    // field, so a stranger can add/remove themselves from a list but
+    // can never overwrite or delete another user's document wholesale.
     match /partnerships/{uid} {
-      allow read, write: if request.auth != null;
+      allow read: if request.auth != null;
+
+      // Full control over your own partnership doc.
+      allow create, update, delete: if request.auth != null && request.auth.uid == uid;
+
+      // Cross-user write for the connect/disconnect flow: only the
+      // `partners` field may ever be touched, never delete.
+      allow create: if request.auth != null && request.auth.uid != uid
+        && request.resource.data.keys().hasOnly(['partners']);
+      allow update: if request.auth != null && request.auth.uid != uid
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['partners']);
     }
 
     // ─── Accountability partner: nightly Tahajjud logs ─────────────
@@ -176,6 +197,15 @@ service cloud.firestore {
       allow create, update: if request.auth != null
         && request.resource.data.userId == request.auth.uid;
       allow delete: if false;
+    }
+
+    // ─── App config (admin-curated picks) ──────────────────────────
+    // Single doc app_config/topPicks: { topDuaId, topStoryId, updatedAt }.
+    // Everyone reads it to know what to highlight; only the admin can
+    // set it — this is a manual editorial pick, not a computed metric.
+    match /app_config/{docId} {
+      allow read: if request.auth != null;
+      allow write: if isAdmin();
     }
   }
 }
