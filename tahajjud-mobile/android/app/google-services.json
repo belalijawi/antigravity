@@ -14,6 +14,30 @@
       },
       "oauth_client": [
         {
+          "client_id": "434827238021-11tnh17csg0d7c4k41t2qqhijenk8d81.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.tahajjudplus.app",
+            "certificate_hash": "5e8f16062ea3cd2c4a0d547876baa6f38cabf625"
+          }
+        },
+        {
+          "client_id": "434827238021-d8ltf0moqsl86j5j0ugf06iu8q51npje.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.tahajjudplus.app",
+            "certificate_hash": "da990798c78a49a6cd8676844844ae9c9ed09833"
+          }
+        },
+        {
+          "client_id": "434827238021-omfm8uifdp6voqrlsuqutsavpmqj0p23.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.tahajjudplus.app",
+            "certificate_hash": "d82154f8e3e89a945b75c6db5a208c363d307683"
+          }
+        },
+        {
           "client_id": "434827238021-ntc25erm80s4nhkkbj2bv7g18v80l48h.apps.googleusercontent.com",
           "client_type": 3
         }
