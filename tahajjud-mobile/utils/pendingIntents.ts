@@ -1,6 +1,7 @@
 import { NativeModules, Platform } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { localDateStr } from './localDate';
+import { logTahajjudToMap, MAP_WINDOW_MS } from './tahajjudMap';
 
 /**
  * Drains pending prayer-log intents from the iOS shared App Group.
@@ -55,6 +56,14 @@ export async function drainPendingPrayerLogs(): Promise<number> {
             if (!already) {
                 (history[e.prayer] as string[]).push(e.iso);
                 merged++;
+                // A Siri/Shortcuts Tahajjud log is just as real as one logged
+                // in-app, so it should count on the global map too — but only
+                // if it's still recent enough to fall in the map's rolling
+                // window. An older one (e.g. phone was offline for days) would
+                // misrepresent a past night as happening right now.
+                if (e.prayer === 'tahajjud' && Date.now() - new Date(e.iso).getTime() <= MAP_WINDOW_MS) {
+                    logTahajjudToMap().catch(() => {});
+                }
             }
         }
         await AsyncStorage.setItem(TRACKER_KEY, JSON.stringify(history));

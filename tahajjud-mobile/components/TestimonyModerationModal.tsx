@@ -4,36 +4,76 @@ import {
     ActivityIndicator, Alert,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
-import { Check, Trash2, X, RefreshCw } from 'lucide-react-native';
+import { Check, Trash2, X, RefreshCw, Star } from 'lucide-react-native';
 import { useTheme } from '../context/ThemeContext';
-import { TestimonySubmission, PendingTestimony } from '../utils/testimonySubmission';
+import { TestimonySubmission, PendingTestimony, LiveTestimony } from '../utils/testimonySubmission';
 import { isCurrentUserAdmin } from '../utils/admins';
 import { haptic } from '../utils/haptic';
 import { format } from 'date-fns';
+import { TopPicksService } from '../utils/topPicks';
 
 interface Props { visible: boolean; onClose: () => void; }
 
 export function TestimonyModerationModal({ visible, onClose }: Props) {
     const { colors } = useTheme();
+    const [viewMode, setViewMode] = useState<'pending' | 'live'>('pending');
     const [pending, setPending] = useState<PendingTestimony[]>([]);
+    const [live, setLive] = useState<LiveTestimony[]>([]);
+    const [topStoryId, setTopStoryId] = useState<string | null>(null);
     const [loading, setLoading] = useState(true);
     const [working, setWorking] = useState<string | null>(null);
-
-    // Defense in depth: even if this modal is mounted by a non-admin path,
-    // refuse to render. The actual security boundary is firestore.rules —
-    // this just prevents any UI leak.
-    if (!isCurrentUserAdmin()) return null;
+    const [settingTop, setSettingTop] = useState(false);
+    const isAdmin = isCurrentUserAdmin();
 
     const load = async () => {
         setLoading(true);
-        const list = await TestimonySubmission.listPending();
-        setPending(list);
+        const [pendingList, liveList, picks] = await Promise.all([
+            TestimonySubmission.listPending(),
+            TestimonySubmission.listLive(),
+            TopPicksService.get(),
+        ]);
+        setPending(pendingList);
+        setLive(liveList);
+        setTopStoryId(picks.topStoryId);
         setLoading(false);
     };
 
     useEffect(() => {
-        if (visible) load();
-    }, [visible]);
+        if (visible && isAdmin) load();
+    }, [visible, isAdmin]);
+
+    const handleToggleTopStory = async (item: LiveTestimony) => {
+        if (settingTop) return;
+        setSettingTop(true);
+        const isCurrentlyTop = topStoryId === item.id;
+        const ok = await TopPicksService.setTopStory(isCurrentlyTop ? null : item.id);
+        setSettingTop(false);
+        if (ok) {
+            haptic.success();
+            setTopStoryId(isCurrentlyTop ? null : item.id);
+            // Let the author know they were picked — only on the way IN, not
+            // when unsetting a previous pick.
+            if (!isCurrentlyTop) {
+                const authorId = await TestimonySubmission.adminGetAuthorId(item.id);
+                if (authorId) {
+                    const { sendMilestonePush } = await import('../utils/communityNotify');
+                    sendMilestonePush(
+                        authorId,
+                        '🌟 Your story was chosen',
+                        'Your story has been picked as today\'s Top Story — it\'s now pinned for everyone to see.',
+                        'top_story',
+                    ).catch(() => {});
+                }
+            }
+        } else {
+            Alert.alert('Action failed', 'Check your admin permissions and try again.');
+        }
+    };
+
+    // Defense in depth: even if this modal is mounted by a non-admin path,
+    // refuse to render. The actual security boundary is firestore.rules —
+    // this just prevents any UI leak.
+    if (!isAdmin) return null;
 
     const handleApprove = async (item: PendingTestimony) => {
         setWorking(item.id);
@@ -68,6 +108,36 @@ export function TestimonyModerationModal({ visible, onClose }: Props) {
         );
     };
 
+    const handleDeleteLive = (item: LiveTestimony) => {
+        Alert.alert(
+            'Delete this story?',
+            'This permanently removes the story. It cannot be undone.',
+            [
+                { text: 'Cancel', style: 'cancel' },
+                {
+                    text: 'Delete', style: 'destructive', onPress: async () => {
+                        setWorking(item.id);
+                        const ok = await TestimonySubmission.deleteLive(item.id);
+                        setWorking(null);
+                        if (ok) {
+                            haptic.success();
+                            setLive(prev => prev.filter(l => l.id !== item.id));
+                            // Don't leave the featured pick pointing at a story
+                            // that no longer exists — clear it so the pinned
+                            // "Top Story Today" card disappears everywhere.
+                            if (topStoryId === item.id) {
+                                TopPicksService.setTopStory(null).catch(() => {});
+                                setTopStoryId(null);
+                            }
+                        } else {
+                            Alert.alert('Delete failed', 'Check your admin permissions and try again.');
+                        }
+                    },
+                },
+            ],
+        );
+    };
+
     return (
         <Modal visible={visible} animationType="slide" presentationStyle="pageSheet" onRequestClose={onClose}>
             <LinearGradient colors={['#06091e', '#040714']} style={styles.root}>
@@ -76,10 +146,31 @@ export function TestimonyModerationModal({ visible, onClose }: Props) {
                         <X size={20} color={colors.secondaryText} />
                     </TouchableOpacity>
                     <Text style={[styles.title, { color: colors.primaryText }]}>
-                        Pending Submissions{pending.length > 0 ? ` (${pending.length})` : ''}
+                        {viewMode === 'pending'
+                            ? `Pending Submissions${pending.length > 0 ? ` (${pending.length})` : ''}`
+                            : `Live Stories (${live.length})`}
                     </Text>
                     <TouchableOpacity onPress={load} hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}>
                         <RefreshCw size={18} color={colors.accent} />
+                    </TouchableOpacity>
+                </View>
+
+                <View style={styles.tabRow}>
+                    <TouchableOpacity
+                        onPress={() => setViewMode('pending')}
+                        style={[styles.tabPill, viewMode === 'pending' && { backgroundColor: colors.accent + '22', borderColor: colors.accent + '66' }]}
+                    >
+                        <Text style={[styles.tabText, { color: viewMode === 'pending' ? colors.accent : colors.secondaryText }]}>
+                            Pending
+                        </Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                        onPress={() => setViewMode('live')}
+                        style={[styles.tabPill, viewMode === 'live' && { backgroundColor: colors.accent + '22', borderColor: colors.accent + '66' }]}
+                    >
+                        <Text style={[styles.tabText, { color: viewMode === 'live' ? colors.accent : colors.secondaryText }]}>
+                            Live Stories · Set Top
+                        </Text>
                     </TouchableOpacity>
                 </View>
 
@@ -87,6 +178,84 @@ export function TestimonyModerationModal({ visible, onClose }: Props) {
                     <View style={styles.center}>
                         <ActivityIndicator color={colors.accent} />
                     </View>
+                ) : viewMode === 'live' ? (
+                    live.length === 0 ? (
+                        <View style={styles.center}>
+                            <Text style={styles.emptyEmoji}>📖</Text>
+                            <Text style={[styles.emptyTitle, { color: colors.primaryText }]}>No live stories yet</Text>
+                            <Text style={[styles.emptyBody, { color: colors.secondaryText }]}>
+                                Approved stories will appear here so you can pick a Top Story.
+                            </Text>
+                        </View>
+                    ) : (
+                        <ScrollView contentContainerStyle={styles.list}>
+                            {live.map(item => (
+                                <View
+                                    key={item.id}
+                                    style={[styles.card, { borderColor: topStoryId === item.id ? '#facc15aa' : 'rgba(255,255,255,0.07)' }]}
+                                >
+                                    {topStoryId === item.id && (
+                                        <View style={styles.topBadgeRow}>
+                                            <View style={[styles.badge, { backgroundColor: '#facc1522', borderColor: '#facc1566' }]}>
+                                                <Star size={10} color="#facc15" fill="#facc15" />
+                                                <Text style={[styles.badgeText, { color: '#facc15' }]}>Top Story Today</Text>
+                                            </View>
+                                        </View>
+                                    )}
+                                    <Text style={[styles.itemTitle, { color: colors.primaryText }]}>
+                                        {item.title}
+                                    </Text>
+                                    <Text style={[styles.itemMeta, { color: colors.secondaryText }]}>
+                                        {item.author}{item.location ? ` · ${item.location}` : ''}
+                                        {' · '}{item.reactions} {item.reactions === 1 ? 'like' : 'likes'}
+                                    </Text>
+
+                                    <View style={styles.tagsRow}>
+                                        {item.tags.map(t => (
+                                            <View key={t} style={[styles.tag, { borderColor: colors.accent + '44' }]}>
+                                                <Text style={[styles.tagText, { color: colors.accent }]}>{t}</Text>
+                                            </View>
+                                        ))}
+                                    </View>
+
+                                    <Text style={[styles.body, { color: colors.primaryText }]}>
+                                        {item.body}
+                                    </Text>
+
+                                    <View style={styles.actions}>
+                                        <TouchableOpacity
+                                            onPress={() => handleDeleteLive(item)}
+                                            disabled={working === item.id}
+                                            style={[styles.btn, { borderColor: 'rgba(239,68,68,0.4)', backgroundColor: 'rgba(239,68,68,0.08)' }]}
+                                        >
+                                            {working === item.id
+                                                ? <ActivityIndicator size="small" color="#ef4444" />
+                                                : <>
+                                                    <Trash2 size={14} color="#ef4444" />
+                                                    <Text style={[styles.btnText, { color: '#ef4444' }]}>Delete</Text>
+                                                  </>
+                                            }
+                                        </TouchableOpacity>
+                                        <TouchableOpacity
+                                            onPress={() => handleToggleTopStory(item)}
+                                            disabled={settingTop}
+                                            style={[
+                                                styles.btn,
+                                                topStoryId === item.id
+                                                    ? { borderColor: '#facc15aa', backgroundColor: '#facc1522' }
+                                                    : { borderColor: 'rgba(255,255,255,0.10)', backgroundColor: 'rgba(255,255,255,0.04)' },
+                                            ]}
+                                        >
+                                            <Star size={14} color="#facc15" fill={topStoryId === item.id ? '#facc15' : 'none'} />
+                                            <Text style={[styles.btnText, { color: '#facc15' }]}>
+                                                {topStoryId === item.id ? 'Unset Top' : 'Set as Top'}
+                                            </Text>
+                                        </TouchableOpacity>
+                                    </View>
+                                </View>
+                            ))}
+                        </ScrollView>
+                    )
                 ) : pending.length === 0 ? (
                     <View style={styles.center}>
                         <Text style={styles.emptyEmoji}>📭</Text>
@@ -158,6 +327,22 @@ const styles = StyleSheet.create({
         padding: 20, borderBottomWidth: 1, borderBottomColor: 'rgba(255,255,255,0.06)',
     },
     title: { fontSize: 14, fontWeight: '700' },
+    tabRow: {
+        flexDirection: 'row', gap: 8, paddingHorizontal: 20, paddingBottom: 14,
+        borderBottomWidth: 1, borderBottomColor: 'rgba(255,255,255,0.06)',
+    },
+    tabPill: {
+        paddingHorizontal: 14, paddingVertical: 8, borderRadius: 12,
+        borderWidth: 1, borderColor: 'rgba(255,255,255,0.10)',
+        backgroundColor: 'rgba(255,255,255,0.03)',
+    },
+    tabText: { fontSize: 12, fontWeight: '800' },
+    topBadgeRow: { flexDirection: 'row', marginBottom: 10 },
+    badge: {
+        flexDirection: 'row', alignItems: 'center', gap: 4,
+        paddingHorizontal: 8, paddingVertical: 3, borderRadius: 8, borderWidth: 1,
+    },
+    badgeText: { fontSize: 10, fontWeight: '800', letterSpacing: 0.5 },
     center: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 40 },
     emptyEmoji: { fontSize: 32, marginBottom: 16 },
     emptyTitle: { fontSize: 16, fontWeight: '800', marginBottom: 6 },

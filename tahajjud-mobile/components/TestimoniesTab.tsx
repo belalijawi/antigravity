@@ -1,11 +1,10 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { View, Text, FlatList, TouchableOpacity, StyleSheet, Linking, Share, ScrollView, Platform, Alert, RefreshControl, DeviceEventEmitter, Dimensions, NativeSyntheticEvent, NativeScrollEvent } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Heart, Send, Share2, BookHeart, Sparkles, PenLine } from 'lucide-react-native';
+import { Heart, Send, Share2, BookHeart, Sparkles, PenLine, Star } from 'lucide-react-native';
 import { SubmitTestimonyModal } from './SubmitTestimonyModal';
 import { GlassBg as BlurView } from './GlassBg';
 import { LinearGradient } from 'expo-linear-gradient';
-import Animated, { FadeInDown, FadeIn } from 'react-native-reanimated';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { getFirebaseDb } from '../utils/firebase';
 import { collection, query, where, getDocs } from 'firebase/firestore';
@@ -16,57 +15,129 @@ import { TestimonySubmission } from '../utils/testimonySubmission';
 import { captureRef } from 'react-native-view-shot';
 import { QuoteShareCard } from './QuoteShareCard';
 import { checkAchievements } from '../utils/achievements';
+import { t } from '../utils/i18n';
+import { TopPicksService } from '../utils/topPicks';
 
+
+const TESTIMONY_LIKED_KEY = 'testimony_liked_ids';
+
+async function getTestimonyLikedIds(): Promise<Set<string>> {
+    try {
+        const raw = await AsyncStorage.getItem(TESTIMONY_LIKED_KEY);
+        return raw ? new Set(JSON.parse(raw) as string[]) : new Set();
+    } catch { return new Set(); }
+}
+
+async function setTestimonyLiked(id: string, liked: boolean): Promise<void> {
+    try {
+        const set = await getTestimonyLikedIds();
+        if (liked) set.add(id); else set.delete(id);
+        await AsyncStorage.setItem(TESTIMONY_LIKED_KEY, JSON.stringify([...set]));
+    } catch {}
+}
 
 const TestimonyCard = ({ item, onShare }: { item: Testimony, onShare: (item: Testimony) => void }) => {
     const [liked, setLiked] = useState(false);
     const [count, setCount] = useState(item.reactions);
-    const [reacting, setReacting] = useState(false);
+    // Latest desired like-state, updated synchronously on every tap so taps are
+    // NEVER dropped. The old in-flight `reacting` guard blocked taps during the
+    // server round-trip, which is why "unlike then like again" needed multiple
+    // clicks. We now toggle instantly and reconcile the server after taps settle.
+    const likedRef = useRef(false);
+    const syncTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+    const reconcilingRef = useRef(false);
 
     // Real Firestore testimonies have 20-char auto-generated ids; seed
     // testimonies use short ids ('1', 'c2'…) and can't be liked server-side.
     const isServerTestimony = typeof item.id === 'string' && String(item.id).length >= 12;
 
-    // Restore the user's previous like state from Firestore
+    // Load liked state from AsyncStorage first (instant), then reconcile with Firestore
     useEffect(() => {
+        const id = String(item.id);
+        getTestimonyLikedIds().then(set => {
+            if (set.has(id)) {
+                likedRef.current = true;
+                setLiked(true);
+                // Seed testimonies (no server-side reaction counts) start with
+                // `item.reactions` that DOES NOT include the user's local like.
+                // Without this bump, the heart shows filled but count stays at
+                // the un-liked value — and an "unlike" tap drives count to -1.
+                if (!isServerTestimony) {
+                    setCount(c => c + 1);
+                }
+            }
+        });
         if (!isServerTestimony) return;
-        TestimonySubmission.hasReacted(String(item.id)).then(setLiked).catch(() => {});
+        TestimonySubmission.hasReacted(id).then(serverLiked => {
+            likedRef.current = serverLiked;
+            setLiked(serverLiked);
+            setTestimonyLiked(id, serverLiked);
+        }).catch(() => {});
     }, [item.id]);
 
-    const handleReact = async () => {
-        if (reacting) return;
-        // Seed/local testimonies can't persist — fall back to local toggle
-        if (!isServerTestimony) {
-            setLiked(l => !l);
-            setCount(c => liked ? c - 1 : c + 1);
-            haptic.light();
-            return;
-        }
-        setReacting(true);
-        // Optimistic update
-        const wasLiked = liked;
-        setLiked(!wasLiked);
-        setCount(c => wasLiked ? c - 1 : c + 1);
-        haptic.light();
+    // Clean up any pending server-sync timer when the card unmounts/recycles.
+    useEffect(() => () => { if (syncTimerRef.current) clearTimeout(syncTimerRef.current); }, []);
+
+    // The list renders instantly from the AsyncStorage cache, then the fresh
+    // Firestore fetch replaces the data — but `count` was initialised from the
+    // stale cached value and (without this) never re-synced. A card could show
+    // a filled heart with yesterday's count (even 0) for the whole session.
+    // Re-sync whenever fresh data lands. Seed likes are local-only, so the
+    // user's +1 is re-added; a just-tapped like on a server testimony is
+    // reconciled (and the count re-read) by reconcileServer instead.
+    const prevReactionsRef = useRef(item.reactions);
+    useEffect(() => {
+        if (prevReactionsRef.current === item.reactions) return;
+        prevReactionsRef.current = item.reactions;
+        setCount(Math.max(0, item.reactions + (!isServerTestimony && likedRef.current ? 1 : 0)));
+    }, [item.reactions]);
+
+    // Reconcile the server to the user's FINAL choice after taps settle. Runs at
+    // most one loop at a time; loops (bounded) so taps landing mid-request still
+    // converge. toggleReaction flips server state; we only apply it when it still
+    // matches what the user wants, so a late tap is never clobbered.
+    const reconcileServer = async (id: string) => {
+        if (reconcilingRef.current) return;
+        reconcilingRef.current = true;
         try {
-            const { liked: nowLiked, count } = await TestimonySubmission.toggleReaction(String(item.id));
-            // Trust the server's authoritative values to prevent any drift
-            setLiked(nowLiked);
-            if (count !== null) setCount(count);
-        } catch {
-            // Revert on failure
-            setLiked(wasLiked);
-            setCount(c => wasLiked ? c + 1 : c - 1);
-        } finally {
-            setReacting(false);
-        }
+            for (let i = 0; i < 4; i++) {
+                const desired = likedRef.current;
+                const serverLiked = await TestimonySubmission.hasReacted(id);
+                if (serverLiked === desired) break;
+                const { count: serverCount } = await TestimonySubmission.toggleReaction(id);
+                if (serverCount !== null && likedRef.current === desired) {
+                    setCount(Math.max(0, serverCount));
+                }
+            }
+        } catch { /* best-effort — local state already saved */ }
+        finally { reconcilingRef.current = false; }
+    };
+
+    const handleReact = () => {
+        const id = String(item.id);
+        // Toggle INSTANTLY on every tap — never blocked. likedRef is the source
+        // of truth so back-to-back taps don't read a stale closure value.
+        const next = !likedRef.current;
+        likedRef.current = next;
+        setLiked(next);
+        // Math.max(0, ...) — defensive clamp so we never display a negative count.
+        setCount(c => Math.max(0, next ? c + 1 : c - 1));
+        setTestimonyLiked(id, next);
+        haptic.light();
+        if (!isServerTestimony) return;
+        // Debounce the server sync so rapid like/unlike taps collapse into one
+        // reconciliation to the final state (no racing toggle requests).
+        if (syncTimerRef.current) clearTimeout(syncTimerRef.current);
+        syncTimerRef.current = setTimeout(() => reconcileServer(id), 450);
     };
 
     return (
-        <Animated.View
-            entering={FadeInDown.duration(800)}
-            style={styles.card}
-        >
+        // Plain View (not Animated.View with an `entering` animation): Reanimated
+        // entering animations on virtualized FlatList items are unreliable — on
+        // first mount the row can get stuck at the animation's initial opacity:0
+        // frame and never appear until a scroll/re-render. That caused the
+        // "Stories tab shows nothing on first open" bug. Render at full opacity.
+        <View style={styles.card}>
             <BlurView intensity={15} tint="dark" style={StyleSheet.absoluteFill} />
             <LinearGradient
                 colors={['rgba(255, 255, 255, 0.05)', 'transparent']}
@@ -75,7 +146,7 @@ const TestimonyCard = ({ item, onShare }: { item: Testimony, onShare: (item: Tes
 
             <View style={styles.cardContent}>
                 <View style={styles.cardHeader}>
-                    <Text style={styles.title}>{item.title}</Text>
+                    <Text style={styles.title} numberOfLines={2} ellipsizeMode="tail">{item.title}</Text>
                     <TouchableOpacity onPress={() => onShare(item)} style={styles.iconButton}>
                         <Share2 size={18} color="#94a3b8" />
                     </TouchableOpacity>
@@ -92,7 +163,7 @@ const TestimonyCard = ({ item, onShare }: { item: Testimony, onShare: (item: Tes
                 </View>
 
                 <View style={styles.footer}>
-                    <View>
+                    <View style={styles.authorCol}>
                         <Text style={styles.author}>{item.author}</Text>
                         <Text style={styles.location}>{item.location}</Text>
                     </View>
@@ -112,14 +183,18 @@ const TestimonyCard = ({ item, onShare }: { item: Testimony, onShare: (item: Tes
                     </TouchableOpacity>
                 </View>
             </View>
-        </Animated.View>
+        </View>
     );
 };
 
 
 function pickFeatured(all: Testimony[]): Testimony[] {
-    const shuffled = [...all].sort(() => Math.random() - 0.5);
-    return shuffled.slice(0, 5);
+    // Real user posts always lead the featured carousel (newest first);
+    // shuffled seed stories only fill whatever slots remain.
+    const community = all.filter(t => t.isCommunity)
+        .sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+    const seeds = all.filter(t => !t.isCommunity).sort(() => Math.random() - 0.5);
+    return [...community, ...seeds].slice(0, 5);
 }
 
 export function TestimoniesTab() {
@@ -131,6 +206,9 @@ export function TestimoniesTab() {
     const [featured, setFeatured] = useState<Testimony[]>(() => pickFeatured(initialTestimonies));
     const [featuredIndex, setFeaturedIndex] = useState(0);
     const [showSubmit, setShowSubmit] = useState(false);
+    // Admin-picked "Top Story of the Day" — pinned above the featured carousel.
+    // Fetched separately since the pick may not be among what's currently loaded.
+    const [topStory, setTopStory] = useState<Testimony | null>(null);
     const viewShotRef = useRef<View>(null);
     const flatListRef = useRef<FlatList>(null);
     const featuredScrollRef = useRef<FlatList<Testimony>>(null);
@@ -146,6 +224,17 @@ export function TestimoniesTab() {
             if (tab === 'Guide') flatListRef.current?.scrollToOffset({ offset: 0, animated: true });
         });
         return () => sub.remove();
+    }, []);
+
+    // Live subscription to the admin-picked Top Story of the Day.
+    useEffect(() => {
+        const unsub = TopPicksService.subscribe(picks => {
+            if (!picks.topStoryId) { setTopStory(null); return; }
+            TestimonySubmission.getById(picks.topStoryId).then(story => {
+                setTopStory(story ? { ...story, isCommunity: true } : null);
+            });
+        });
+        return unsub;
     }, []);
 
     // Cycle through featured stories every 5 seconds, but pause auto-rotation
@@ -183,12 +272,23 @@ export function TestimoniesTab() {
         loadTestimonies();
     }, []);
 
+    const mergeWithSeeds = (serverData: Testimony[]): Testimony[] => {
+        const serverIds = new Set(serverData.map(t => t.id));
+        // The server holds copies of some seed stories under different doc ids
+        // (testimony_1..5), so id-matching alone shows those stories twice —
+        // match on normalized title as well.
+        const serverTitles = new Set(serverData.map(t => t.title.trim().toLowerCase()));
+        return [...serverData, ...initialTestimonies.filter(t =>
+            !serverIds.has(t.id) && !serverTitles.has(t.title.trim().toLowerCase()))];
+    };
+
     const loadTestimonies = async () => {
         try {
-            // Check cache first for instant load
+            // Check cache first for instant load, always merged with seeds
             const cached = await AsyncStorage.getItem('cached-testimonies');
             if (cached) {
-                setTestimonies(JSON.parse(cached));
+                const serverData = JSON.parse(cached) as Testimony[];
+                setTestimonies(mergeWithSeeds(serverData));
             }
 
             // Sync with backend
@@ -201,7 +301,7 @@ export function TestimoniesTab() {
 
                 const snapshot = await getDocs(q);
                 if (!snapshot.empty) {
-                    const freshData: any[] = [];
+                    const freshData: Testimony[] = [];
                     snapshot.forEach(doc => {
                         const data = doc.data();
                         freshData.push({
@@ -212,15 +312,18 @@ export function TestimoniesTab() {
                             location: data.location || '',
                             reactions: data.reactions || 0,
                             tags: data.tags || [],
-                            createdAt: data.createdAt || 0
+                            isCommunity: true,
+                            // Firestore Timestamp, epoch millis, or absent — normalize to millis
+                            createdAt: data.createdAt?.toMillis?.() ?? (typeof data.createdAt === 'number' ? data.createdAt : 0),
                         });
                     });
 
                     // Sort descending by timestamp in-memory to avoid index requirements
-                    freshData.sort((a, b) => b.createdAt - a.createdAt);
+                    freshData.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
 
-                    setTestimonies(freshData);
-                    setFeatured(pickFeatured(freshData));
+                    const merged = mergeWithSeeds(freshData);
+                    setTestimonies(merged);
+                    setFeatured(pickFeatured(merged));
                     setFeaturedIndex(0);
                     await AsyncStorage.setItem('cached-testimonies', JSON.stringify(freshData));
                 }
@@ -237,20 +340,26 @@ export function TestimoniesTab() {
         setIsRefreshing(false);
     };
 
+    // Exclude the pinned Top Story of the Day from the regular list — it's
+    // already shown above, so leaving it in here too would show it twice.
+    const storiesMinusTop = topStory
+        ? testimonies.filter(story => story.id !== topStory.id)
+        : testimonies;
     const filteredStories = selectedTopic === 'All'
-        ? testimonies
-        : testimonies.filter(t => t.tags.includes(selectedTopic));
+        ? storiesMinusTop
+        : storiesMinusTop.filter(t => t.tags.includes(selectedTopic));
 
     const handleShareStory = async () => {
         haptic.medium();
         try {
             await Share.share({
-                message: "Alhamdulillah, I've been using Tahajjud Plus for my night prayers. It's truly changed my connection with Allah. Check it out!",
-                title: "My Tahajjud Journey",
+                message: t('testimoniesTab.shareStoryMsg'),
+                title: t('testimoniesTab.shareStoryTitle'),
             });
-            const newlyUnlocked = await checkAchievements('story', 1);
+            const newlyUnlockedList = await checkAchievements('story', 1);
+            const newlyUnlocked = newlyUnlockedList[0];
             if (newlyUnlocked) {
-                Alert.alert("Achievement Unlocked!", `You earned the "${newlyUnlocked.title}" badge.`);
+                Alert.alert(t('testimoniesTab.achievementUnlockedTitle'), t('testimoniesTab.achievementUnlockedBody', { title: newlyUnlocked.title }));
             }
         } catch (_) {}
     };
@@ -294,9 +403,21 @@ export function TestimoniesTab() {
                 ListHeaderComponent={
                     <View>
                         <View style={styles.header}>
-                            <Text style={[styles.headerTitle, { color: colors.accent }]}>Reflections</Text>
-                            <Text style={[styles.headerSubtitle, { color: colors.secondaryText }]}>Echoes of faith from the silent hours</Text>
+                            <Text style={[styles.headerTitle, { color: colors.accent }]}>{t('testimoniesTab.headerTitle')}</Text>
+                            <Text style={[styles.headerSubtitle, { color: colors.secondaryText }]}>{t('testimoniesTab.headerSubtitle')}</Text>
                         </View>
+
+                        {/* Top Story of the Day — admin-picked, distinct from the
+                            auto-rotating "Featured" carousel below. */}
+                        {topStory && (
+                            <View style={styles.topPickWrap}>
+                                <View style={styles.topPickBadgeRow}>
+                                    <Star size={12} color="#facc15" fill="#facc15" />
+                                    <Text style={styles.topPickBadgeText}>{t('testimoniesTab.topPickBadge')}</Text>
+                                </View>
+                                <TestimonyCard item={topStory} onShare={handleShareQuote} />
+                            </View>
+                        )}
 
                         {/* Featured stories — auto-rotating + swipeable horizontal pager.
                             Negative margin breaks out of the parent FlatList's
@@ -329,7 +450,7 @@ export function TestimoniesTab() {
                                                 />
                                                 <View style={styles.featuredBadge}>
                                                     <Sparkles size={11} color={colors.accent} />
-                                                    <Text style={[styles.featuredBadgeText, { color: colors.accent }]}>Featured</Text>
+                                                    <Text style={[styles.featuredBadgeText, { color: colors.accent }]}>{t('testimoniesTab.featured')}</Text>
                                                 </View>
                                                 <Text style={styles.featuredTitle} numberOfLines={1}>{item.title}</Text>
                                                 <Text style={styles.featuredBody} numberOfLines={3}>{item.body}</Text>
@@ -392,7 +513,7 @@ export function TestimoniesTab() {
                     end={{ x: 1, y: 1 }}
                 />
                 <PenLine color="#020617" size={20} strokeWidth={2.5} />
-                <Text style={styles.fabText}>Share Your Story</Text>
+                <Text style={styles.fabText}>{t('testimoniesTab.shareYourStory')}</Text>
             </TouchableOpacity>
 
             <SubmitTestimonyModal visible={showSubmit} onClose={() => setShowSubmit(false)} />
@@ -428,6 +549,19 @@ const styles = StyleSheet.create({
         color: '#cbd5e1',
         fontWeight: '600',
         marginTop: 4,
+    },
+    // ── Top Story of the Day (admin-pinned) ──
+    // No horizontal padding of its own — this sits inside listContent's
+    // paddingHorizontal, same as every regular TestimonyCard below it, so
+    // the pinned card's edges line up with the rest of the list.
+    topPickWrap: { marginBottom: 4 },
+    topPickBadgeRow: {
+        flexDirection: 'row', alignItems: 'center', gap: 5,
+        marginBottom: 10,
+    },
+    topPickBadgeText: {
+        fontSize: 11, fontWeight: '800', letterSpacing: 0.5,
+        color: '#facc15', textTransform: 'uppercase',
     },
     listContent: {
         paddingHorizontal: 20,
@@ -587,6 +721,13 @@ const styles = StyleSheet.create({
         borderTopColor: 'rgba(255, 255, 255, 0.06)',
         paddingTop: 20,
     },
+    // Author/location are free-text user submissions, not just a short name —
+    // without a flex/width constraint here, a long line pushed the reaction
+    // button off the edge of the card instead of wrapping.
+    authorCol: {
+        flex: 1,
+        marginRight: 12,
+    },
     author: {
         fontSize: 14,
         color: '#f8fafc',
@@ -607,6 +748,7 @@ const styles = StyleSheet.create({
         backgroundColor: 'rgba(255, 255, 255, 0.03)',
         borderWidth: 1,
         borderColor: 'rgba(255, 255, 255, 0.06)',
+        flexShrink: 0,
     },
     reactionButtonActive: {
         backgroundColor: 'rgba(239, 68, 68, 0.12)',

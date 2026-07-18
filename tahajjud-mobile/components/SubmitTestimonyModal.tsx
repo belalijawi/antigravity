@@ -8,6 +8,7 @@ import { useTheme } from '../context/ThemeContext';
 import { TestimonySubmission, SubmittedTestimony } from '../utils/testimonySubmission';
 import { storyTopics } from '../data/testimonies';
 import { haptic } from '../utils/haptic';
+import { t } from '../utils/i18n';
 
 interface Props { visible: boolean; onClose: () => void; }
 
@@ -43,14 +44,14 @@ export function SubmitTestimonyModal({ visible, onClose }: Props) {
 
         if (!result.ok) {
             const msg: Record<string, string> = {
-                'too-short':       `Please write at least 50 characters of story.`,
-                'too-long':        `Please keep title under 80 chars and story under 2000.`,
-                'profanity':       `Please rephrase — your story contains language our filter flagged.`,
-                'missing-tag':     `Please pick at least one topic tag.`,
-                'not-signed-in':   `Please sign in to share your story.`,
-                'firestore-error': `Could not submit. Try again.`,
+                'too-short':       t('submitTestimony.tooShort'),
+                'too-long':        t('submitTestimony.tooLong'),
+                'profanity':       t('submitTestimony.profanity'),
+                'missing-tag':     t('submitTestimony.missingTag'),
+                'not-signed-in':   t('submitTestimony.notSignedIn'),
+                'firestore-error': t('submitTestimony.firestoreError'),
             };
-            Alert.alert('Could not submit', msg[result.error ?? 'firestore-error'] ?? 'Try again.');
+            Alert.alert(t('submitTestimony.couldNotSubmitTitle'), msg[result.error ?? 'firestore-error'] ?? t('submitTestimony.tryAgain'));
             return;
         }
 
@@ -58,8 +59,8 @@ export function SubmitTestimonyModal({ visible, onClose }: Props) {
         reset();
         onClose();
         Alert.alert(
-            'JazakAllah Khair',
-            "Your story is now in review. Once approved, it will appear in the community feed inshaAllah.",
+            t('submitTestimony.jazakAllahKhair'),
+            t('submitTestimony.reviewBody'),
         );
     };
 
@@ -78,13 +79,13 @@ export function SubmitTestimonyModal({ visible, onClose }: Props) {
                     {/* Header */}
                     <View style={styles.header}>
                         <TouchableOpacity onPress={onClose} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
-                            <Text style={[styles.cancel, { color: colors.secondaryText }]}>Cancel</Text>
+                            <Text style={[styles.cancel, { color: colors.secondaryText }]}>{t('btn.cancel')}</Text>
                         </TouchableOpacity>
-                        <Text style={[styles.title, { color: colors.primaryText }]}>Share Your Story</Text>
+                        <Text style={[styles.title, { color: colors.primaryText }]}>{t('testimoniesTab.shareYourStory')}</Text>
                         <TouchableOpacity onPress={handleSubmit} disabled={submitting} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
                             {submitting
                                 ? <ActivityIndicator size="small" color={colors.accent} />
-                                : <Text style={[styles.submit, { color: colors.accent }]}>Submit</Text>
+                                : <Text style={[styles.submit, { color: colors.accent }]}>{t('submitTestimony.submitBtn')}</Text>
                             }
                         </TouchableOpacity>
                     </View>
@@ -100,15 +101,15 @@ export function SubmitTestimonyModal({ visible, onClose }: Props) {
                         keyboardDismissMode="interactive"
                     >
                         <Text style={[styles.intro, { color: colors.secondaryText }]}>
-                            Stories are reviewed before they appear. Use any name you like — "Anonymous", a first name, an initial. Your account isn't shown.
+                            {t('submitTestimony.introText')}
                         </Text>
 
                         {/* Title */}
-                        <Field label="Title">
+                        <Field label={t('submitTestimony.titleLabel')}>
                             <TextInput
                                 value={title}
                                 onChangeText={setTitle}
-                                placeholder="e.g. The Job I Prayed For"
+                                placeholder={t('submitTestimony.titlePlaceholder')}
                                 placeholderTextColor="#475569"
                                 style={[styles.input, { color: colors.primaryText }]}
                                 maxLength={90}
@@ -116,12 +117,12 @@ export function SubmitTestimonyModal({ visible, onClose }: Props) {
                         </Field>
 
                         {/* Story body */}
-                        <Field label="Your story">
+                        <Field label={t('submitTestimony.storyLabel')}>
                             <TextInput
                                 value={body}
                                 onChangeText={setBody}
                                 multiline
-                                placeholder="Share what Allah did for you through Tahajjud…"
+                                placeholder={t('submitTestimony.storyPlaceholder')}
                                 placeholderTextColor="#475569"
                                 style={[styles.input, styles.textarea, { color: colors.primaryText }]}
                                 maxLength={2100}
@@ -135,11 +136,11 @@ export function SubmitTestimonyModal({ visible, onClose }: Props) {
                         {/* Author + Location row */}
                         <View style={styles.row}>
                             <View style={{ flex: 1 }}>
-                                <Field label="Name (optional)">
+                                <Field label={t('submitTestimony.nameLabel')}>
                                     <TextInput
                                         value={author}
                                         onChangeText={setAuthor}
-                                        placeholder="Anonymous"
+                                        placeholder={t('submitTestimony.anonymousPlaceholder')}
                                         placeholderTextColor="#475569"
                                         style={[styles.input, { color: colors.primaryText }]}
                                         maxLength={40}
@@ -148,7 +149,7 @@ export function SubmitTestimonyModal({ visible, onClose }: Props) {
                             </View>
                             <View style={{ width: 12 }} />
                             <View style={{ flex: 1 }}>
-                                <Field label="Location (optional)">
+                                <Field label={t('submitTestimony.locationLabel')}>
                                     <TextInput
                                         value={location}
                                         onChangeText={setLocation}
@@ -162,7 +163,7 @@ export function SubmitTestimonyModal({ visible, onClose }: Props) {
                         </View>
 
                         {/* Tags */}
-                        <Field label={`Topics (pick 1–3) · ${tags.length} selected`}>
+                        <Field label={t('submitTestimony.topicsLabel', { n: tags.length })}>
                             <View style={styles.tagsWrap}>
                                 {PICKABLE_TAGS.map(t => {
                                     const selected = tags.includes(t);

@@ -10,6 +10,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { X, MapPin, BarChart2, Globe, Sparkles, Heart } from 'lucide-react-native';
 import { useTheme } from '../context/ThemeContext';
 import { haptic } from '../utils/haptic';
+import { t } from '../utils/i18n';
 
 export interface WhatsNewItem {
     icon: React.ComponentType<{ size: number; color: string }>;
@@ -20,30 +21,32 @@ export interface WhatsNewItem {
 
 // Update this list each release. The version string must match app version.
 export const WHATS_NEW_VERSION = '1.7.1';
-export const WHATS_NEW_ITEMS: WhatsNewItem[] = [
-    {
-        icon: MapPin,
-        title: 'Mosque Timetable',
-        desc: 'Snap a photo of your mosque\'s timetable and the app reads every prayer time automatically.',
-        premium: true,
-    },
-    {
-        icon: BarChart2,
-        title: 'Prayer & Dhikr Stats',
-        desc: 'See your consistency, strongest prayers, dhikr streaks and weekly trends.',
-        premium: true,
-    },
-    {
-        icon: Globe,
-        title: 'Global Tahajjud Map',
-        desc: 'Watch Muslims around the world stand in prayer with you, in real time.',
-    },
-    {
-        icon: Heart,
-        title: 'Community reactions',
-        desc: 'Get notified when people say Ameen to your dua or are moved by your story.',
-    },
-];
+export function getWhatsNewItems(): WhatsNewItem[] {
+    return [
+        {
+            icon: MapPin,
+            title: t('whatsNew.item1Title'),
+            desc: t('whatsNew.item1Desc'),
+            premium: true,
+        },
+        {
+            icon: BarChart2,
+            title: t('whatsNew.item2Title'),
+            desc: t('whatsNew.item2Desc'),
+            premium: true,
+        },
+        {
+            icon: Globe,
+            title: t('whatsNew.item3Title'),
+            desc: t('whatsNew.item3Desc'),
+        },
+        {
+            icon: Heart,
+            title: t('whatsNew.item4Title'),
+            desc: t('whatsNew.item4Desc'),
+        },
+    ];
+}
 
 interface Props {
     visible: boolean;
@@ -52,6 +55,7 @@ interface Props {
 
 export function WhatsNewModal({ visible, onClose }: Props) {
     const { colors } = useTheme();
+    const WHATS_NEW_ITEMS = getWhatsNewItems();
 
     return (
         <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
@@ -69,9 +73,9 @@ export function WhatsNewModal({ visible, onClose }: Props) {
 
                     <View style={styles.headerRow}>
                         <Sparkles size={22} color={colors.accent} />
-                        <Text style={styles.title}>What's New</Text>
+                        <Text style={styles.title}>{t('whatsNew.title')}</Text>
                     </View>
-                    <Text style={[styles.version, { color: colors.secondaryText }]}>Version {WHATS_NEW_VERSION}</Text>
+                    <Text style={[styles.version, { color: colors.secondaryText }]}>{t('whatsNew.version', { v: WHATS_NEW_VERSION })}</Text>
 
                     <ScrollView style={{ maxHeight: 380 }} showsVerticalScrollIndicator={false}>
                         {WHATS_NEW_ITEMS.map((item, i) => {
@@ -86,7 +90,7 @@ export function WhatsNewModal({ visible, onClose }: Props) {
                                             <Text style={styles.itemTitle}>{item.title}</Text>
                                             {item.premium && (
                                                 <View style={[styles.premiumTag, { backgroundColor: colors.accent + '22' }]}>
-                                                    <Text style={[styles.premiumTagText, { color: colors.accent }]}>PREMIUM</Text>
+                                                    <Text style={[styles.premiumTagText, { color: colors.accent }]}>{t('whatsNew.premiumTag')}</Text>
                                                 </View>
                                             )}
                                         </View>
@@ -102,7 +106,7 @@ export function WhatsNewModal({ visible, onClose }: Props) {
                         onPress={() => { haptic.light(); onClose(); }}
                         activeOpacity={0.85}
                     >
-                        <Text style={styles.ctaText}>Explore</Text>
+                        <Text style={styles.ctaText}>{t('whatsNew.explore')}</Text>
                     </TouchableOpacity>
                 </View>
             </View>

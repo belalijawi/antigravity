@@ -34,7 +34,7 @@ export async function sendMilestonePush(
     authorId: string,
     title: string,
     body: string,
-    type: 'dua_milestone' | 'testimony_milestone',
+    type: 'dua_milestone' | 'testimony_milestone' | 'top_dua' | 'top_story',
 ): Promise<void> {
     try {
         const me = getFirebaseAuth()?.currentUser;

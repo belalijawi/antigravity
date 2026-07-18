@@ -4,12 +4,13 @@ import {
     ActivityIndicator, Alert,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
-import { X, Eye, EyeOff, Trash2, RefreshCw, AlertTriangle, Flag } from 'lucide-react-native';
+import { X, Eye, EyeOff, Trash2, RefreshCw, AlertTriangle, Flag, Star } from 'lucide-react-native';
 import { useTheme } from '../context/ThemeContext';
 import { DuaWall, PublicDua } from '../utils/duaWall';
 import { isCurrentUserAdmin } from '../utils/admins';
 import { haptic } from '../utils/haptic';
 import { formatDistanceToNowStrict } from 'date-fns';
+import { TopPicksService } from '../utils/topPicks';
 
 interface Props { visible: boolean; onClose: () => void; }
 
@@ -18,6 +19,8 @@ export function DuaWallModerationModal({ visible, onClose }: Props) {
     const [duas, setDuas] = useState<PublicDua[]>([]);
     const [loading, setLoading] = useState(true);
     const [working, setWorking] = useState<string | null>(null);
+    const [topDuaId, setTopDuaId] = useState<string | null>(null);
+    const [settingTop, setSettingTop] = useState(false);
 
     // Defense in depth: refuse to render for non-admins regardless of how
     // the modal was mounted. Real security is server-side in firestore.rules.
@@ -25,14 +28,46 @@ export function DuaWallModerationModal({ visible, onClose }: Props) {
 
     const load = async () => {
         setLoading(true);
-        const list = await DuaWall.adminListAll(200);
+        const [list, picks] = await Promise.all([
+            DuaWall.adminListAll(200),
+            TopPicksService.get(),
+        ]);
         setDuas(list);
+        setTopDuaId(picks.topDuaId);
         setLoading(false);
     };
 
     useEffect(() => {
         if (visible) load();
     }, [visible]);
+
+    const handleToggleTop = async (item: PublicDua) => {
+        if (settingTop) return;
+        setSettingTop(true);
+        const isCurrentlyTop = topDuaId === item.id;
+        const ok = await TopPicksService.setTopDua(isCurrentlyTop ? null : item.id);
+        setSettingTop(false);
+        if (ok) {
+            haptic.success();
+            setTopDuaId(isCurrentlyTop ? null : item.id);
+            // Let the author know they were picked — only on the way IN, not
+            // when unsetting a previous pick.
+            if (!isCurrentlyTop) {
+                const authorId = await DuaWall.adminGetAuthorId(item.id);
+                if (authorId) {
+                    const { sendMilestonePush } = await import('../utils/communityNotify');
+                    sendMilestonePush(
+                        authorId,
+                        '🌟 Your dua was chosen',
+                        'Your dua has been picked as today\'s Top Dua — it\'s now pinned for everyone on the Dua Wall.',
+                        'top_dua',
+                    ).catch(() => {});
+                }
+            }
+        } else {
+            Alert.alert('Action failed', 'Check your admin permissions and try again.');
+        }
+    };
 
     const handleHide = async (item: PublicDua) => {
         setWorking(item.id);
@@ -70,6 +105,13 @@ export function DuaWallModerationModal({ visible, onClose }: Props) {
                         if (ok) {
                             haptic.success();
                             setDuas(prev => prev.filter(d => d.id !== item.id));
+                            // Don't leave the featured pick pointing at a dua
+                            // that no longer exists — clear it so the pinned
+                            // "Top Dua Today" card disappears everywhere.
+                            if (topDuaId === item.id) {
+                                TopPicksService.setTopDua(null).catch(() => {});
+                                setTopDuaId(null);
+                            }
                         }
                     },
                 },
@@ -119,17 +161,25 @@ export function DuaWallModerationModal({ visible, onClose }: Props) {
                                 style={[
                                     styles.card,
                                     {
-                                        borderColor: item.reportCount > 0
-                                            ? '#ef444466'
-                                            : item.hidden
-                                                ? '#94a3b833'
-                                                : 'rgba(255,255,255,0.07)',
+                                        borderColor: topDuaId === item.id
+                                            ? '#facc15aa'
+                                            : item.reportCount > 0
+                                                ? '#ef444466'
+                                                : item.hidden
+                                                    ? '#94a3b833'
+                                                    : 'rgba(255,255,255,0.07)',
                                         opacity: item.hidden ? 0.6 : 1,
                                     },
                                 ]}
                             >
                                 {/* Status row */}
                                 <View style={styles.statusRow}>
+                                    {topDuaId === item.id && (
+                                        <View style={[styles.badge, { backgroundColor: '#facc1522', borderColor: '#facc1566' }]}>
+                                            <Star size={10} color="#facc15" fill="#facc15" />
+                                            <Text style={[styles.badgeText, { color: '#facc15' }]}>Top Dua Today</Text>
+                                        </View>
+                                    )}
                                     {item.reportCount > 0 && (
                                         <View style={[styles.badge, { backgroundColor: '#ef444422', borderColor: '#ef444466' }]}>
                                             <Flag size={10} color="#ef4444" />
@@ -162,6 +212,21 @@ export function DuaWallModerationModal({ visible, onClose }: Props) {
 
                                 {/* Action buttons */}
                                 <View style={styles.actions}>
+                                    <TouchableOpacity
+                                        onPress={() => handleToggleTop(item)}
+                                        disabled={settingTop}
+                                        style={[
+                                            styles.btn,
+                                            topDuaId === item.id
+                                                ? { borderColor: '#facc15aa', backgroundColor: '#facc1522' }
+                                                : { borderColor: 'rgba(255,255,255,0.10)', backgroundColor: 'rgba(255,255,255,0.04)' },
+                                        ]}
+                                    >
+                                        <Star size={14} color="#facc15" fill={topDuaId === item.id ? '#facc15' : 'none'} />
+                                        <Text style={[styles.btnText, { color: '#facc15' }]}>
+                                            {topDuaId === item.id ? 'Unset Top' : 'Set as Top'}
+                                        </Text>
+                                    </TouchableOpacity>
                                     {item.hidden ? (
                                         <TouchableOpacity
                                             onPress={() => handleUnhide(item)}

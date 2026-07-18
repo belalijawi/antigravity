@@ -2,7 +2,7 @@ import {
     collection, doc, getDoc, getDocFromServer, getDocs, addDoc, setDoc, deleteDoc, updateDoc, increment,
     query, where, orderBy, serverTimestamp,
 } from 'firebase/firestore';
-import { getFirebaseAuth, getFirebaseDb } from './firebase';
+import { getFirebaseAuth, getFirebaseDb, ensureSignedIn } from './firebase';
 
 /**
  * Testimony submission + moderation queue.
@@ -31,6 +31,12 @@ export interface PendingTestimony extends SubmittedTestimony {
     id: string;
     submitterId: string;
     submittedAt: number;
+}
+
+export interface LiveTestimony extends SubmittedTestimony {
+    id: string;
+    reactions: number;
+    createdAt: number;
 }
 
 const MAX_TITLE = 80;
@@ -70,6 +76,7 @@ export const TestimonySubmission = {
         const v = this.validate(t);
         if (!v.ok) return v;
 
+        await ensureSignedIn();
         const user = getFirebaseAuth()?.currentUser;
         if (!user) return { ok: false, error: 'not-signed-in' };
 
@@ -122,6 +129,86 @@ export const TestimonySubmission = {
         }
     },
 
+    /** Admin-only: look up a testimony's authorId so the "you were chosen"
+     * push can be sent. Never exposed on the LiveTestimony shape used to render. */
+    async adminGetAuthorId(testimonyId: string): Promise<string | null> {
+        try {
+            const db = getFirebaseDb();
+            const snap = await getDoc(doc(db, 'community', testimonyId));
+            if (!snap.exists()) return null;
+            return (snap.data() as any).authorId ?? null;
+        } catch {
+            return null;
+        }
+    },
+
+    /** Fetch a single live testimony by id — used to render the admin-picked
+     * "Top Story of the Day", which may not be among whatever's currently loaded. */
+    async getById(testimonyId: string): Promise<LiveTestimony | null> {
+        try {
+            const db = getFirebaseDb();
+            const snap = await getDoc(doc(db, 'community', testimonyId));
+            if (!snap.exists()) return null;
+            const data = snap.data() as any;
+            if (data.type !== 'testimony') return null;
+            return {
+                id: snap.id,
+                title: data.title ?? '',
+                body: data.body ?? '',
+                author: data.author ?? 'Anonymous',
+                location: data.location ?? '',
+                tags: data.tags ?? [],
+                reactions: data.reactions ?? 0,
+                createdAt: data.createdAt?.toMillis?.() ?? (typeof data.createdAt === 'number' ? data.createdAt : 0),
+            };
+        } catch (e) {
+            console.error('[Testimony] getById error', e);
+            return null;
+        }
+    },
+
+    /** Admin-only: list all LIVE (already-approved) testimonies, newest first. */
+    async listLive(): Promise<LiveTestimony[]> {
+        try {
+            const db = getFirebaseDb();
+            const snap = await getDocs(query(
+                collection(db, 'community'),
+                where('type', '==', 'testimony'),
+            ));
+            const out: LiveTestimony[] = [];
+            snap.forEach(d => {
+                const data = d.data() as any;
+                out.push({
+                    id: d.id,
+                    title: data.title ?? '',
+                    body: data.body ?? '',
+                    author: data.author ?? 'Anonymous',
+                    location: data.location ?? '',
+                    tags: data.tags ?? [],
+                    reactions: data.reactions ?? 0,
+                    createdAt: data.createdAt?.toMillis?.() ?? (typeof data.createdAt === 'number' ? data.createdAt : 0),
+                });
+            });
+            out.sort((a, b) => b.createdAt - a.createdAt);
+            return out;
+        } catch (e) {
+            console.error('[Testimony] listLive error', e);
+            return [];
+        }
+    },
+
+    /** Admin-only: permanently delete a LIVE (already-approved) testimony. */
+    async deleteLive(testimonyId: string): Promise<boolean> {
+        try {
+            const db = getFirebaseDb();
+            await deleteDoc(doc(db, 'community', testimonyId));
+            return true;
+        } catch (e) {
+            console.error('[Testimony] deleteLive error', e);
+            return false;
+        }
+    },
+
     /** Admin-only: promote a pending submission to the live community feed. */
     async approve(submission: PendingTestimony): Promise<boolean> {
         try {
@@ -166,6 +253,9 @@ export const TestimonySubmission = {
      * to send milestone notifications to the author.
      */
     async toggleReaction(testimonyId: string): Promise<{ liked: boolean; count: number | null }> {
+        // Wait for the (anonymous) session so a tap right after launch isn't
+        // dropped — otherwise the like reverts in the UI. Same fix as the Dua Wall.
+        await ensureSignedIn();
         const user = getFirebaseAuth()?.currentUser;
         if (!user) return { liked: false, count: null };
         const db = getFirebaseDb();
@@ -223,6 +313,7 @@ export const TestimonySubmission = {
 
     /** Has the current user already liked this testimony? */
     async hasReacted(testimonyId: string): Promise<boolean> {
+        await ensureSignedIn();
         const user = getFirebaseAuth()?.currentUser;
         if (!user) return false;
         try {

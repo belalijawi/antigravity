@@ -4,7 +4,7 @@ import {
     onSnapshot, QuerySnapshot, DocumentData,
 } from 'firebase/firestore';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { getFirebaseAuth, getFirebaseDb } from './firebase';
+import { getFirebaseAuth, getFirebaseDb, ensureSignedIn } from './firebase';
 import { format } from 'date-fns';
 
 /**
@@ -103,6 +103,7 @@ export const DuaWall = {
         const rate = await this.canPublishNow();
         if (!rate.ok) return { ok: false, error: 'rate-limited' };
 
+        await ensureSignedIn();
         const user = getFirebaseAuth()?.currentUser;
         if (!user) return { ok: false, error: 'not-signed-in' };
 
@@ -124,8 +125,16 @@ export const DuaWall = {
         }
     },
 
-    /** Subscribe to the most recent N non-hidden duas. */
-    subscribeWall(maxItems: number, cb: (duas: PublicDua[]) => void): () => void {
+    /**
+     * Subscribe to the most recent N non-hidden duas.
+     *
+     * `fromCache` tells the caller whether this snapshot came from Firestore's
+     * local cache (which is empty/stale on a cold start) or is server-confirmed.
+     * Without it the very first callback — an empty cache result — looks like a
+     * final "no live duas" state, so the wall renders seeds-only until the
+     * server snapshot lands a moment later.
+     */
+    subscribeWall(maxItems: number, cb: (duas: PublicDua[], fromCache: boolean) => void): () => void {
         const db = getFirebaseDb();
         const q = query(
             collection(db, 'public-duas'),
@@ -147,11 +156,51 @@ export const DuaWall = {
                     hidden: data.hidden ?? false,
                 });
             });
-            cb(list);
+            cb(list, snap.metadata.fromCache);
         }, err => {
             console.error('[DuaWall] subscribe error', err);
+            // Surface the error as a settled (non-cache) empty result so the UI
+            // stops showing a perpetual spinner and falls back to seed duas.
+            cb([], false);
         });
         return unsub;
+    },
+
+    /** Admin-only: look up a dua's authorId so the "you were chosen" push can
+     * be sent. Never exposed on the PublicDua shape returned elsewhere. */
+    async adminGetAuthorId(duaId: string): Promise<string | null> {
+        try {
+            const db = getFirebaseDb();
+            const snap = await getDoc(doc(db, 'public-duas', duaId));
+            if (!snap.exists()) return null;
+            return (snap.data() as any).authorId ?? null;
+        } catch {
+            return null;
+        }
+    },
+
+    /** Fetch a single dua by id — used to render the admin-picked "Top Dua of
+     * the Day", which may not be among the most-recent 50 shown by subscribeWall. */
+    async getById(duaId: string): Promise<PublicDua | null> {
+        try {
+            const db = getFirebaseDb();
+            const snap = await getDoc(doc(db, 'public-duas', duaId));
+            if (!snap.exists()) return null;
+            const data = snap.data() as any;
+            if (data.hidden) return null;
+            return {
+                id: snap.id,
+                text: data.text ?? '',
+                ameenCount: data.ameenCount ?? 0,
+                prayCount: data.prayCount ?? 0,
+                reportCount: data.reportCount ?? 0,
+                createdAt: data.createdAt?.toDate?.() ?? new Date(),
+                hidden: data.hidden ?? false,
+            };
+        } catch (e) {
+            console.error('[DuaWall] getById error', e);
+            return null;
+        }
     },
 
     /**
@@ -160,6 +209,7 @@ export const DuaWall = {
      * a no-op. A single getDoc check protects against duplicate increments.
      */
     async ameen(duaId: string): Promise<boolean> {
+        await ensureSignedIn();
         const user = getFirebaseAuth()?.currentUser;
         if (!user) return false;
         const db = getFirebaseDb();
@@ -232,6 +282,7 @@ export const DuaWall = {
      * intentions — Ameen affirms the dua, Praying signals personal effort).
      */
     async prayingFor(duaId: string): Promise<boolean> {
+        await ensureSignedIn();
         const user = getFirebaseAuth()?.currentUser;
         if (!user) return false;
         const db = getFirebaseDb();
@@ -261,6 +312,7 @@ export const DuaWall = {
 
     /** Undo an Ameen — delete the marker and decrement the count. */
     async unameen(duaId: string): Promise<boolean> {
+        await ensureSignedIn();
         const user = getFirebaseAuth()?.currentUser;
         if (!user) return false;
         const db = getFirebaseDb();
@@ -281,6 +333,7 @@ export const DuaWall = {
 
     /** Undo a "praying for" — delete the marker and decrement the count. */
     async unpray(duaId: string): Promise<boolean> {
+        await ensureSignedIn();
         const user = getFirebaseAuth()?.currentUser;
         if (!user) return false;
         const db = getFirebaseDb();
@@ -300,19 +353,30 @@ export const DuaWall = {
     },
 
     /**
-     * Report a dua — also idempotent per (user, dua) so a single user can't
-     * push past the report threshold by spamming. Flagged duas auto-hide
-     * server-side via a Firestore trigger.
+     * Report a dua — idempotent per (user, dua). When the report count
+     * reaches REPORT_THRESHOLD the dua is auto-hidden client-side (no Cloud
+     * Function needed — the Firestore rule permits a reportCount+hidden update
+     * when the pre-update count is already at threshold - 1).
      */
     async report(duaId: string, reason: string = 'inappropriate'): Promise<boolean> {
+        await ensureSignedIn();
         const user = getFirebaseAuth()?.currentUser;
         if (!user) return false;
         const db = getFirebaseDb();
         const reportId = `${user.uid}_${duaId}`;
         try {
             const reportRef = doc(db, 'reports', reportId);
-            const existing = await getDoc(reportRef);
-            if (existing.exists()) return true; // already reported
+            const [existingSnap, duaSnap] = await Promise.all([
+                getDoc(reportRef),
+                getDoc(doc(db, 'public-duas', duaId)),
+            ]);
+            if (existingSnap.exists()) return true; // already reported — idempotent
+
+            const currentCount = duaSnap.exists()
+                ? ((duaSnap.data() as any).reportCount ?? 0)
+                : 0;
+            const willHide = (currentCount + 1) >= REPORT_THRESHOLD;
+
             await Promise.all([
                 setDoc(reportRef, {
                     userId: user.uid,
@@ -320,9 +384,11 @@ export const DuaWall = {
                     reason,
                     createdAt: serverTimestamp(),
                 }),
-                updateDoc(doc(db, 'public-duas', duaId), {
-                    reportCount: increment(1),
-                }),
+                updateDoc(doc(db, 'public-duas', duaId),
+                    willHide
+                        ? { reportCount: increment(1), hidden: true }
+                        : { reportCount: increment(1) }
+                ),
             ]);
             return true;
         } catch (e) {

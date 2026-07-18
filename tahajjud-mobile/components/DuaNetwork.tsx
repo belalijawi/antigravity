@@ -11,6 +11,7 @@ import Animated, {
     withSpring
 } from 'react-native-reanimated';
 import { useTheme } from '../context/ThemeContext';
+import { t } from '../utils/i18n';
 
 export const DuaNetwork = () => {
     const { colors } = useTheme();
@@ -42,7 +43,7 @@ export const DuaNetwork = () => {
 
         setTimeout(() => {
             setIsSending(false);
-            Alert.alert("Alhamdulillah", "Your prayer has been shared.");
+            Alert.alert(t('duaNetwork.alhamdulillahTitle'), t('duaNetwork.shareBody'));
         }, 800);
     };
 
@@ -63,11 +64,11 @@ export const DuaNetwork = () => {
                     <Users size={18} color={colors.accent} strokeWidth={2.5} />
                 </View>
 
-                <Text style={styles.title}>Ummah Pulse</Text>
+                <Text style={styles.title}>{t('duaNetwork.ummahPulse')}</Text>
 
                 <View style={styles.statsContainer}>
                     <Text style={[styles.statValue, { color: colors.primaryText }]}>{stats.duasSent}</Text>
-                    <Text style={[styles.statLabel, { color: colors.secondaryText }]}>Prayers Shared</Text>
+                    <Text style={[styles.statLabel, { color: colors.secondaryText }]}>{t('duaNetwork.prayersShared')}</Text>
                 </View>
 
                 <TouchableOpacity
@@ -82,7 +83,7 @@ export const DuaNetwork = () => {
                     <Animated.View style={[styles.buttonContent, buttonAnimatedStyle]}>
                         <Send size={14} color={isSending ? colors.accent : colors.primaryText} />
                         <Text style={[styles.buttonText, { color: isSending ? colors.accent : colors.primaryText }]}>
-                            {isSending ? "..." : "Send Dua"}
+                            {isSending ? "..." : t('duaNetwork.sendDua')}
                         </Text>
                     </Animated.View>
                 </TouchableOpacity>

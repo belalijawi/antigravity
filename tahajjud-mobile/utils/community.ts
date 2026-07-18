@@ -47,34 +47,3 @@ export const incrementDuasSent = async () => {
     }
 };
 
-export const incrementDuasReceived = async () => {
-    try {
-        const today = localDateStr(new Date());
-        const stats = await getCommunityStats();
-        const newStats = {
-            ...stats,
-            duasReceived: stats.duasReceived + 1,
-            lastUpdate: today
-        };
-        await AsyncStorage.setItem(STATS_KEY, JSON.stringify(newStats));
-        return newStats;
-    } catch (e) {
-        console.error('Failed to increment duas received', e);
-    }
-};
-
-// Simulation logic
-export const getSimulatedLiveCount = () => {
-    // Basic simulation: Base count + random fluctuation
-    const base = 12430;
-    const fluctuation = Math.floor(Math.random() * 200) - 100;
-    return base + fluctuation;
-};
-
-export const getRandomPulseLocation = () => {
-    // Returns random coordinates for map pulses
-    return {
-        x: Math.random() * 100, // percentage
-        y: Math.random() * 100, // percentage
-    };
-};

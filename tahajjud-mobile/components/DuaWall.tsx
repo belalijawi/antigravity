@@ -5,14 +5,31 @@ import {
     Animated as RNAnimated,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
-import { X, Heart, Flag, PenLine, Moon, Sparkles } from 'lucide-react-native';
+import { X, Heart, Flag, PenLine, Moon, Sparkles, Star } from 'lucide-react-native';
 import { SEED_DUAS, isSeedDua } from '../utils/duaWallSeeds';
 import Animated, { FadeInDown, FadeIn, ZoomIn, useSharedValue, useAnimatedStyle, withSequence, withSpring } from 'react-native-reanimated';
 import { formatDistanceToNowStrict } from 'date-fns';
 import { useTheme } from '../context/ThemeContext';
+import { t } from '../utils/i18n';
 import { DuaWall, PublicDua } from '../utils/duaWall';
 import { haptic } from '../utils/haptic';
 import { getFirebaseAuth } from '../utils/firebase';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { TopPicksService } from '../utils/topPicks';
+
+const AMEEN_KEY = 'dua_wall_ameened';
+const PRAY_KEY = 'dua_wall_prayed';
+
+async function loadReactionSet(key: string): Promise<Set<string>> {
+    try {
+        const raw = await AsyncStorage.getItem(key);
+        return raw ? new Set(JSON.parse(raw) as string[]) : new Set();
+    } catch { return new Set(); }
+}
+
+async function saveReactionSet(key: string, set: Set<string>): Promise<void> {
+    try { await AsyncStorage.setItem(key, JSON.stringify([...set])); } catch {}
+}
 
 interface Props { visible: boolean; onClose: () => void; }
 
@@ -63,22 +80,77 @@ const STARS = [
 export function DuaWallModal({ visible, onClose }: Props) {
     const { colors } = useTheme();
     const [duas, setDuas] = useState<PublicDua[]>([]);
+    // True until the first server-confirmed snapshot arrives. Prevents the
+    // empty local-cache snapshot (cold start) from rendering as a final
+    // "seeds only" state — that race made the wall show just the universal
+    // duas on first open until an app refresh warmed the cache.
+    const [loadingLive, setLoadingLive] = useState(true);
     const [showCompose, setShowCompose] = useState(false);
     const [composeText, setComposeText] = useState('');
     const [publishing, setPublishing] = useState(false);
     const [ameened, setAmeened] = useState<Set<string>>(new Set());
     const [praying, setPraying] = useState<Set<string>>(new Set());
+    // Admin-picked "Top Dua of the Day" — pinned above the regular feed.
+    // Fetched separately since the pick may not be among the 50 most recent.
+    const [topDua, setTopDua] = useState<PublicDua | null>(null);
+    // Always-current mirrors of the reaction sets. The tap handlers read/write
+    // THESE (not the `ameened`/`praying` state) because DuaCard is memoized and
+    // ignores callback identity — so a card that didn't re-render still holds an
+    // old handler closure capturing a stale set. Reading the stale set made
+    // tapping a second dua overwrite the first ("the other one disappears").
+    // Refs are updated synchronously on every tap, so they never go stale.
+    const ameenedRef = React.useRef<Set<string>>(ameened);
+    const prayingRef = React.useRef<Set<string>>(praying);
     // Guard against setState on unmounted modal (Firestore writes can outlive the modal)
     const duaWallMountedRef = React.useRef(true);
     React.useEffect(() => {
         duaWallMountedRef.current = true;
         return () => { duaWallMountedRef.current = false; };
     }, []);
+    // Guard against double-tap races — the Firestore writes are a non-atomic
+    // check-then-act (getDoc then increment), so two overlapping taps on the
+    // same dua before the first resolves can double-count the reaction.
+    const ameenInFlightRef = React.useRef<Set<string>>(new Set());
+    const prayingInFlightRef = React.useRef<Set<string>>(new Set());
 
     useEffect(() => {
-        if (!visible) return;
-        const unsub = DuaWall.subscribeWall(50, setDuas);
+        if (!visible) {
+            // The wall was closed — make sure the compose overlay never
+            // survives into the next open (a stale-open compose was part of
+            // the frozen-app bug this component had with a second <Modal>).
+            setShowCompose(false);
+            return;
+        }
+        setLoadingLive(true);
+        const unsub = DuaWall.subscribeWall(50, (live, fromCache) => {
+            if (!duaWallMountedRef.current) return;
+            setDuas(live);
+            // Keep showing the loading hint until the server confirms — an empty
+            // cache snapshot (fromCache) is not a trustworthy "no duas" answer.
+            if (!fromCache) setLoadingLive(false);
+        });
+        Promise.all([loadReactionSet(AMEEN_KEY), loadReactionSet(PRAY_KEY)]).then(([a, p]) => {
+            if (!duaWallMountedRef.current) return;
+            ameenedRef.current = a;
+            prayingRef.current = p;
+            setAmeened(a);
+            setPraying(p);
+        });
         return () => unsub();
+    }, [visible]);
+
+    // Admin-picked Top Dua of the Day — live so it updates instantly if the
+    // admin changes it while the wall is open.
+    useEffect(() => {
+        if (!visible) return;
+        const unsub = TopPicksService.subscribe(picks => {
+            if (!duaWallMountedRef.current) return;
+            if (!picks.topDuaId) { setTopDua(null); return; }
+            DuaWall.getById(picks.topDuaId).then(d => {
+                if (duaWallMountedRef.current) setTopDua(d);
+            });
+        });
+        return unsub;
     }, [visible]);
 
     // Merge live duas with the curated seed list so the wall never feels
@@ -86,73 +158,92 @@ export function DuaWallModal({ visible, onClose }: Props) {
     // duas fill the rest. Each seed dua carries an isSeed flag so the UI
     // can show a "Universal" badge instead of pretending it's user-posted.
     const displayDuas = React.useMemo(() => {
-        const merged: (PublicDua | (PublicDua & { isSeed?: true }))[] = [...duas];
+        // Exclude the Top Dua of the Day — it's pinned separately above the
+        // list, so leaving it in here too would show it twice.
+        const rest = topDua ? duas.filter(d => d.id !== topDua.id) : duas;
+        const merged: (PublicDua | (PublicDua & { isSeed?: true }))[] = [...rest];
         // Add seed duas only after live ones, deduping by id
-        const liveIds = new Set(duas.map(d => d.id));
+        const liveIds = new Set(rest.map(d => d.id));
         for (const seed of SEED_DUAS) {
             if (!liveIds.has(seed.id)) merged.push(seed);
         }
         return merged;
-    }, [duas]);
+    }, [duas, topDua]);
 
     // Activity indicator: how recently was the live feed updated?
+    // `duas` is the 50 most-recent non-hidden duas EVER, not scoped to any
+    // time window — once the wall passes 50 total posts, `duas.length` is
+    // permanently 50 regardless of actual recent activity. Count only the
+    // ones actually posted within the last 24h for an honest "tonight" figure
+    // (matches the same rolling window used by the Global Tahajjud Map).
+    const TONIGHT_WINDOW_MS = 24 * 60 * 60 * 1000;
+    const tonightCount = duas.filter(d => Date.now() - d.createdAt.getTime() <= TONIGHT_WINDOW_MS).length;
     const lastLiveAt = duas[0]?.createdAt;
     const minutesAgo = lastLiveAt
         ? Math.max(0, Math.floor((Date.now() - lastLiveAt.getTime()) / 60000))
         : null;
-    const activityLabel = duas.length === 0
-        ? 'Quiet tonight · universal duas below'
+    const activityLabel = loadingLive
+        ? 'Loading tonight\'s duas…'
+        : tonightCount === 0
+        ? t('duaWall.quietTonight')
         : minutesAgo == null
-            ? `${duas.length} tonight`
+            ? `${tonightCount} tonight`
             : minutesAgo < 1
-                ? `${duas.length} tonight · just now`
+                ? `${tonightCount} tonight · just now`
                 : minutesAgo < 60
-                    ? `${duas.length} tonight · last ${minutesAgo}m ago`
-                    : `${duas.length} tonight`;
+                    ? `${tonightCount} tonight · last ${minutesAgo}m ago`
+                    : `${tonightCount} tonight`;
 
     const handleAmeen = async (id: string) => {
+        if (ameenInFlightRef.current.has(id)) return;
         haptic.light();
-        const wasAmeened = ameened.has(id);
-        // Optimistic toggle
-        setAmeened(prev => {
-            const next = new Set(prev);
-            if (wasAmeened) next.delete(id); else next.add(id);
-            return next;
-        });
+        // Read the LATEST set from the ref (not the possibly-stale closure state),
+        // then write the ref back synchronously so a tap on another dua sees it.
+        const wasAmeened = ameenedRef.current.has(id);
+        const next = new Set(ameenedRef.current);
+        if (wasAmeened) next.delete(id); else next.add(id);
+        ameenedRef.current = next;
+        setAmeened(next);
+        saveReactionSet(AMEEN_KEY, next);
         if (!wasAmeened) {
             import('../utils/analytics').then(m => m.track('dua_ameen')).catch(() => {});
         }
         // Seed duas don't write to Firestore; the local toggle is the whole thing.
         if (id.startsWith('seed-')) return;
-        const ok = wasAmeened ? await DuaWall.unameen(id) : await DuaWall.ameen(id);
-        if (!ok && duaWallMountedRef.current) {
-            // Rollback on backend failure
-            setAmeened(prev => {
-                const next = new Set(prev);
-                if (wasAmeened) next.add(id); else next.delete(id);
-                return next;
-            });
+        // Persist to the backend (count + author milestone notification). The
+        // local toggle above is authoritative for the button and is ALREADY
+        // saved to AsyncStorage, so we deliberately do NOT roll it back on a
+        // backend failure — the press must stick (and survive app restarts)
+        // regardless of a transient network issue. The marker write is
+        // idempotent, so a re-tap or next session reconciles the count safely.
+        ameenInFlightRef.current.add(id);
+        try {
+            if (wasAmeened) await DuaWall.unameen(id); else await DuaWall.ameen(id);
+        } catch { /* best-effort — local state already persisted */ }
+        finally {
+            ameenInFlightRef.current.delete(id);
         }
     };
 
     const handlePraying = async (id: string) => {
+        if (prayingInFlightRef.current.has(id)) return;
         haptic.light();
-        const wasPraying = praying.has(id);
-        // Optimistic toggle
-        setPraying(prev => {
-            const next = new Set(prev);
-            if (wasPraying) next.delete(id); else next.add(id);
-            return next;
-        });
+        // Read/write the ref (not the stale closure state) — see handleAmeen.
+        const wasPraying = prayingRef.current.has(id);
+        const next = new Set(prayingRef.current);
+        if (wasPraying) next.delete(id); else next.add(id);
+        prayingRef.current = next;
+        setPraying(next);
+        saveReactionSet(PRAY_KEY, next);
         if (id.startsWith('seed-')) return;
-        const ok = wasPraying ? await DuaWall.unpray(id) : await DuaWall.prayingFor(id);
-        if (!ok && duaWallMountedRef.current) {
-            // Rollback on backend failure
-            setPraying(prev => {
-                const next = new Set(prev);
-                if (wasPraying) next.add(id); else next.delete(id);
-                return next;
-            });
+        // Best-effort backend write; the local toggle is authoritative and
+        // already persisted, so it is never auto-reverted (see handleAmeen).
+        prayingInFlightRef.current.add(id);
+        try {
+            if (wasPraying) await DuaWall.unpray(id); else await DuaWall.prayingFor(id);
+        } catch { /* best-effort — local state already persisted */ }
+        finally {
+            prayingInFlightRef.current.delete(id);
         }
     };
 
@@ -213,7 +304,15 @@ export function DuaWallModal({ visible, onClose }: Props) {
     const countColor = remaining < 20 ? '#ef4444' : remaining < 50 ? '#f59e0b' : colors.secondaryText;
 
     return (
-        <Modal visible={visible} animationType="slide" presentationStyle="pageSheet" onRequestClose={onClose}>
+        // onRequestClose (Android back button / iOS sheet swipe-down):
+        // close the compose overlay first, then the wall itself.
+        <Modal
+            visible={visible}
+            animationType="slide"
+            presentationStyle="pageSheet"
+            onRequestClose={() => { if (showCompose) setShowCompose(false); else onClose(); }}
+            onDismiss={onClose}
+        >
             <View style={styles.root}>
                 <LinearGradient colors={['#08091e', '#0a1228', '#040714']} style={StyleSheet.absoluteFill} />
 
@@ -239,7 +338,7 @@ export function DuaWallModal({ visible, onClose }: Props) {
                     </TouchableOpacity>
 
                     <View style={styles.headerCenter}>
-                        <Text style={[styles.headerTitle, { color: colors.primaryText }]}>Dua Wall</Text>
+                        <Text style={[styles.headerTitle, { color: colors.primaryText }]}>{t('duaWall.title')}</Text>
                         <Text style={[styles.headerSub, { color: colors.secondaryText }]}>
                             {activityLabel}
                         </Text>
@@ -265,6 +364,39 @@ export function DuaWallModal({ visible, onClose }: Props) {
                     maxToRenderPerBatch={6}
                     windowSize={7}
                     removeClippedSubviews={Platform.OS === 'android'}
+                    ListHeaderComponent={
+                        <>
+                            {topDua && (
+                                <View style={styles.topPickWrap}>
+                                    <View style={styles.topPickBadgeRow}>
+                                        <Star size={12} color="#facc15" fill="#facc15" />
+                                        <Text style={styles.topPickBadgeText}>{t('duaWall.topPickBadge')}</Text>
+                                    </View>
+                                    <DuaCard
+                                        dua={topDua}
+                                        index={0}
+                                        userTapped={ameened.has(topDua.id)}
+                                        userPraying={praying.has(topDua.id)}
+                                        accent={colors.accent}
+                                        onAmeen={() => handleAmeen(topDua.id)}
+                                        onPraying={() => handlePraying(topDua.id)}
+                                        onReport={() => handleReport(topDua.id)}
+                                        isSeed={false}
+                                    />
+                                </View>
+                            )}
+                            {/* Cold-start hint: live duas are still loading from the
+                                server, so the seed duas below aren't the whole story. */}
+                            {loadingLive && duas.length === 0 && (
+                                <View style={styles.loadingRow}>
+                                    <ActivityIndicator size="small" color={colors.accent} />
+                                    <Text style={[styles.loadingText, { color: colors.secondaryText }]}>
+                                        Loading tonight's duas…
+                                    </Text>
+                                </View>
+                            )}
+                        </>
+                    }
                     ListEmptyComponent={
                         <Animated.View entering={FadeIn.delay(200).duration(500)} style={styles.empty}>
                             <View style={[styles.emptyOrb, { borderColor: colors.accent + '33' }]}>
@@ -280,7 +412,7 @@ export function DuaWallModal({ visible, onClose }: Props) {
                                 style={[styles.emptyCTA, { backgroundColor: colors.accent }]}
                             >
                                 <PenLine size={14} color="#0a1228" strokeWidth={2.5} />
-                                <Text style={styles.emptyCTAText}>Share yours</Text>
+                                <Text style={styles.emptyCTAText}>{t('duaWall.share')}</Text>
                             </TouchableOpacity>
                         </Animated.View>
                     }
@@ -299,13 +431,19 @@ export function DuaWallModal({ visible, onClose }: Props) {
                     )}
                 />
 
-                {/* ══ Compose Modal ══ */}
-                <Modal
-                    visible={showCompose}
-                    animationType="slide"
-                    presentationStyle="formSheet"
-                    onRequestClose={() => setShowCompose(false)}
-                >
+                {/* ══ Compose overlay — a plain View INSIDE the wall modal, never
+                    a second <Modal>. iOS lets a view controller present only one
+                    modal at a time: a second <Modal> (nested OR sibling) silently
+                    fails to appear while the wall sheet is up, and dismissing the
+                    wall while it is still marked visible strands an invisible
+                    native transition layer that blocks every touch in the app
+                    until the user force-kills it. ══ */}
+                {showCompose && (
+                    // Plain View, no `entering` fade: this app has a history of
+                    // reanimated entering animations sticking at opacity 0, and
+                    // an invisible copy of this overlay would block every touch
+                    // in the modal — the exact bug the overlay refactor fixed.
+                    <View style={styles.composeOverlay}>
                     <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
                         <LinearGradient colors={['#08091e', '#040714']} style={StyleSheet.absoluteFill} />
 
@@ -374,7 +512,8 @@ export function DuaWallModal({ visible, onClose }: Props) {
                             </View>
                         </TouchableWithoutFeedback>
                     </KeyboardAvoidingView>
-                </Modal>
+                    </View>
+                )}
             </View>
         </Modal>
     );
@@ -414,8 +553,11 @@ const DuaCard = React.memo(function DuaCard({
     };
 
     return (
-        <Animated.View
-            entering={FadeInDown.delay(Math.min(index * 60, 400)).duration(420)}
+        // Plain View, not an Animated.View with an `entering` stagger: entering
+        // animations on virtualized FlatList rows can get stuck at opacity:0 on
+        // first mount (the cards never appear until a scroll/re-render) — the
+        // same bug that hid the Stories list. Render at full opacity instead.
+        <View
             style={[styles.card, { borderColor: userTapped ? accent + '33' : 'rgba(255,255,255,0.06)' }]}
         >
             {/* Soft accent line at top */}
@@ -466,7 +608,7 @@ const DuaCard = React.memo(function DuaCard({
                     >
                         <Sparkles size={13} color={userPraying ? accent : '#94a3b8'} strokeWidth={2} />
                         <Text style={[styles.ameenText, { color: userPraying ? accent : '#94a3b8' }]}>
-                            {userPraying ? 'Praying' : 'Pray for'}
+                            {userPraying ? t('duaWall.praying') : t('duaWall.prayFor')}
                         </Text>
                         {(dua.prayCount ?? 0) > 0 && (
                             <View style={[styles.ameenCount, { backgroundColor: userPraying ? accent + '33' : 'rgba(255,255,255,0.06)' }]}>
@@ -503,7 +645,7 @@ const DuaCard = React.memo(function DuaCard({
                             styles.ameenText,
                             { color: userTapped ? '#ef4444' : '#94a3b8' },
                         ]}>
-                            Ameen
+                            {t('duaWall.ameen')}
                         </Text>
                         {dua.ameenCount > 0 && (
                             <View style={[styles.ameenCount, { backgroundColor: userTapped ? '#ef444433' : 'rgba(255,255,255,0.06)' }]}>
@@ -515,7 +657,7 @@ const DuaCard = React.memo(function DuaCard({
                     </TouchableOpacity>
                 </View>
             </View>
-        </Animated.View>
+        </View>
     );
 }, (prev, next) =>
     // Skip re-render unless something visible to THIS card changed. Callback
@@ -574,6 +716,26 @@ const styles = StyleSheet.create({
 
     // ── List ──
     list: { paddingHorizontal: 18, paddingBottom: 80 },
+    loadingRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'center',
+        gap: 8,
+        paddingVertical: 14,
+        marginBottom: 6,
+    },
+    loadingText: { fontSize: 12, fontWeight: '600' },
+
+    // ── Top Dua of the Day (admin-pinned) ──
+    topPickWrap: { marginBottom: 8 },
+    topPickBadgeRow: {
+        flexDirection: 'row', alignItems: 'center', gap: 5,
+        marginBottom: 8, marginLeft: 2,
+    },
+    topPickBadgeText: {
+        fontSize: 11, fontWeight: '800', letterSpacing: 0.5,
+        color: '#facc15', textTransform: 'uppercase',
+    },
 
     // ── Card ──
     card: {
@@ -671,7 +833,13 @@ const styles = StyleSheet.create({
     },
     emptyCTAText: { color: '#0a1228', fontSize: 14, fontWeight: '800' },
 
-    // ── Compose Modal ──
+    // ── Compose overlay ──
+    composeOverlay: {
+        position: 'absolute',
+        top: 0, left: 0, right: 0, bottom: 0,
+        zIndex: 10,
+        backgroundColor: '#08091e',
+    },
     composeHeader: {
         flexDirection: 'row',
         justifyContent: 'space-between',
