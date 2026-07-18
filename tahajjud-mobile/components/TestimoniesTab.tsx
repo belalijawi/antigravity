@@ -1,13 +1,13 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { View, Text, FlatList, TouchableOpacity, StyleSheet, Linking, Share, ScrollView, Platform, Alert, RefreshControl, DeviceEventEmitter, Dimensions, NativeSyntheticEvent, NativeScrollEvent } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Heart, Send, Share2, BookHeart, Sparkles, PenLine, Star } from 'lucide-react-native';
+import { Heart, Send, Share2, BookHeart, Sparkles, PenLine } from 'lucide-react-native';
 import { SubmitTestimonyModal } from './SubmitTestimonyModal';
 import { GlassBg as BlurView } from './GlassBg';
 import { LinearGradient } from 'expo-linear-gradient';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { getFirebaseDb } from '../utils/firebase';
-import { collection, query, where, getDocs } from 'firebase/firestore';
+import { collection, query, where, getDocs, limit } from 'firebase/firestore';
 import { useTheme } from '../context/ThemeContext';
 import { haptic } from '../utils/haptic';
 import { initialTestimonies, Testimony, storyTopics } from '../data/testimonies';
@@ -294,9 +294,15 @@ export function TestimoniesTab() {
             // Sync with backend
             const db = getFirebaseDb();
             if (db) {
+                // Capped so a growing community collection can never make this
+                // refresh (and the client-side sort/shuffle after it) slower over
+                // time — 200 testimonies is far more than the UI ever shows at
+                // once. Sorted client-side below rather than via orderBy here,
+                // to avoid needing a composite Firestore index.
                 const q = query(
                     collection(db, 'community'),
-                    where('type', '==', 'testimony')
+                    where('type', '==', 'testimony'),
+                    limit(200)
                 );
 
                 const snapshot = await getDocs(q);
@@ -340,14 +346,18 @@ export function TestimoniesTab() {
         setIsRefreshing(false);
     };
 
-    // Exclude the pinned Top Story of the Day from the regular list — it's
-    // already shown above, so leaving it in here too would show it twice.
+    // Top Story of the Day is just a normal list item now — pinned to the
+    // front instead of a separate section, so it appears first without
+    // pushing the topics/carousel out of their usual place.
     const storiesMinusTop = topStory
         ? testimonies.filter(story => story.id !== topStory.id)
         : testimonies;
     const filteredStories = selectedTopic === 'All'
         ? storiesMinusTop
         : storiesMinusTop.filter(t => t.tags.includes(selectedTopic));
+    const orderedStories = topStory && (selectedTopic === 'All' || topStory.tags.includes(selectedTopic))
+        ? [topStory, ...filteredStories]
+        : filteredStories;
 
     const handleShareStory = async () => {
         haptic.medium();
@@ -384,7 +394,7 @@ export function TestimoniesTab() {
             <FlatList
                 ref={flatListRef}
                 style={{ flex: 1 }}
-                data={filteredStories}
+                data={orderedStories}
                 renderItem={({ item }) => <TestimonyCard item={item} onShare={handleShareQuote} />}
                 keyExtractor={item => item.id}
                 contentContainerStyle={[styles.listContent, { flexGrow: 1 }]}
@@ -406,18 +416,6 @@ export function TestimoniesTab() {
                             <Text style={[styles.headerTitle, { color: colors.accent }]}>{t('testimoniesTab.headerTitle')}</Text>
                             <Text style={[styles.headerSubtitle, { color: colors.secondaryText }]}>{t('testimoniesTab.headerSubtitle')}</Text>
                         </View>
-
-                        {/* Top Story of the Day — admin-picked, distinct from the
-                            auto-rotating "Featured" carousel below. */}
-                        {topStory && (
-                            <View style={styles.topPickWrap}>
-                                <View style={styles.topPickBadgeRow}>
-                                    <Star size={12} color="#facc15" fill="#facc15" />
-                                    <Text style={styles.topPickBadgeText}>{t('testimoniesTab.topPickBadge')}</Text>
-                                </View>
-                                <TestimonyCard item={topStory} onShare={handleShareQuote} />
-                            </View>
-                        )}
 
                         {/* Featured stories — auto-rotating + swipeable horizontal pager.
                             Negative margin breaks out of the parent FlatList's
@@ -549,19 +547,6 @@ const styles = StyleSheet.create({
         color: '#cbd5e1',
         fontWeight: '600',
         marginTop: 4,
-    },
-    // ── Top Story of the Day (admin-pinned) ──
-    // No horizontal padding of its own — this sits inside listContent's
-    // paddingHorizontal, same as every regular TestimonyCard below it, so
-    // the pinned card's edges line up with the rest of the list.
-    topPickWrap: { marginBottom: 4 },
-    topPickBadgeRow: {
-        flexDirection: 'row', alignItems: 'center', gap: 5,
-        marginBottom: 10,
-    },
-    topPickBadgeText: {
-        fontSize: 11, fontWeight: '800', letterSpacing: 0.5,
-        color: '#facc15', textTransform: 'uppercase',
     },
     listContent: {
         paddingHorizontal: 20,
