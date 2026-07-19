@@ -19,9 +19,9 @@ import { collection, addDoc, query, where, limit, getCountFromServer,
          onSnapshot, Timestamp, serverTimestamp } from 'firebase/firestore';
 import { getFirebaseDb, ensureSignedIn } from './firebase';
 
-// Hard caps so a large collection can never blow the Firestore read quota.
+// Hard cap so a large collection can never blow the Firestore read quota
+// fetching individual documents for the live map.
 const MAP_DOT_LIMIT = 500;   // dots rendered on the live map
-const COUNT_LIMIT = 1000;    // ceiling for the "today" counter
 // Rolling window for the map. Kept in sync with the home card's daily total
 // (subscribeDailyTotal) so the dots on the map and the "X prayed in the last
 // 24h" headline always describe the same set of people. Exported so callers
@@ -127,14 +127,23 @@ export function subscribeDailyTotal(onUpdate: (total: number) => void): () => vo
         let retryTimer: ReturnType<typeof setTimeout> | undefined;
         let retryDelay = 10 * 1000;
         const refresh = () => {
+            // A pending retry is now superseded by this call — without
+            // clearing it, a slow retry and the next 5-minute interval tick
+            // could both land, double-firing getCountFromServer.
+            if (retryTimer) { clearTimeout(retryTimer); retryTimer = undefined; }
             const cutoff = Timestamp.fromDate(new Date(Date.now() - MAP_WINDOW_MS));
-            const q = query(collection(db, COLLECTION), where('ts', '>=', cutoff), limit(COUNT_LIMIT));
+            // No limit() here — count() aggregations don't fetch documents,
+            // so there's no read-quota reason to cap them the way MAP_DOT_LIMIT
+            // caps the live listener. Removed as unnecessary/incorrect on a
+            // pure count query, not confirmed as the cause of any specific bug.
+            const q = query(collection(db, COLLECTION), where('ts', '>=', cutoff));
             getCountFromServer(q)
                 .then(snap => { if (!cancelled) { retryDelay = 10 * 1000; onUpdate(snap.data().count); } })
-                .catch(() => {
+                .catch(e => {
                     // Keep the previous value, but retry with backoff instead of
                     // waiting the full 5 minutes — at cold start "previous" is 0,
                     // which hides the Home map card behind its >= 50 gate.
+                    console.error('[tahajjudMap] subscribeDailyTotal refresh failed', e);
                     if (cancelled) return;
                     retryTimer = setTimeout(refresh, retryDelay);
                     retryDelay = Math.min(retryDelay * 2, 5 * 60 * 1000);
