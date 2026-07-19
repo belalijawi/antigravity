@@ -93,6 +93,35 @@ export async function requestNotificationPermissions(): Promise<boolean> {
 }
 
 /**
+ * Fires a one-off notification 5 seconds after being called, using the exact
+ * same sound/priority/interruption config as the real Tahajjud alert — lets a
+ * user verify the alert sound actually plays without waiting for a real
+ * scheduled reminder. Powers the "Send Test Notification" row in Settings.
+ */
+export async function sendTestNotification(): Promise<boolean> {
+    const granted = await requestNotificationPermissions();
+    if (!granted) return false;
+
+    await Notifications.scheduleNotificationAsync({
+        content: {
+            title: '🌙 Test Notification',
+            body: 'If you heard a sound, your Tahajjud alert is working.',
+            sound: 'tahajjud_alert.caf',
+            priority: Notifications.AndroidNotificationPriority.MAX,
+            vibrate: [0, 1000, 500, 1000, 500, 1000],
+            interruptionLevel: 'timeSensitive',
+            data: { type: 'tahajjud' },
+        },
+        trigger: {
+            type: Notifications.SchedulableTriggerInputTypes.TIME_INTERVAL,
+            seconds: 5,
+            ...(Platform.OS === 'android' && { channelId: 'tahajjud' }),
+        },
+    });
+    return true;
+}
+
+/**
  * Day-1 morning check-in — scheduled ONCE, at the end of onboarding, for the
  * following morning. First-day prayer-loggers retain at 2× everyone else;
  * this is the first-day loop-closer: "did you wake for Tahajjud? Log it."

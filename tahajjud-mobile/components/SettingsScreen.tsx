@@ -59,6 +59,7 @@ import { isCurrentUserAdmin } from '../utils/admins';
 import { APP_URLS } from '../utils/urls';
 import Paywall from './Paywall';
 import { haptic } from '../utils/haptic';
+import { sendTestNotification } from '../utils/notifications';
 import { tabletContentStyle } from '../utils/layout';
 
 interface SettingsScreenProps {
@@ -922,7 +923,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ onClose }) => {
                     <View style={styles.card}>
                         <BlurView intensity={Math.round(20 * blurIntensity)} tint="dark" style={[StyleSheet.absoluteFill, { backgroundColor: cardBg }]} />
 
-                        <View style={[styles.cardItem, allPrayersEnabled && styles.cardItemBorder]}>
+                        <View style={[styles.cardItem, styles.cardItemBorder]}>
                             <View style={styles.cardIconContainer}>
                                 <Bell size={20} color={colors.primaryText} strokeWidth={2.5} />
                             </View>
@@ -940,7 +941,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ onClose }) => {
 
                         {allPrayersEnabled && (
                             <TouchableOpacity
-                                style={styles.cardItem}
+                                style={[styles.cardItem, styles.cardItemBorder]}
                                 onPress={() => setShowReminderModal(true)}
                             >
                                 <View style={styles.cardIconContainer}>
@@ -955,6 +956,28 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ onClose }) => {
                                 <ChevronRight size={18} color="#475569" />
                             </TouchableOpacity>
                         )}
+
+                        <TouchableOpacity
+                            style={styles.cardItem}
+                            onPress={async () => {
+                                haptic.light();
+                                const ok = await sendTestNotification();
+                                if (ok) {
+                                    Alert.alert(t('settings.testNotifSentTitle'), t('settings.testNotifSentBody'));
+                                } else {
+                                    Alert.alert(t('settings.testNotifFailedTitle'), t('settings.testNotifFailedBody'));
+                                }
+                            }}
+                        >
+                            <View style={styles.cardIconContainer}>
+                                <Bell size={20} color={colors.secondaryText} strokeWidth={2} />
+                            </View>
+                            <View style={styles.cardTextContainer}>
+                                <Text style={[styles.cardLabel, { color: colors.primaryText }]}>{t('settings.sendTestNotif')}</Text>
+                                <Text style={[styles.cardSub, { color: colors.secondaryText }]}>{t('settings.sendTestNotifSub')}</Text>
+                            </View>
+                            <ChevronRight size={18} color="#475569" />
+                        </TouchableOpacity>
                     </View>
                 </Animated.View>
 
