@@ -12,6 +12,7 @@ import { relatedTerms } from '../utils/synonyms';
 import { requireBiometric } from '../utils/biometricGate';
 import { getBookmarkedDuas, toggleBookmark } from '../utils/bookmarks';
 import { setWidgetDua, WIDGET_DUA_ID_KEY } from '../utils/widgetBridge';
+import { haptic } from '../utils/haptic';
 import { getPersonalDuas, savePersonalDua, deletePersonalDua, subscribePersonalDuas, PersonalDua } from '../utils/personalDuas';
 import { checkAchievements } from '../utils/achievements';
 import * as Speech from 'expo-speech';
@@ -494,11 +495,18 @@ export function DuasTab() {
     }, []);
 
     const handlePinToWidget = useCallback((dua: Dua) => {
+        haptic.light(); // acknowledge the tap immediately, whatever happens next
         const ok = setWidgetDua({ title: dua.title, arabic: dua.arabic, translation: dua.translation });
-        if (!ok) return; // Android or a binary without the Dua widget
+        if (!ok) {
+            // Binary predates the Dua widget (or the bridge failed) — a silent
+            // no-op here read as "the button is broken", so say what's needed.
+            Alert.alert(t('duaWidget.updateNeededTitle'), t('duaWidget.updateNeededBody'));
+            return;
+        }
         setWidgetDuaId(dua.id);
         AsyncStorage.setItem(WIDGET_DUA_ID_KEY, dua.id).catch(() => {});
         import('../utils/analytics').then(m => m.track('dua_pinned_to_widget')).catch(() => {});
+        haptic.success();
         Alert.alert(t('duaWidget.pinnedTitle'), t('duaWidget.pinnedBody'));
     }, []);
 
