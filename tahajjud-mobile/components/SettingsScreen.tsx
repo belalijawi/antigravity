@@ -59,7 +59,6 @@ import { isCurrentUserAdmin } from '../utils/admins';
 import { APP_URLS } from '../utils/urls';
 import Paywall from './Paywall';
 import { haptic } from '../utils/haptic';
-import { sendTestNotification } from '../utils/notifications';
 import { tabletContentStyle } from '../utils/layout';
 
 interface SettingsScreenProps {
@@ -177,6 +176,12 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ onClose }) => {
         { id: 13, name: 'Diyanet',      sub: 'Turkey, Northern Cyprus' },
         { id: 15, name: 'Moonsighting', sub: 'UK, Ireland, Nordic — handles high-latitude summers' },
     ];
+
+    // Recommended method first — otherwise its pill can sit off-screen at the
+    // end of the horizontal scroller and the "Recommended" badge is never seen.
+    // Stable sort keeps the familiar order for the rest.
+    const orderedPrayerMethods = [...prayerMethods].sort((a, b) =>
+        (b.id === recommendedMethodId ? 1 : 0) - (a.id === recommendedMethodId ? 1 : 0));
 
     useEffect(() => {
         loadSettings();
@@ -775,7 +780,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ onClose }) => {
                         </Text>
 
                         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.methodSelector}>
-                            {prayerMethods.map((m) => {
+                            {orderedPrayerMethods.map((m) => {
                                 const isSelected = prayerMethod === m.id;
                                 const isRecommended = recommendedMethodId === m.id;
                                 return (
@@ -957,27 +962,6 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ onClose }) => {
                             </TouchableOpacity>
                         )}
 
-                        <TouchableOpacity
-                            style={styles.cardItem}
-                            onPress={async () => {
-                                haptic.light();
-                                const ok = await sendTestNotification();
-                                if (ok) {
-                                    Alert.alert(t('settings.testNotifSentTitle'), t('settings.testNotifSentBody'));
-                                } else {
-                                    Alert.alert(t('settings.testNotifFailedTitle'), t('settings.testNotifFailedBody'));
-                                }
-                            }}
-                        >
-                            <View style={styles.cardIconContainer}>
-                                <Bell size={20} color={colors.secondaryText} strokeWidth={2} />
-                            </View>
-                            <View style={styles.cardTextContainer}>
-                                <Text style={[styles.cardLabel, { color: colors.primaryText }]}>{t('settings.sendTestNotif')}</Text>
-                                <Text style={[styles.cardSub, { color: colors.secondaryText }]}>{t('settings.sendTestNotifSub')}</Text>
-                            </View>
-                            <ChevronRight size={18} color="#475569" />
-                        </TouchableOpacity>
                     </View>
                 </Animated.View>
 

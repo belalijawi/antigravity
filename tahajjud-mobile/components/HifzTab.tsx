@@ -6,7 +6,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { GlassBg as BlurView } from './GlassBg';
 import { LinearGradient } from 'expo-linear-gradient';
-import { Brain, Flame, Target, Search, ChevronRight } from 'lucide-react-native';
+import { Brain, Flame, Target, Search, ChevronRight, Lock } from 'lucide-react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import Animated, { FadeInDown } from 'react-native-reanimated';
 import { QuranService, SurahMeta } from '../services/QuranService';
@@ -116,12 +116,16 @@ export function HifzTab({ embedded = false }: { embedded?: boolean }) {
     });
 
     const totalStarted = Object.values(statsMap).reduce((s, v) => s + (v.started > 0 ? 1 : 0), 0);
+    // Free tier includes exactly one surah. Once it's used, every other surah
+    // is visibly locked — the paywall on tap should never be a surprise.
+    const freeSlotUsed = !isPremium && totalStarted > 0;
     const totalMastered = Object.values(statsMap).reduce((s, v) => s + v.mastered, 0);
     const totalDue = Object.values(dueMap).reduce((s, v) => s + v, 0);
 
     const renderItem = ({ item, index }: { item: SurahMeta; index: number }) => {
         const stats = statsMap[item.number] ?? { started: 0, mastered: 0, total: item.numberOfAyahs };
         const hasProgress = stats.started > 0;
+        const locked = freeSlotUsed && !hasProgress;
         const progress = stats.total > 0 ? stats.started / stats.total : 0;
         const masteredFrac = stats.total > 0 ? stats.mastered / stats.total : 0;
         const dueCount = dueMap[item.number] ?? 0;
@@ -132,7 +136,7 @@ export function HifzTab({ embedded = false }: { embedded?: boolean }) {
             // hiding the list until a scroll — the same bug fixed in Stories.
             <View>
                 <TouchableOpacity
-                    style={styles.card}
+                    style={[styles.card, locked && { opacity: 0.55 }]}
                     onPress={() => {
                         // Free tier: one surah is free — the taste that sells the
                         // trial. A SECOND surah is where the paywall now lives.
@@ -193,6 +197,8 @@ export function HifzTab({ embedded = false }: { embedded?: boolean }) {
                                     {stats.mastered > 0 ? `  ·  ${stats.mastered} ✓` : ''}
                                 </Text>
                             </View>
+                        ) : locked ? (
+                            <Lock size={15} color="#64748b" />
                         ) : (
                             <Text style={styles.startLabel}>{t('hifzTab.startBtn')}</Text>
                         )}
@@ -256,6 +262,21 @@ export function HifzTab({ embedded = false }: { embedded?: boolean }) {
                             <Text style={styles.statLabel}>{t('hifzTab.masteredLabel')}</Text>
                         </View>
                     </Animated.View>
+                )}
+
+                {/* Free-tier explainer — one surah free, rest premium */}
+                {!loading && !isPremium && (
+                    <TouchableOpacity
+                        style={styles.freeBanner}
+                        onPress={() => { if (freeSlotUsed) openPaywall('hifz_banner'); }}
+                        activeOpacity={freeSlotUsed ? 0.8 : 1}
+                    >
+                        <Lock size={12} color="#a78bfa" />
+                        <Text style={styles.freeBannerText}>
+                            {freeSlotUsed ? t('hifz.freeBannerUsed') : t('hifz.freeBannerPick')}
+                        </Text>
+                        {freeSlotUsed && <ChevronRight size={14} color="#a78bfa" />}
+                    </TouchableOpacity>
                 )}
 
                 {/* Search */}
@@ -376,6 +397,25 @@ const styles = StyleSheet.create({
     statNum: { fontSize: 16, fontWeight: '900', color: '#f8fafc' },
     statLabel: { color: '#475569', fontSize: 10, fontWeight: '700' },
 
+    freeBanner: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 8,
+        paddingVertical: 8,
+        paddingHorizontal: 12,
+        borderRadius: 12,
+        backgroundColor: 'rgba(124,58,237,0.10)',
+        borderWidth: 1,
+        borderColor: 'rgba(124,58,237,0.25)',
+        marginBottom: 10,
+    },
+    freeBannerText: {
+        flex: 1,
+        fontSize: 12,
+        fontWeight: '600',
+        color: '#a78bfa',
+        lineHeight: 16,
+    },
     searchBox: {
         flexDirection: 'row',
         alignItems: 'center',

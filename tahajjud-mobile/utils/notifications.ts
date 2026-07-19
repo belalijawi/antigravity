@@ -30,8 +30,11 @@ export function ensureNotificationHandler() {
             // iOS silently swallows them otherwise, meaning the user misses their alarm.
             const isPrayer = dataType === 'tahajjud' || dataType === 'prayer' ||
                              dataType === 'islamic_event' || dataType === 'streak_at_risk';
-            // Community reactions — warm, welcome to show in foreground
-            const isCommunity = dataType === 'dua_milestone' || dataType === 'testimony_milestone';
+            // Community reactions — warm, welcome to show in foreground.
+            // Includes the admin "you were chosen" picks: without these the
+            // author with the app open never saw their Top Dua/Story moment.
+            const isCommunity = dataType === 'dua_milestone' || dataType === 'testimony_milestone' ||
+                                dataType === 'top_dua' || dataType === 'top_story';
             // Feature nudge / day-1 morning check-in — informational, fine in foreground
             const isNudge = dataType === 'feature_nudge' || dataType === 'morning_after';
             const shouldShow = isPartner || isPrayer || isCommunity || isNudge;
