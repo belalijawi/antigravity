@@ -24,6 +24,7 @@ import { haptic } from '../utils/haptic';
 import { track } from '../utils/analytics';
 import { t } from '../utils/i18n';
 import { scheduleMorningAfter } from '../utils/notifications';
+import { getPrayerTimes } from '../lib/api';
 import Paywall from './Paywall';
 import { GoogleAuthProvider, OAuthProvider, signInWithCredential } from 'firebase/auth';
 import { getFirebaseAuth } from '../utils/firebase';
@@ -41,8 +42,12 @@ try {
 
 const STORAGE_KEY = 'onboarding_complete_v1';
 
+type DailyPrayer = 'fajr' | 'dhuhr' | 'asr' | 'maghrib' | 'isha';
+const DAILY_PRAYERS: DailyPrayer[] = ['fajr', 'dhuhr', 'asr', 'maghrib', 'isha'];
+
 interface Slide {
     icon: React.ComponentType<{ size: number; color: string; strokeWidth?: number }>;
+    /** i18n keys — resolved with t() at render time so the user's locale applies. */
     title: string;
     body: string;
     cta?: string;
@@ -53,42 +58,43 @@ interface Slide {
 const SLIDES: Slide[] = [
     {
         icon: Moon,
-        title: 'What is Tahajjud?',
-        body: 'Tahajjud is the optional night prayer in the last third of the night — when Allah descends to the lowest heaven and calls out, "Who asks of Me, that I may give him? Who seeks My forgiveness, that I may forgive him?" (Bukhari).',
-        cta: 'Continue',
+        title: 'onboard.whatIs.title',
+        body: 'onboard.whatIs.body',
+        cta: 'btn.continue',
     },
     {
         icon: BookHeart,
-        title: 'Your Nightly Gate',
-        body: 'Tahajjud+ calculates the precise window of the last third every night and gently reminds you when the gate opens — so you never miss it.',
-        cta: 'Sounds good',
+        title: 'onboard.gate.title',
+        body: 'onboard.gate.body',
+        cta: 'onboard.gate.cta',
     },
     {
         icon: UserCircle,
-        title: 'Save your progress',
-        body: 'Create an account to back up your streaks, logs, and duas across devices. It only takes a second.',
+        title: 'onboard.auth.title',
+        body: 'onboard.auth.body',
         action: 'auth',
-        skip: 'Skip for now',
+        skip: 'onboard.auth.skip',
     },
     {
         icon: MapPin,
-        title: 'Where are you?',
-        body: "We need your location to calculate accurate prayer times and the start of your last third. Your location stays on-device — we never send it anywhere.",
-        cta: 'Allow location',
-        skip: 'Not now',
+        title: 'onboard.location.title',
+        body: 'onboard.location.body',
+        cta: 'onboard.location.cta',
+        skip: 'onboard.notNow',
         action: 'location',
     },
     {
         icon: Bell,
-        title: 'Wake at the right moment',
-        body: "We'll send a quiet notification a few minutes before the last third begins. You'll never sleep through it again.",
-        cta: 'Enable reminders',
-        skip: 'Not now',
+        title: 'onboard.notif.title',
+        body: 'onboard.notif.body',
+        cta: 'onboard.notif.cta',
+        skip: 'onboard.notNow',
         action: 'notifications',
     },
     {
+        // Renders the full Paywall component — title/body never shown.
         icon: Moon,
-        title: 'Unlock the full experience',
+        title: 'onboard.premium.title',
         body: '',
         action: 'premium',
     },
@@ -97,9 +103,9 @@ const SLIDES: Slide[] = [
     // instead of dropping the user onto an empty Home screen.
     {
         icon: Moon,
-        title: 'Your first night starts now',
-        body: "Your wake-up alarm is set for the last third of tonight. Begin your streak by logging tonight's prayer — one tap, and night one is yours.",
-        cta: 'Begin my journey',
+        title: 'onboard.firstNightTitle',
+        body: 'onboard.firstNightBody',
+        cta: 'onboard.firstNightCta',
         action: 'first_night',
     },
 ];
@@ -114,6 +120,12 @@ export function OnboardingFlow({ onComplete }: Props) {
     const [signingIn, setSigningIn] = useState(false);
     const [appleAvailable, setAppleAvailable] = useState(false);
     const [firstPrayerLogged, setFirstPrayerLogged] = useState(false);
+    // Which prayer the one-tap log button offers. Defaults to Isha (the
+    // night framing this app is built around); once the user reaches the
+    // final slide we try to swap in whichever prayer most recently passed
+    // at their location, so a daytime onboarding isn't asked to confirm a
+    // prayer that hasn't happened yet.
+    const [recentPrayer, setRecentPrayer] = useState<DailyPrayer>('isha');
 
     React.useEffect(() => {
         if (Platform.OS !== 'ios' || !AppleAuthentication) return;
@@ -127,6 +139,42 @@ export function OnboardingFlow({ onComplete }: Props) {
     React.useEffect(() => {
         track('onboarding_step_viewed', { step, slide_title: SLIDES[step].title });
     }, [step]);
+
+    // Resolve the most recently passed prayer for the final slide's one-tap
+    // log. Every failure path (no permission, no fix, API down) just keeps
+    // the Isha default.
+    const mountedRef = React.useRef(true);
+    React.useEffect(() => () => { mountedRef.current = false; }, []);
+    const resolveRecentPrayer = React.useCallback(async () => {
+        try {
+            const { status } = await Location.getForegroundPermissionsAsync();
+            if (status !== 'granted') return;
+            const pos = await Location.getLastKnownPositionAsync({})
+                ?? await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Lowest });
+            if (!pos || !mountedRef.current) return;
+            const stored = await AsyncStorage.getItem('prayer_calculation_method');
+            const method = stored && !isNaN(parseInt(stored, 10)) ? parseInt(stored, 10) : 2;
+            const times = await getPrayerTimes(pos.coords.latitude, pos.coords.longitude, new Date(), method);
+            if (!mountedRef.current) return;
+            const now = Date.now();
+            // Latest prayer whose time has passed today. Before Fajr none
+            // has — the night in progress still belongs to Isha.
+            let latest: DailyPrayer = 'isha';
+            for (const p of DAILY_PRAYERS) {
+                if (times[p].getTime() <= now) latest = p;
+            }
+            setRecentPrayer(latest);
+        } catch { /* keep the Isha default */ }
+    }, []);
+
+    // Kick off at mount (permission may already be granted on a reinstall)
+    // and refresh on the final slide (cache hit → instant). Waiting for the
+    // final slide to START the lookup made the button visibly flip from
+    // "Isha" to the real prayer; resolving slides earlier hides the swap.
+    React.useEffect(() => { resolveRecentPrayer(); }, [resolveRecentPrayer]);
+    React.useEffect(() => {
+        if (slide.action === 'first_night') resolveRecentPrayer();
+    }, [slide.action, resolveRecentPrayer]);
 
     const finish = async () => {
         try { await AsyncStorage.setItem(STORAGE_KEY, 'true'); } catch {}
@@ -146,6 +194,10 @@ export function OnboardingFlow({ onComplete }: Props) {
             try {
                 const res = await Location.requestForegroundPermissionsAsync();
                 track('onboarding_permission_result', { permission: 'location', granted: res.status === 'granted' });
+                // Location just became available — resolve the final slide's
+                // "I prayed X" button now, in the background, so the answer
+                // is ready before that slide ever renders.
+                if (res.status === 'granted') resolveRecentPrayer();
             } catch {}
         } else if (slide.action === 'notifications') {
             try {
@@ -175,13 +227,13 @@ export function OnboardingFlow({ onComplete }: Props) {
         try {
             const raw = await AsyncStorage.getItem('prayer-tracker-v2');
             const history = raw ? JSON.parse(raw) : {};
-            if (!Array.isArray(history.isha)) history.isha = [];
-            history.isha.push(new Date().toISOString());
-            for (const k of ['fajr', 'dhuhr', 'asr', 'maghrib', 'tahajjud']) {
+            if (!Array.isArray(history[recentPrayer])) history[recentPrayer] = [];
+            history[recentPrayer].push(new Date().toISOString());
+            for (const k of [...DAILY_PRAYERS, 'tahajjud']) {
                 if (!Array.isArray(history[k])) history[k] = [];
             }
             await AsyncStorage.setItem('prayer-tracker-v2', JSON.stringify(history));
-            track('prayer_logged', { prayer: 'isha', source: 'onboarding' });
+            track('prayer_logged', { prayer: recentPrayer, source: 'onboarding' });
             setFirstPrayerLogged(true);
             haptic.success();
         } catch { /* never block onboarding */ }
@@ -215,7 +267,7 @@ export function OnboardingFlow({ onComplete }: Props) {
             haptic.success();
         } catch (error: any) {
             if (error.code !== statusCodes.SIGN_IN_CANCELLED) {
-                Alert.alert('Sign-In Failed', error.message || 'Could not sign in with Google.');
+                Alert.alert(t('onboard.signInFailed'), error.message || t('onboard.signInFailedGoogle'));
             }
         } finally {
             setSigningIn(false);
@@ -246,7 +298,7 @@ export function OnboardingFlow({ onComplete }: Props) {
             haptic.success();
         } catch (error: any) {
             if (error.code !== 'ERR_REQUEST_CANCELED') {
-                Alert.alert('Sign-In Failed', error.message || 'Could not sign in with Apple.');
+                Alert.alert(t('onboard.signInFailed'), error.message || t('onboard.signInFailedApple'));
             }
         } finally {
             setSigningIn(false);
@@ -288,8 +340,8 @@ export function OnboardingFlow({ onComplete }: Props) {
                 <View style={[styles.iconWrap, { backgroundColor: colors.accent + '15', borderColor: colors.accent + '33' }]}>
                     <Icon size={40} color={colors.accent} strokeWidth={1.5} />
                 </View>
-                <Text style={[styles.title, { color: colors.primaryText }]}>{slide.action === 'first_night' ? t('onboard.firstNightTitle') : slide.title}</Text>
-                <Text style={[styles.body, { color: colors.secondaryText }]}>{slide.action === 'first_night' ? t('onboard.firstNightBody') : slide.body}</Text>
+                <Text style={[styles.title, { color: colors.primaryText }]}>{t(slide.title)}</Text>
+                <Text style={[styles.body, { color: colors.secondaryText }]}>{slide.body ? t(slide.body) : ''}</Text>
             </Animated.View>
 
             {/* Auth step — Apple + Google buttons */}
@@ -306,7 +358,7 @@ export function OnboardingFlow({ onComplete }: Props) {
                                     activeOpacity={0.85}
                                 >
                                     <Shield size={18} color="#000" strokeWidth={2} />
-                                    <Text style={styles.socialBtnTextDark}>Sign in with Apple</Text>
+                                    <Text style={styles.socialBtnTextDark}>{t('onboard.signInApple')}</Text>
                                 </TouchableOpacity>
                             )}
                             <TouchableOpacity
@@ -315,7 +367,7 @@ export function OnboardingFlow({ onComplete }: Props) {
                                 activeOpacity={0.85}
                             >
                                 <Globe size={18} color={colors.primaryText} strokeWidth={2} />
-                                <Text style={[styles.socialBtnText, { color: colors.primaryText }]}>Sign in with Google</Text>
+                                <Text style={[styles.socialBtnText, { color: colors.primaryText }]}>{t('onboard.signInGoogle')}</Text>
                             </TouchableOpacity>
                         </>
                     )}
@@ -324,7 +376,7 @@ export function OnboardingFlow({ onComplete }: Props) {
                         style={styles.skip}
                         hitSlop={{ top: 10, bottom: 10, left: 20, right: 20 }}
                     >
-                        <Text style={[styles.skipText, { color: colors.secondaryText }]}>Skip for now</Text>
+                        <Text style={[styles.skipText, { color: colors.secondaryText }]}>{t('onboard.auth.skip')}</Text>
                     </TouchableOpacity>
                 </View>
             ) : (
@@ -343,7 +395,9 @@ export function OnboardingFlow({ onComplete }: Props) {
                         >
                             <Check size={18} color={firstPrayerLogged ? colors.accent : colors.primaryText} strokeWidth={2.5} />
                             <Text style={[styles.socialBtnText, { color: firstPrayerLogged ? colors.accent : colors.primaryText }]}>
-                                {firstPrayerLogged ? t('onboard.ishaLogged') : t('onboard.logIsha')}
+                                {firstPrayerLogged
+                                    ? (recentPrayer === 'isha' ? t('onboard.ishaLogged') : t('onboard.dayOneLogged'))
+                                    : (recentPrayer === 'isha' ? t('onboard.logIsha') : t('onboard.logPrayer', { prayer: t('prayer.' + recentPrayer) }))}
                             </Text>
                         </TouchableOpacity>
                     )}
@@ -352,7 +406,7 @@ export function OnboardingFlow({ onComplete }: Props) {
                         style={[styles.cta, { backgroundColor: colors.accent, shadowColor: colors.accent }]}
                         activeOpacity={0.85}
                     >
-                        <Text style={styles.ctaText}>{slide.action === 'first_night' ? t('onboard.firstNightCta') : (slide.cta ?? t('btn.continue'))}</Text>
+                        <Text style={styles.ctaText}>{slide.cta ? t(slide.cta) : t('btn.continue')}</Text>
                         {isLast
                             ? <Check size={18} color="#0a1228" strokeWidth={3} />
                             : <ChevronRight size={18} color="#0a1228" strokeWidth={3} />
@@ -364,7 +418,7 @@ export function OnboardingFlow({ onComplete }: Props) {
                             style={styles.skip}
                             hitSlop={{ top: 10, bottom: 10, left: 20, right: 20 }}
                         >
-                            <Text style={[styles.skipText, { color: colors.secondaryText }]}>{slide.skip}</Text>
+                            <Text style={[styles.skipText, { color: colors.secondaryText }]}>{t(slide.skip)}</Text>
                         </TouchableOpacity>
                     ) : (
                         <View style={{ height: 24 }} />

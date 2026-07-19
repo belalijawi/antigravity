@@ -9,4 +9,10 @@ RCT_EXTERN_METHOD(
   tahajjudStart:(double)tahajjudStart
 )
 
+RCT_EXTERN_METHOD(
+  writeDuaWidgetData:(NSString *)title
+  arabic:(NSString *)arabic
+  translation:(NSString *)translation
+)
+
 @end

@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { View, Text, ScrollView, TextInput, TouchableOpacity, StyleSheet, FlatList, Alert, Modal, KeyboardAvoidingView, Platform, ScrollView as RNScrollView, ActivityIndicator, DeviceEventEmitter } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Search, Heart, Volume2, Square, Plus, X, Trash2, Mail, PenTool, Sprout, Lock, Moon, BookHeart, PenLine } from 'lucide-react-native';
+import { Search, Heart, Volume2, Square, Plus, X, Trash2, Mail, PenTool, Sprout, Lock, Moon, BookHeart, PenLine, Pin } from 'lucide-react-native';
 import { TahajjudJournalHistory } from './TahajjudJournalHistory';
 import { TahajjudJournalModal } from './TahajjudJournalModal';
 import { DuaWallModal } from './DuaWall';
@@ -11,6 +11,7 @@ import { fuzzyMatch, normalize, matchScore } from '../utils/fuzzy';
 import { relatedTerms } from '../utils/synonyms';
 import { requireBiometric } from '../utils/biometricGate';
 import { getBookmarkedDuas, toggleBookmark } from '../utils/bookmarks';
+import { setWidgetDua, WIDGET_DUA_ID_KEY } from '../utils/widgetBridge';
 import { getPersonalDuas, savePersonalDua, deletePersonalDua, subscribePersonalDuas, PersonalDua } from '../utils/personalDuas';
 import { checkAchievements } from '../utils/achievements';
 import * as Speech from 'expo-speech';
@@ -30,6 +31,8 @@ interface DuaCardProps {
     dua: Dua;
     isBookmarked?: boolean;
     onToggleBookmark?: (duaId: string) => void;
+    isOnWidget?: boolean;
+    onPinToWidget?: (dua: Dua) => void;
     isPlaying?: boolean;
     activeArabicWord?: number;
     onPlay?: () => void;
@@ -37,7 +40,7 @@ interface DuaCardProps {
 }
 
 // Memoized DuaCard to prevent unnecessary re-renders
-const DuaCard = React.memo(({ dua, isBookmarked, onToggleBookmark, isPlaying, activeArabicWord = -1, onPlay, onDelete }: DuaCardProps) => {
+const DuaCard = React.memo(({ dua, isBookmarked, onToggleBookmark, isOnWidget, onPinToWidget, isPlaying, activeArabicWord = -1, onPlay, onDelete }: DuaCardProps) => {
     const { colors, cardBg, blurIntensity } = useTheme();
 
     // Derive translation word index proportionally from arabic word position
@@ -79,6 +82,19 @@ const DuaCard = React.memo(({ dua, isBookmarked, onToggleBookmark, isPlaying, ac
                                 ) : (
                                     <Volume2 size={20} color="#94a3b8" />
                                 )}
+                            </TouchableOpacity>
+                        )}
+                        {onPinToWidget && (
+                            <TouchableOpacity
+                                onPress={() => onPinToWidget(dua)}
+                                style={styles.actionButton}
+                                hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                            >
+                                <Pin
+                                    size={19}
+                                    color={isOnWidget ? '#a78bfa' : '#94a3b8'}
+                                    fill={isOnWidget ? '#a78bfa' : 'none'}
+                                />
                             </TouchableOpacity>
                         )}
                         {onToggleBookmark && (
@@ -178,6 +194,7 @@ const DuaCard = React.memo(({ dua, isBookmarked, onToggleBookmark, isPlaying, ac
 }, (prevProps, nextProps) => {
     return (
         prevProps.isBookmarked === nextProps.isBookmarked &&
+        prevProps.isOnWidget === nextProps.isOnWidget &&
         prevProps.isPlaying === nextProps.isPlaying &&
         prevProps.activeArabicWord === nextProps.activeArabicWord &&
         prevProps.dua.id === nextProps.dua.id
@@ -195,6 +212,7 @@ export function DuasTab() {
     const [searchQuery, setSearchQuery] = useState('');
     const [selectedCategory, setSelectedCategory] = useState('All');
     const [bookmarkedIds, setBookmarkedIds] = useState<string[]>([]);
+    const [widgetDuaId, setWidgetDuaId] = useState<string | null>(null);
     const [playingDuaId, setPlayingDuaId] = useState<string | null>(null);
     const [voiceIdentifier, setVoiceIdentifier] = useState<string | null>(null);
     const [activeArabicWord, setActiveArabicWord] = useState(-1);
@@ -261,6 +279,7 @@ export function DuasTab() {
     // Load data on mount
     useEffect(() => {
         loadBookmarks();
+        AsyncStorage.getItem(WIDGET_DUA_ID_KEY).then(v => { if (v) setWidgetDuaId(v); }).catch(() => {});
         loadVoice();
         loadPersonalDuasData();
         checkLockStatus();
@@ -464,11 +483,23 @@ export function DuasTab() {
     };
 
     const handleToggleBookmark = useCallback(async (duaId: string) => {
-        setBookmarkedIds(prev => {
-            if (prev.includes(duaId)) return prev;
-            return [...prev, duaId];
-        });
+        // Mirror toggleBookmark's storage behavior exactly: a tap on an
+        // already-liked dua must UNlike it (remove from state) — the old
+        // add-only updater left the heart filled forever and let UI and
+        // storage drift out of sync.
+        setBookmarkedIds(prev =>
+            prev.includes(duaId) ? prev.filter(id => id !== duaId) : [...prev, duaId]
+        );
         toggleBookmark(duaId);
+    }, []);
+
+    const handlePinToWidget = useCallback((dua: Dua) => {
+        const ok = setWidgetDua({ title: dua.title, arabic: dua.arabic, translation: dua.translation });
+        if (!ok) return; // Android or a binary without the Dua widget
+        setWidgetDuaId(dua.id);
+        AsyncStorage.setItem(WIDGET_DUA_ID_KEY, dua.id).catch(() => {});
+        import('../utils/analytics').then(m => m.track('dua_pinned_to_widget')).catch(() => {});
+        Alert.alert(t('duaWidget.pinnedTitle'), t('duaWidget.pinnedBody'));
     }, []);
 
     const handlePlayDua = useCallback(async (dua: Dua) => {
@@ -609,11 +640,13 @@ export function DuasTab() {
             dua={item}
             isBookmarked={bookmarkedIds.includes(item.id)}
             onToggleBookmark={handleToggleBookmark}
+            isOnWidget={widgetDuaId === item.id}
+            onPinToWidget={Platform.OS === 'ios' ? handlePinToWidget : undefined}
             isPlaying={playingDuaId === item.id}
             activeArabicWord={playingDuaId === item.id ? activeArabicWord : -1}
             onPlay={() => handlePlayDua(item)}
         />
-    ), [bookmarkedIds, playingDuaId, activeArabicWord, handleToggleBookmark, handlePlayDua]);
+    ), [bookmarkedIds, widgetDuaId, playingDuaId, activeArabicWord, handleToggleBookmark, handlePinToWidget, handlePlayDua]);
 
     const renderPersonalDuaItem = useCallback(({ item }: { item: PersonalDua }) => {
         const date = new Date(item.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });

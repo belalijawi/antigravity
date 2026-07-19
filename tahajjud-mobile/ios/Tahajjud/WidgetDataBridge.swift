@@ -40,5 +40,24 @@ class WidgetDataBridge: NSObject {
         WidgetCenter.shared.reloadAllTimelines()
     }
 
+    /// Writes the user's chosen dua for the Dua widget. Empty strings clear it.
+    @objc func writeDuaWidgetData(
+        _ title: String,
+        arabic: String,
+        translation: String
+    ) {
+        guard let defaults = UserDefaults(suiteName: suiteName) else { return }
+        let payload: [String: Any] = [
+            "title":       title,
+            "arabic":      arabic,
+            "translation": translation,
+            "updatedAt":   Date().timeIntervalSince1970,
+        ]
+        if let data = try? JSONSerialization.data(withJSONObject: payload) {
+            defaults.set(data, forKey: "dua_widget_data")
+        }
+        WidgetCenter.shared.reloadAllTimelines()
+    }
+
     @objc static func requiresMainQueueSetup() -> Bool { false }
 }

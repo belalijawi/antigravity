@@ -10,6 +10,20 @@ struct WidgetData: Codable {
     var updatedAt: Date
     var tahajjudStart: Date?
 
+    /// tahajjudStart, but only while it's still meaningful to display. The
+    /// app writes whatever night it last calculated — opened at 1am that's
+    /// the night already in progress — and the widget would otherwise keep
+    /// showing that stale time all the following day. Allow a grace window
+    /// after the start (the gate stays open for the last third itself),
+    /// then hide rather than mislead.
+    var freshTahajjudStart: Date? {
+        guard let t = tahajjudStart else { return nil }
+        let now = Date()
+        guard t > now.addingTimeInterval(-6 * 3600),
+              t < now.addingTimeInterval(24 * 3600) else { return nil }
+        return t
+    }
+
     static let placeholder = WidgetData(
         nextPrayer: "Isha",
         nextPrayerTime: Date().addingTimeInterval(3600),
@@ -132,7 +146,7 @@ struct SmallWidgetView: View {
                 Spacer()
 
                 // Tahajjud time (if available)
-                if let tahajjud = entry.widgetData.tahajjudStart {
+                if let tahajjud = entry.widgetData.freshTahajjudStart {
                     HStack(spacing: 3) {
                         Text("🌙")
                             .font(.system(size: 9))
@@ -220,7 +234,7 @@ struct MediumWidgetView: View {
                     }
 
                     // Tahajjud row
-                    if let tahajjud = entry.widgetData.tahajjudStart {
+                    if let tahajjud = entry.widgetData.freshTahajjudStart {
                         HStack(spacing: 4) {
                             Text("🌙")
                                 .font(.system(size: 11))
@@ -273,6 +287,7 @@ struct MediumWidgetView: View {
                 .frame(width: 80)
                 .padding(.trailing, 16)
             }
+            .padding(.vertical, 16)
         }
     }
 }
@@ -283,7 +298,7 @@ struct LargeWidgetView: View {
     let entry: TahajjudEntry
 
     var isGateOpen: Bool {
-        guard let t = entry.widgetData.tahajjudStart else { return false }
+        guard let t = entry.widgetData.freshTahajjudStart else { return false }
         return Date() >= t
     }
 
@@ -349,7 +364,7 @@ struct LargeWidgetView: View {
                         .foregroundColor(isGateOpen ? Color(hex: "a78bfa") : Color(hex: "64748b"))
                         .kerning(1.2)
 
-                    if let tahajjud = entry.widgetData.tahajjudStart {
+                    if let tahajjud = entry.widgetData.freshTahajjudStart {
                         Text(tahajjud, style: .time)
                             .font(.system(size: 52, weight: .heavy))
                             .foregroundColor(isGateOpen ? Color(hex: "a78bfa") : .white)
@@ -472,6 +487,10 @@ struct TahajjudWidget: Widget {
         .configurationDisplayName("Tahajjud+")
         .description("Next prayer time and Tahajjud streak.")
         .supportedFamilies(supportedFamilies())
+        // With a .clear container background iOS applies default content
+        // margins, so the gradient ZStacks only painted the inset content
+        // area and the widget showed dark unfilled gaps around the card.
+        .contentMarginsDisabled()
     }
 
     private func supportedFamilies() -> [WidgetFamily] {
@@ -521,7 +540,7 @@ struct AccessoryRectangularView: View {
 
     var body: some View {
         let nextDate = entry.widgetData.nextPrayerTime
-        let tahajjud = entry.widgetData.tahajjudStart
+        let tahajjud = entry.widgetData.freshTahajjudStart
         let now = Date()
         // Guard: SwiftUI's `Text(timerInterval:...)` crashes if the upper
         // bound is in the past. Use `nextDate.addingTimeInterval(60)` floor.
@@ -582,6 +601,137 @@ struct AccessoryInlineView: View {
     var body: some View {
         let nextDate = entry.widgetData.nextPrayerTime
         Text("\(entry.widgetData.nextPrayer): \(nextDate, format: .dateTime.hour().minute())")
+    }
+}
+
+
+// MARK: - Dua Widget (user-chosen dua from the app)
+
+struct DuaWidgetData {
+    var title: String
+    var arabic: String
+    var translation: String
+
+    static let placeholder = DuaWidgetData(
+        title: "Rabbana Atina",
+        arabic: "\u{0631}\u{064E}\u{0628}\u{064E}\u{0651}\u{0646}\u{064E}\u{0627} \u{0622}\u{062A}\u{0650}\u{0646}\u{064E}\u{0627} \u{0641}\u{0650}\u{064A} \u{0627}\u{0644}\u{062F}\u{064F}\u{0651}\u{0646}\u{0652}\u{064A}\u{064E}\u{0627} \u{062D}\u{064E}\u{0633}\u{064E}\u{0646}\u{064E}\u{0629}\u{064B}",
+        translation: "Our Lord, give us good in this world and good in the Hereafter, and protect us from the punishment of the Fire."
+    )
+
+    static func load() -> DuaWidgetData? {
+        let defaults = UserDefaults(suiteName: "group.com.tahajjudplus")
+        guard let data = defaults?.data(forKey: "dua_widget_data"),
+              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+        else { return nil }
+        let d = DuaWidgetData(
+            title: json["title"] as? String ?? "",
+            arabic: json["arabic"] as? String ?? "",
+            translation: json["translation"] as? String ?? ""
+        )
+        if d.title.isEmpty && d.arabic.isEmpty && d.translation.isEmpty { return nil }
+        return d
+    }
+}
+
+struct DuaEntry: TimelineEntry {
+    let date: Date
+    let dua: DuaWidgetData?
+}
+
+struct DuaProvider: TimelineProvider {
+    func placeholder(in context: Context) -> DuaEntry {
+        DuaEntry(date: Date(), dua: .placeholder)
+    }
+    func getSnapshot(in context: Context, completion: @escaping (DuaEntry) -> Void) {
+        completion(DuaEntry(date: Date(), dua: DuaWidgetData.load() ?? .placeholder))
+    }
+    func getTimeline(in context: Context, completion: @escaping (Timeline<DuaEntry>) -> Void) {
+        // Content is static — it only changes when the app writes a new dua,
+        // and the bridge calls reloadAllTimelines() at that moment.
+        completion(Timeline(entries: [DuaEntry(date: Date(), dua: DuaWidgetData.load())], policy: .never))
+    }
+}
+
+struct DuaWidgetView: View {
+    @Environment(\.widgetFamily) var family
+    let entry: DuaEntry
+
+    var body: some View {
+        ZStack {
+            LinearGradient(
+                colors: [Color(hex: "020617"), Color(hex: "0d1b3e")],
+                startPoint: .topLeading, endPoint: .bottomTrailing
+            )
+            Circle()
+                .fill(Color(hex: "4f46e5").opacity(0.25))
+                .frame(width: 160, height: 160)
+                .offset(x: 90, y: -60)
+                .blur(radius: 40)
+
+            if let dua = entry.dua {
+                VStack(alignment: .leading, spacing: family == .systemSmall ? 4 : 8) {
+                    HStack(spacing: 5) {
+                        Text("\u{1F932}")
+                            .font(.system(size: family == .systemSmall ? 12 : 14))
+                        Text(dua.title)
+                            .font(.system(size: family == .systemSmall ? 11 : 13, weight: .bold))
+                            .foregroundColor(Color(hex: "a78bfa"))
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.8)
+                    }
+
+                    if family != .systemSmall && !dua.arabic.isEmpty {
+                        Text(dua.arabic)
+                            .font(.system(size: family == .systemLarge ? 24 : 17, weight: .semibold))
+                            .foregroundColor(.white)
+                            .frame(maxWidth: .infinity, alignment: .trailing)
+                            .multilineTextAlignment(.trailing)
+                            .lineLimit(family == .systemLarge ? 6 : 2)
+                            .minimumScaleFactor(0.7)
+                    }
+
+                    if !dua.translation.isEmpty {
+                        Text(dua.translation)
+                            .font(.system(size: family == .systemSmall ? 11 : 12, weight: .medium))
+                            .foregroundColor(Color(hex: "cbd5e1"))
+                            .lineLimit(family == .systemLarge ? 8 : (family == .systemSmall ? 6 : 3))
+                            .minimumScaleFactor(0.85)
+                    }
+
+                    Spacer(minLength: 0)
+                }
+                .padding(family == .systemSmall ? 12 : 16)
+            } else {
+                // Nothing chosen yet — tell the user where to pick one.
+                VStack(spacing: 5) {
+                    Text("\u{1F932}")
+                        .font(.system(size: 22))
+                    Text("Choose a dua")
+                        .font(.system(size: 13, weight: .bold))
+                        .foregroundColor(.white)
+                    Text("Tap the pin on any dua in the app")
+                        .font(.system(size: 10, weight: .medium))
+                        .foregroundColor(Color(hex: "94a3b8"))
+                        .multilineTextAlignment(.center)
+                }
+                .padding(12)
+            }
+        }
+    }
+}
+
+struct TahajjudDuaWidget: Widget {
+    let kind: String = "TahajjudDuaWidget"
+
+    var body: some WidgetConfiguration {
+        StaticConfiguration(kind: kind, provider: DuaProvider()) { entry in
+            DuaWidgetView(entry: entry)
+                .containerBackground(.clear, for: .widget)
+        }
+        .configurationDisplayName("Dua")
+        .description("A dua you choose from your collection.")
+        .supportedFamilies([.systemSmall, .systemMedium, .systemLarge])
+        .contentMarginsDisabled()
     }
 }
 

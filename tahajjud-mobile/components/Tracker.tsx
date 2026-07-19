@@ -5,7 +5,7 @@ import { TahajjudJournalModal } from './TahajjudJournalModal';
 import { TahajjudLetterModal } from './TahajjudLetterModal';
 import { StreakMilestoneModal } from './StreakMilestoneModal';
 import { AccountabilityPartner } from '../utils/accountabilityPartner';
-import { Flame, Trophy, AlertCircle, Star, Sunrise, ShieldCheck, Moon, PenTool, MessageSquarePlus, Snowflake, PauseCircle, PlayCircle, Heart } from "lucide-react-native";
+import { Flame, Trophy, AlertCircle, Star, Sunrise, ShieldCheck, Moon, PenTool, MessageSquarePlus, Snowflake, PauseCircle, PlayCircle, Heart, ChevronRight } from "lucide-react-native";
 import { LinearGradient } from 'expo-linear-gradient';
 import { GlassBg as BlurView } from './GlassBg';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -163,6 +163,7 @@ export function Tracker() {
     const [freezeAvailable, setFreezeAvailable] = useState(true);
     const [paused, setPaused] = useState(false);
     const [pauseModalVisible, setPauseModalVisible] = useState(false);
+    const [showYesterdayModal, setShowYesterdayModal] = useState(false);
     const loggingRef = useRef<Set<string>>(new Set()); // prevents race on rapid double-tap
     const [achievements, setAchievements] = useState<Achievement[]>([]);
     const [badgeDetail, setBadgeDetail] = useState<Achievement | null>(null);
@@ -527,14 +528,38 @@ export function Tracker() {
         );
     };
 
-    // Yesterday's missed prayers — only show the 5 obligatory prayers,
-    // not Tahajjud (which most users miss most nights — showing it daily is demoralising).
-    // Also only show if the user has at least one log (avoid showing on first open).
+    // Backfill: toggle one of YESTERDAY's prayers. Timestamps land on
+    // yesterday's calendar date so streak math treats them like a normal log
+    // (pre-dawn for Tahajjud, noon for the rest). Deliberately no global-map
+    // write and no milestone celebration — the map is a live 24h view and
+    // the celebratory moment has passed; the streak repair is the reward.
+    const toggleYesterdayPrayer = async (key: PrayerKey) => {
+        const ystr = localDateStr(subDays(new Date(), 1));
+        const had = historyRef.current[key].some(d => localDateStr(d) === ystr);
+        haptic.light();
+        const ts = subDays(new Date(), 1);
+        ts.setHours(key === 'tahajjud' ? 4 : 12, 0, 0, 0);
+        const updated: PrayerHistory = {
+            ...historyRef.current,
+            [key]: had
+                ? historyRef.current[key].filter(d => localDateStr(d) !== ystr)
+                : [...historyRef.current[key], ts.toISOString()],
+        };
+        await save(updated);
+        if (!had) track('prayer_logged', { prayer: key, backfill: true });
+    };
+
+    // Yesterday's missed prayers. The banner text lists only the 5 obligatory
+    // prayers (Tahajjud is missed most nights — listing it daily is
+    // demoralising), but the banner also appears when ONLY Tahajjud is
+    // unlogged, with gentler copy — that's the "prayed but forgot to log"
+    // case that kills streaks. Only shown once the user has some history.
     const yesterday = localDateStr(subDays(new Date(), 1));
     const hasAnyHistory = PRAYERS.some(p => history[p.key].length > 0);
-    const missedYesterday = hasAnyHistory
-        ? PRAYERS.filter(p => p.key !== 'tahajjud' && !history[p.key].some(d => localDateStr(d) === yesterday))
+    const missedYesterdayAll = hasAnyHistory
+        ? PRAYERS.filter(p => !history[p.key].some(d => localDateStr(d) === yesterday))
         : [];
+    const missedYesterday = missedYesterdayAll.filter(p => p.key !== 'tahajjud');
 
     const tahajjudStreak = streaks.tahajjud;
     const milestone      = getMilestone(tahajjudStreak);
@@ -647,14 +672,23 @@ export function Tracker() {
                     ))}
                 </View>
 
-                {/* Yesterday missed banner */}
-                {missedYesterday.length > 0 && missedYesterday.length < 6 && (
-                    <View style={styles.missedBanner}>
+                {/* Yesterday missed banner — tap to backfill */}
+                {missedYesterdayAll.length > 0 && (
+                    <TouchableOpacity
+                        style={styles.missedBanner}
+                        onPress={() => { haptic.light(); track('prayer_backfill_opened'); setShowYesterdayModal(true); }}
+                        activeOpacity={0.75}
+                        accessibilityRole="button"
+                        accessibilityHint="Opens a sheet to log yesterday's prayers"
+                    >
                         <AlertCircle size={11} color="#f59e0b" />
                         <Text style={styles.missedText}>
-                            {t('tracker.missedYesterday', { list: missedYesterday.map(p => prayerLabel(p.key)).join(', ') })}
+                            {missedYesterday.length > 0
+                                ? t('tracker.missedYesterday', { list: missedYesterday.map(p => prayerLabel(p.key)).join(', ') })
+                                : t('tracker.forgotTahajjudYesterday')}
                         </Text>
-                    </View>
+                        <ChevronRight size={13} color="#f59e0b" />
+                    </TouchableOpacity>
                 )}
 
                 {/* Prayer timeline */}
@@ -793,6 +827,47 @@ export function Tracker() {
             frozen" bug. When the milestone modal is dismissed, the still-pending
             journal/letter (showJournal/showLetter) then presents on its own. */}
         <TahajjudJournalModal visible={showJournal && milestoneToShow === null} onClose={() => setShowJournal(false)} />
+
+        {/* Backfill yesterday's prayers */}
+        <Modal visible={showYesterdayModal} transparent animationType="fade" onRequestClose={() => setShowYesterdayModal(false)}>
+            <View style={styles.yOverlay}>
+                <View style={[styles.yCard, { borderColor: colors.accent + '33' }]}>
+                    <Text style={[styles.yTitle, { color: colors.primaryText }]}>{t('tracker.yesterdayTitle')}</Text>
+                    <Text style={[styles.ySubtitle, { color: colors.secondaryText }]}>{t('tracker.yesterdaySubtitle')}</Text>
+                    {PRAYERS.map(p => {
+                        const logged = history[p.key].some(d => localDateStr(d) === yesterday);
+                        const isTahajjud = p.key === 'tahajjud';
+                        return (
+                            <TouchableOpacity
+                                key={p.key}
+                                style={styles.yRow}
+                                onPress={() => toggleYesterdayPrayer(p.key)}
+                                activeOpacity={0.7}
+                                accessibilityRole="checkbox"
+                                accessibilityState={{ checked: logged }}
+                            >
+                                <View style={[styles.yCheck, {
+                                    backgroundColor: logged ? (isTahajjud ? colors.accent : colors.success) : 'transparent',
+                                    borderColor: logged ? 'transparent' : (isTahajjud ? colors.accent + '66' : 'rgba(255,255,255,0.25)'),
+                                }]}>
+                                    {logged && <Text style={styles.yCheckMark}>✓</Text>}
+                                </View>
+                                <Text style={[styles.yRowLabel, { color: colors.primaryText }, isTahajjud && { color: colors.accent, fontWeight: '800' }]}>
+                                    {prayerLabel(p.key)}
+                                </Text>
+                            </TouchableOpacity>
+                        );
+                    })}
+                    <TouchableOpacity
+                        style={[styles.yDone, { backgroundColor: colors.accent }]}
+                        onPress={() => setShowYesterdayModal(false)}
+                        activeOpacity={0.85}
+                    >
+                        <Text style={styles.yDoneText}>{t('btn.done')}</Text>
+                    </TouchableOpacity>
+                </View>
+            </View>
+        </Modal>
         <TahajjudLetterModal
             visible={showLetter && milestoneToShow === null}
             onClose={() => {
@@ -990,6 +1065,42 @@ const styles = StyleSheet.create({
         color: '#f59e0b',
         flex: 1,
     },
+    yOverlay: {
+        flex: 1,
+        backgroundColor: 'rgba(2,6,23,0.85)',
+        justifyContent: 'center',
+        padding: 24,
+    },
+    yCard: {
+        borderRadius: 20,
+        borderWidth: 1,
+        backgroundColor: '#0b1120',
+        padding: 20,
+    },
+    yTitle: { fontSize: 18, fontWeight: '800', marginBottom: 4 },
+    ySubtitle: { fontSize: 12, fontWeight: '500', lineHeight: 17, marginBottom: 14 },
+    yRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 12,
+        paddingVertical: 10,
+        borderBottomWidth: StyleSheet.hairlineWidth,
+        borderBottomColor: 'rgba(255,255,255,0.07)',
+    },
+    yCheck: {
+        width: 26, height: 26, borderRadius: 13,
+        borderWidth: 1.5,
+        alignItems: 'center', justifyContent: 'center',
+    },
+    yCheckMark: { color: '#fff', fontSize: 13, fontWeight: '800' },
+    yRowLabel: { fontSize: 15, fontWeight: '600' },
+    yDone: {
+        marginTop: 16,
+        borderRadius: 12,
+        paddingVertical: 12,
+        alignItems: 'center',
+    },
+    yDoneText: { color: '#0a1228', fontSize: 15, fontWeight: '800' },
     timelineContainer: {
         position: 'relative',
         paddingTop: 4,

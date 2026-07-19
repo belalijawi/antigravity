@@ -838,6 +838,9 @@ export function HomeTab() {
                 // open — the card's periodic aggregate count and the map's
                 // live query could otherwise briefly disagree (e.g. 71 vs 68).
                 onLiveTotal={setMapDailyTotal}
+                // ...and give the map the aggregate count for when its dots
+                // query is truncated at the cap.
+                serverTotal={mapDailyTotal}
             />
 
             {/* What's New (after an update) */}

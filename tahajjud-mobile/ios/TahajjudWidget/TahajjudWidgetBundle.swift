@@ -5,5 +5,6 @@ import SwiftUI
 struct TahajjudWidgetBundle: WidgetBundle {
     var body: some Widget {
         TahajjudWidget()
+        TahajjudDuaWidget()
     }
 }

@@ -218,6 +218,12 @@ const Paywall: React.FC<PaywallProps> = ({ onClose, source = 'unknown' }) => {
                     <Text style={styles.heroTitle}>{t('paywall.heroTitle')}</Text>
                     <Text style={styles.heroSubtitle}>{t('paywall.heroSubtitle')}</Text>
                     <Text style={[styles.heroTrial, { color: colors.accent }]}>{t('paywall.heroTrial')}</Text>
+                    {/* During onboarding many users read this screen as "the
+                        app is paid" and bounce — say plainly, above the fold,
+                        that the core app costs nothing. */}
+                    {source === 'onboarding' && (
+                        <Text style={styles.freeForeverNote}>{t('paywall.freeForever')}</Text>
+                    )}
                 </View>
 
                 <View style={styles.featuresList}>
@@ -390,6 +396,19 @@ const Paywall: React.FC<PaywallProps> = ({ onClose, source = 'unknown' }) => {
                 </View>
             </ScrollView>
 
+            {/* Onboarding only: an always-visible free path. The in-scroll
+                "maybe later" sits below the fold, so first-time users who
+                don't scroll can conclude the app is paid-only and quit. */}
+            {source === 'onboarding' && (
+                <TouchableOpacity
+                    onPress={() => { track('paywall_continue_free', { source }); onClose(); }}
+                    style={styles.continueFreeButton}
+                    disabled={purchasing}
+                >
+                    <Text style={styles.continueFreeText}>{t('paywall.continueFree')}</Text>
+                </TouchableOpacity>
+            )}
+
             {purchasing && (
                 <View style={styles.overlay}>
                     <ActivityIndicator size="large" color={colors.accent} />
@@ -453,6 +472,25 @@ const styles = StyleSheet.create({
         fontWeight: '700',
         textAlign: 'center',
         letterSpacing: 0.5,
+    },
+    freeForeverNote: {
+        color: '#94a3b8',
+        fontSize: 13,
+        fontWeight: '600',
+        textAlign: 'center',
+        marginTop: 10,
+        lineHeight: 18,
+    },
+    continueFreeButton: {
+        alignItems: 'center',
+        paddingVertical: 14,
+        borderTopWidth: StyleSheet.hairlineWidth,
+        borderTopColor: 'rgba(255,255,255,0.12)',
+    },
+    continueFreeText: {
+        color: '#cbd5e1',
+        fontSize: 15,
+        fontWeight: '700',
     },
     featuresList: {
         marginBottom: 12,

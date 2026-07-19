@@ -13,7 +13,7 @@ import * as Location from 'expo-location';
 import { GlassBg as BlurView } from './GlassBg';
 import { X, Moon, Plus, Minus, Globe, MapPin } from 'lucide-react-native';
 import { useTheme } from '../context/ThemeContext';
-import { subscribeTahajjudMap, MapDot } from '../utils/tahajjudMap';
+import { subscribeTahajjudMap, MapDot, MAP_DOT_LIMIT } from '../utils/tahajjudMap';
 import { t } from '../utils/i18n';
 
 interface Props {
@@ -22,6 +22,10 @@ interface Props {
     /** Live headcount from the map's own subscription — lets the Home card
      *  sync to the exact number shown here, so the two never disagree. */
     onLiveTotal?: (total: number) => void;
+    /** The Home card's server-side aggregation count. Once the dots query
+     *  hits MAP_DOT_LIMIT it truncates, so this becomes the more accurate
+     *  headline number. */
+    serverTotal?: number;
 }
 
 // Dark map style matching the app aesthetic
@@ -70,10 +74,15 @@ function spreadStackedDots(dots: MapDot[]): MapDot[] {
     return out;
 }
 
-export function GlobalTahajjudMap({ visible, onClose, onLiveTotal }: Props) {
+export function GlobalTahajjudMap({ visible, onClose, onLiveTotal, serverTotal }: Props) {
     const { colors } = useTheme();
     const [dots, setDots] = useState<MapDot[]>([]);
     const [total, setTotal] = useState(0);
+    // Under the dot cap, the live dots count is the freshest truth. At the
+    // cap it's truncated — fall back to the server-side aggregation count.
+    const displayTotal = total >= MAP_DOT_LIMIT
+        ? Math.max(total, serverTotal ?? 0)
+        : total;
     const [mapReady, setMapReady] = useState(false);
     const [locationStatus, setLocationStatus] = useState<Location.PermissionStatus | null>(null);
     const [showLocationPrompt, setShowLocationPrompt] = useState(true);
@@ -120,7 +129,13 @@ export function GlobalTahajjudMap({ visible, onClose, onLiveTotal }: Props) {
         mapFade.setValue(0);
         setShowLocationPrompt(true);
         Location.getForegroundPermissionsAsync().then(({ status }) => setLocationStatus(status));
-        const unsub = subscribeTahajjudMap((d, t) => { setDots(d); setTotal(t); onLiveTotal?.(t); });
+        const unsub = subscribeTahajjudMap((d, t) => {
+            setDots(d); setTotal(t);
+            // Only sync the Home card while under the dot cap — at the cap the
+            // dots query is truncated and t underreports the true total, which
+            // the card's server-side count query has right.
+            if (t < MAP_DOT_LIMIT) onLiveTotal?.(t);
+        });
         return () => {
             unsub();
             fadeAnim.stopAnimation();
@@ -212,10 +227,10 @@ export function GlobalTahajjudMap({ visible, onClose, onLiveTotal }: Props) {
                                 <Text style={styles.liveLabel}>{total > 0 ? t('globalMap.live') : t('globalMap.quiet')}</Text>
                             </View>
                             <Text style={[styles.count, { color: colors.accent }]}>
-                                {total.toLocaleString()}
+                                {displayTotal.toLocaleString()}
                             </Text>
                             <Text style={styles.countSub}>
-                                {t('globalMap.prayedCount', { n: total.toLocaleString() })}
+                                {t('globalMap.prayedCount', { n: displayTotal.toLocaleString() })}
                             </Text>
                         </View>
                         <TouchableOpacity onPress={onClose} style={styles.closeBtn} hitSlop={12}>

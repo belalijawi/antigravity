@@ -10,6 +10,8 @@ import { usePurchases } from '../context/PurchasesContext';
 import type { PrayerKey } from './Tracker';
 import { localDateStr } from '../utils/localDate';
 import { t, getLocale } from '../utils/i18n';
+import { haptic } from '../utils/haptic';
+import { track } from '../utils/analytics';
 
 const DAYS = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
 function getMonths(): string[] {
@@ -180,6 +182,34 @@ export function HistoryCalendar() {
         return () => sub.remove();
     }, [loadHistory]);
 
+    // Premium: edit any PAST day straight from the calendar. Timestamps land
+    // on that calendar date (pre-dawn for Tahajjud, noon otherwise). Same
+    // deliberate omissions as the Tracker's yesterday backfill: no global-map
+    // write, no milestone celebration.
+    const toggleDayPrayer = useCallback(async (dateStr: string, pk: PrayerKey) => {
+        try {
+            haptic.light();
+            const raw = await AsyncStorage.getItem('prayer-tracker-v2');
+            const parsed = (raw ? JSON.parse(raw) : {}) as Record<PrayerKey, string[]>;
+            for (const k of PRAYER_KEYS) if (!Array.isArray(parsed[k])) parsed[k] = [];
+            const had = parsed[pk].some(d => localDateStr(d) === dateStr);
+            if (had) {
+                parsed[pk] = parsed[pk].filter(d => localDateStr(d) !== dateStr);
+            } else {
+                const [y, m, d] = dateStr.split('-').map(Number);
+                const ts = new Date(y, m - 1, d, pk === 'tahajjud' ? 4 : 12, 0, 0, 0);
+                parsed[pk] = [...parsed[pk], ts.toISOString()];
+                track('prayer_logged', { prayer: pk, backfill: true, source: 'history' });
+            }
+            await AsyncStorage.setItem('prayer-tracker-v2', JSON.stringify(parsed));
+            // Refresh this calendar, make the Tracker reload state + streaks,
+            // and back the change up to the cloud.
+            loadHistory();
+            DeviceEventEmitter.emit('prayerHistoryRestored');
+            import('../utils/prayerHistorySync').then(m => m.pushPrayerHistory()).catch(() => {});
+        } catch {}
+    }, [loadHistory]);
+
     const prevMonth = () => {
         if (viewMonth === 0) { setViewYear(y => y - 1); setViewMonth(11); }
         else setViewMonth(m => m - 1);
@@ -195,6 +225,54 @@ export function HistoryCalendar() {
     const firstDay    = getFirstDayOfWeek(viewYear, viewMonth);
     const todayStr    = localDateStr(today);
     const monthPrefix = `${viewYear}-${String(viewMonth + 1).padStart(2, '0')}-`;
+
+    // Selected-day detail panel, shared by the week and month views.
+    // Premium users tap a prayer to add/remove it for that past day; free
+    // users see the paywall (today is read-only — the Tracker handles today).
+    const renderDetailPanel = () => {
+        if (!selectedDate) return null;
+        const prayers = dateMap[selectedDate] ?? new Set<PrayerKey>();
+        const parts = selectedDate.split('-');
+        const label = parts.length === 3
+            ? `${parseInt(parts[2])} ${MONTHS[parseInt(parts[1]) - 1] ?? ''}`
+            : selectedDate;
+        const isPast = selectedDate < todayStr;
+        return (
+            <View style={styles.detailPanel}>
+                <Text style={[styles.detailDate, { color: colors.accent }]}>{label}</Text>
+                <View style={styles.detailRow}>
+                    {PRAYER_KEYS.map(pk => {
+                        const done = prayers.has(pk);
+                        return (
+                            <TouchableOpacity
+                                key={pk}
+                                style={styles.detailItem}
+                                disabled={!isPast}
+                                onPress={() => {
+                                    if (!isPremium) { openPaywall('history_backfill'); return; }
+                                    toggleDayPrayer(selectedDate, pk);
+                                }}
+                                activeOpacity={0.7}
+                                accessibilityRole="checkbox"
+                                accessibilityState={{ checked: done, disabled: !isPast }}
+                            >
+                                <View style={[styles.detailDot, { backgroundColor: done ? PRAYER_COLORS[pk] : 'rgba(255,255,255,0.08)' }]} />
+                                <Text style={[styles.detailLabel, { color: done ? PRAYER_COLORS[pk] : '#334155' }]}>
+                                    {t(`prayer.${pk}`)}
+                                </Text>
+                            </TouchableOpacity>
+                        );
+                    })}
+                </View>
+                <Text style={[styles.detailSummary, { color: colors.secondaryText }]}>
+                    {isPast && isPremium
+                        ? t('historyCal.editHint')
+                        : t('historyCal.prayersLogged', { n: prayers.size })}
+                </Text>
+            </View>
+        );
+    };
+
 
     // Average completion % this month (exclude future days)
     const pastDays = [...Array.from({ length: daysInMonth }, (_, i) => i + 1)]
@@ -349,34 +427,7 @@ export function HistoryCalendar() {
                         </ScrollView>
 
                         {/* Day detail */}
-                        {selectedDate && (() => {
-                            const prayers = dateMap[selectedDate] ?? new Set<PrayerKey>();
-                            const parts = selectedDate.split('-');
-                            const label = parts.length === 3
-                                ? `${parseInt(parts[2])} ${MONTHS[parseInt(parts[1]) - 1] ?? ''}`
-                                : selectedDate;
-                            return (
-                                <View style={styles.detailPanel}>
-                                    <Text style={[styles.detailDate, { color: colors.accent }]}>{label}</Text>
-                                    <View style={styles.detailRow}>
-                                        {PRAYER_KEYS.map(pk => {
-                                            const done = prayers.has(pk);
-                                            return (
-                                                <View key={pk} style={styles.detailItem}>
-                                                    <View style={[styles.detailDot, { backgroundColor: done ? PRAYER_COLORS[pk] : 'rgba(255,255,255,0.08)' }]} />
-                                                    <Text style={[styles.detailLabel, { color: done ? PRAYER_COLORS[pk] : '#334155' }]}>
-                                                        {t(`prayer.${pk}`)}
-                                                    </Text>
-                                                </View>
-                                            );
-                                        })}
-                                    </View>
-                                    <Text style={[styles.detailSummary, { color: colors.secondaryText }]}>
-                                        {t('historyCal.prayersLogged', { n: prayers.size })}
-                                    </Text>
-                                </View>
-                            );
-                        })()}
+                        {renderDetailPanel()}
 
                         {/* Legend */}
                         <View style={styles.legend}>
@@ -461,34 +512,7 @@ export function HistoryCalendar() {
                             })}
                         </View>
 
-                        {selectedDate && (() => {
-                            const prayers  = dateMap[selectedDate] ?? new Set<PrayerKey>();
-                            const parts = selectedDate.split('-');
-                            const label = parts.length === 3
-                                ? `${parseInt(parts[2])} ${MONTHS[parseInt(parts[1]) - 1] ?? ''}`
-                                : selectedDate;
-                            return (
-                                <View style={styles.detailPanel}>
-                                    <Text style={[styles.detailDate, { color: colors.accent }]}>{label}</Text>
-                                    <View style={styles.detailRow}>
-                                        {PRAYER_KEYS.map(pk => {
-                                            const done = prayers.has(pk);
-                                            return (
-                                                <View key={pk} style={styles.detailItem}>
-                                                    <View style={[styles.detailDot, { backgroundColor: done ? PRAYER_COLORS[pk] : 'rgba(255,255,255,0.08)' }]} />
-                                                    <Text style={[styles.detailLabel, { color: done ? PRAYER_COLORS[pk] : '#334155' }]}>
-                                                        {t(`prayer.${pk}`)}
-                                                    </Text>
-                                                </View>
-                                            );
-                                        })}
-                                    </View>
-                                    <Text style={[styles.detailSummary, { color: colors.secondaryText }]}>
-                                        {t('historyCal.prayersLogged', { n: prayers.size })}
-                                    </Text>
-                                </View>
-                            );
-                        })()}
+                        {renderDetailPanel()}
 
                         <View style={styles.legend}>
                             {PRAYER_KEYS.map(pk => (

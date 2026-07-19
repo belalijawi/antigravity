@@ -58,6 +58,24 @@ function findNextPrayer(times: PrayerTimes): { name: string; date: Date } | null
     return { name: 'Fajr', date: tomorrow };
 }
 
+/** Key holding the id of the dua currently pinned to the Dua widget. */
+export const WIDGET_DUA_ID_KEY = 'widget_dua_id';
+
+/**
+ * Pins a dua to the home-screen Dua widget (iOS only). Returns false when
+ * the native method isn't available (Android, or a binary older than the
+ * widget) so callers can hide/no-op the affordance.
+ */
+export function setWidgetDua(dua: { title: string; arabic?: string; translation?: string }): boolean {
+    if (Platform.OS !== 'ios' || !WidgetDataBridge?.writeDuaWidgetData) return false;
+    try {
+        WidgetDataBridge.writeDuaWidgetData(dua.title, dua.arabic ?? '', dua.translation ?? '');
+        return true;
+    } catch {
+        return false;
+    }
+}
+
 /**
  * Call this after prayer times load and after the streak updates.
  * Writes data to the shared App Group for the home screen widget.

@@ -84,6 +84,10 @@ export function ensureSignedIn(): Promise<void> {
                 .then(() => resolve())
                 .catch((e) => {
                     console.log('[firebase] anonymous sign-in failed:', e);
+                    // Don't cache the failure — a flaky cold-start network would
+                    // otherwise leave the whole session unauthenticated (every
+                    // Firestore read permission-denied) with no retry path.
+                    anonSignInPromise = null;
                     resolve(); // resolve anyway — caller will degrade gracefully
                 });
         });
