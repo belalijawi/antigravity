@@ -52,6 +52,7 @@ const FEATURE_ICONS: Record<FeatureId, React.ReactElement> = {
     widget: <Star size={22} color="#fff" />,
     dua_replies: <PenLine size={22} color="#fff" />,
     dua_map_pin: <Globe size={22} color="#fff" />,
+    country_leaderboard: <Trophy size={22} color="#fff" />,
     leaderboard: <Trophy size={22} color="#fff" />,
 };
 

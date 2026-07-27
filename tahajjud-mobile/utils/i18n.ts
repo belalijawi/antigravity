@@ -46,6 +46,10 @@ const LOCALE_KEY = 'app_locale_v1';
 type Dict = Record<string, string>;
 
 const en: Dict = {
+    "leaderboard.scopeGlobal": "Global",
+    "leaderboard.scopeCountry": "Your Country Ranking",
+    "discover.country_leaderboard.label": "Your Country Ranking",
+    "discover.country_leaderboard.blurb": "See where you rank among Muslims in your own country, not just worldwide — a board you can actually top.",
     // Tab bar
     'tab.home': 'Home',
     'tab.guide': 'Guide',
@@ -602,7 +606,7 @@ const en: Dict = {
     'leaderboard.thisWeek': 'This Week',
     'leaderboard.allTime': 'All-Time',
     'leaderboard.topView': 'Top',
-    'leaderboard.nearbyView': 'Near You',
+    'leaderboard.nearbyView': "Around You",
     'leaderboard.you': 'You',
     'leaderboard.global': 'Global',
     'leaderboard.myCountry': 'My Country',
@@ -1322,6 +1326,10 @@ const en: Dict = {
 };
 
 const ar: Dict = {
+    "leaderboard.scopeGlobal": "عالمي",
+    "leaderboard.scopeCountry": "ترتيبك في بلدك",
+    "discover.country_leaderboard.label": "ترتيبك في بلدك",
+    "discover.country_leaderboard.blurb": "اعرف ترتيبك بين المسلمين في بلدك، وليس في العالم فقط — لوحة يمكنك تصدرها فعلاً.",
     "auth.networkErrorBody": "تحقق من اتصالك بالإنترنت وحاول مرة أخرى.",
     "onboard.premium.title": "افتح التجربة الكاملة",
     "paywall.trialWinbackBadge": "عرض الترحيب بعودتك",
@@ -1874,7 +1882,7 @@ const ar: Dict = {
     'leaderboard.thisWeek': 'هذا الأسبوع',
     'leaderboard.allTime': 'كل الأوقات',
     'leaderboard.topView': 'الأعلى',
-    'leaderboard.nearbyView': 'بالقرب منك',
+    'leaderboard.nearbyView': "حولك",
     'leaderboard.you': 'أنت',
     'leaderboard.global': 'عالمي',
     'leaderboard.myCountry': 'بلدي',
@@ -2589,6 +2597,10 @@ const ar: Dict = {
 };
 
 const ur: Dict = {
+    "leaderboard.scopeGlobal": "عالمی",
+    "leaderboard.scopeCountry": "آپ کے ملک میں درجہ",
+    "discover.country_leaderboard.label": "آپ کے ملک میں درجہ",
+    "discover.country_leaderboard.blurb": "اپنے ملک کے مسلمانوں میں اپنا درجہ دیکھیں، صرف دنیا بھر میں نہیں — ایک ایسا بورڈ جس میں آپ سرِفہرست آ سکتے ہیں۔",
     "auth.networkErrorBody": "اپنا انٹرنیٹ کنکشن چیک کریں اور دوبارہ کوشش کریں۔",
     "onboard.premium.title": "مکمل تجربہ حاصل کریں",
     "paywall.trialWinbackBadge": "واپسی پر خوش آمدید آفر",
@@ -3141,7 +3153,7 @@ const ur: Dict = {
     'leaderboard.thisWeek': 'اس ہفتے',
     'leaderboard.allTime': 'ہمیشہ کے لیے',
     'leaderboard.topView': 'ٹاپ',
-    'leaderboard.nearbyView': 'آپ کے قریب',
+    'leaderboard.nearbyView': "آپ کے ارد گرد",
     'leaderboard.you': 'آپ',
     'leaderboard.global': 'عالمی',
     'leaderboard.myCountry': 'میرا ملک',
@@ -3857,6 +3869,10 @@ const ur: Dict = {
 
 // ── Turkish ────────────────────────────────────────────────────────────
 const tr: Dict = {
+    "leaderboard.scopeGlobal": "Küresel",
+    "leaderboard.scopeCountry": "Ülkendeki Sıralaman",
+    "discover.country_leaderboard.label": "Ülkendeki Sıralaman",
+    "discover.country_leaderboard.blurb": "Sadece dünyada değil, kendi ülkendeki Müslümanlar arasında sıranı gör — gerçekten zirveye çıkabileceğin bir liste.",
     "auth.networkErrorBody": "İnternet bağlantını kontrol edip tekrar dene.",
     "onboard.premium.title": "Tam deneyimin kilidini aç",
     "paywall.trialWinbackBadge": "Tekrar hoş geldin teklifi",
@@ -4387,7 +4403,7 @@ const tr: Dict = {
     'leaderboard.thisWeek': 'Bu Hafta',
     'leaderboard.allTime': 'Tüm Zamanlar',
     'leaderboard.topView': 'En İyiler',
-    'leaderboard.nearbyView': 'Yakınında',
+    'leaderboard.nearbyView': "Çevrende",
     'leaderboard.you': 'Sen',
     'leaderboard.global': 'Küresel',
     'leaderboard.myCountry': 'Ülkem',
@@ -5103,6 +5119,10 @@ const tr: Dict = {
 
 // ── Indonesian ─────────────────────────────────────────────────────────
 const id: Dict = {
+    "leaderboard.scopeGlobal": "Global",
+    "leaderboard.scopeCountry": "Peringkat di Negaramu",
+    "discover.country_leaderboard.label": "Peringkat di Negaramu",
+    "discover.country_leaderboard.blurb": "Lihat peringkatmu di antara Muslim di negaramu sendiri, bukan hanya sedunia — papan yang benar-benar bisa kamu puncaki.",
     "auth.networkErrorBody": "Periksa koneksi internetmu dan coba lagi.",
     "onboard.premium.title": "Buka pengalaman lengkap",
     "paywall.trialWinbackBadge": "Penawaran selamat datang kembali",
@@ -5633,7 +5653,7 @@ const id: Dict = {
     'leaderboard.thisWeek': 'Minggu Ini',
     'leaderboard.allTime': 'Sepanjang Waktu',
     'leaderboard.topView': 'Teratas',
-    'leaderboard.nearbyView': 'Di Dekatmu',
+    'leaderboard.nearbyView': "Di Sekitarmu",
     'leaderboard.you': 'Kamu',
     'leaderboard.global': 'Global',
     'leaderboard.myCountry': 'Negaraku',
@@ -6349,6 +6369,10 @@ const id: Dict = {
 
 // ── Malay ──────────────────────────────────────────────────────────────
 const ms: Dict = {
+    "leaderboard.scopeGlobal": "Global",
+    "leaderboard.scopeCountry": "Kedudukan di Negara Anda",
+    "discover.country_leaderboard.label": "Kedudukan di Negara Anda",
+    "discover.country_leaderboard.blurb": "Lihat kedudukan anda dalam kalangan Muslim di negara anda sendiri, bukan sedunia sahaja — papan yang anda benar-benar boleh terajui.",
     "auth.networkErrorBody": "Semak sambungan internet anda dan cuba lagi.",
     "onboard.premium.title": "Buka pengalaman penuh",
     "paywall.trialWinbackBadge": "Tawaran selamat kembali",
@@ -6879,7 +6903,7 @@ const ms: Dict = {
     'leaderboard.thisWeek': 'Minggu Ini',
     'leaderboard.allTime': 'Sepanjang Masa',
     'leaderboard.topView': 'Teratas',
-    'leaderboard.nearbyView': 'Berdekatan Anda',
+    'leaderboard.nearbyView': "Di Sekeliling Anda",
     'leaderboard.you': 'Anda',
     'leaderboard.global': 'Global',
     'leaderboard.myCountry': 'Negara Saya',
@@ -7595,6 +7619,10 @@ const ms: Dict = {
 
 // ── Bengali ────────────────────────────────────────────────────────────
 const bn: Dict = {
+    "leaderboard.scopeGlobal": "বিশ্বব্যাপী",
+    "leaderboard.scopeCountry": "আপনার দেশে অবস্থান",
+    "discover.country_leaderboard.label": "আপনার দেশে অবস্থান",
+    "discover.country_leaderboard.blurb": "শুধু বিশ্বজুড়ে নয়, নিজের দেশের মুসলিমদের মধ্যে আপনার অবস্থান দেখুন — এমন একটি তালিকা যেখানে আপনি সত্যিই শীর্ষে যেতে পারেন।",
     "auth.networkErrorBody": "আপনার ইন্টারনেট সংযোগ পরীক্ষা করে আবার চেষ্টা করুন।",
     "onboard.premium.title": "সম্পূর্ণ অভিজ্ঞতা আনলক করুন",
     "paywall.trialWinbackBadge": "ফিরে আসার অফার",
@@ -8125,7 +8153,7 @@ const bn: Dict = {
     'leaderboard.thisWeek': 'এই সপ্তাহে',
     'leaderboard.allTime': 'সর্বকালের',
     'leaderboard.topView': 'শীর্ষ',
-    'leaderboard.nearbyView': 'আপনার কাছাকাছি',
+    'leaderboard.nearbyView': "আপনার আশেপাশে",
     'leaderboard.you': 'আপনি',
     'leaderboard.global': 'বৈশ্বিক',
     'leaderboard.myCountry': 'আমার দেশ',
@@ -8841,6 +8869,10 @@ const bn: Dict = {
 
 // ── French ─────────────────────────────────────────────────────────────
 const fr: Dict = {
+    "leaderboard.scopeGlobal": "Mondial",
+    "leaderboard.scopeCountry": "Votre classement national",
+    "discover.country_leaderboard.label": "Votre classement national",
+    "discover.country_leaderboard.blurb": "Voyez votre classement parmi les musulmans de votre pays, et pas seulement dans le monde — un classement que vous pouvez vraiment dominer.",
     "auth.networkErrorBody": "Vérifiez votre connexion internet et réessayez.",
     "onboard.premium.title": "Débloquez l'expérience complète",
     "paywall.trialWinbackBadge": "Offre de retour",
@@ -9371,7 +9403,7 @@ const fr: Dict = {
     'leaderboard.thisWeek': 'Cette semaine',
     'leaderboard.allTime': 'Depuis toujours',
     'leaderboard.topView': 'Top',
-    'leaderboard.nearbyView': 'Près de vous',
+    'leaderboard.nearbyView': "Autour de vous",
     'leaderboard.you': 'Vous',
     'leaderboard.global': 'Mondial',
     'leaderboard.myCountry': 'Mon pays',
@@ -10087,6 +10119,10 @@ const fr: Dict = {
 
 // ── Persian / Farsi (RTL) ──────────────────────────────────────────────
 const fa: Dict = {
+    "leaderboard.scopeGlobal": "جهانی",
+    "leaderboard.scopeCountry": "رتبه شما در کشورتان",
+    "discover.country_leaderboard.label": "رتبه شما در کشورتان",
+    "discover.country_leaderboard.blurb": "ببینید در میان مسلمانان کشور خودتان چه رتبه‌ای دارید، نه فقط در سطح جهان — جدولی که واقعاً می‌توانید صدرنشین آن شوید.",
     "auth.networkErrorBody": "اتصال اینترنت خود را بررسی کنید و دوباره تلاش کنید.",
     "onboard.premium.title": "تجربه کامل را باز کنید",
     "paywall.trialWinbackBadge": "پیشنهاد خوش‌آمدگویی دوباره",
@@ -10617,7 +10653,7 @@ const fa: Dict = {
     'leaderboard.thisWeek': 'این هفته',
     'leaderboard.allTime': 'تمام دوران',
     'leaderboard.topView': 'برترین‌ها',
-    'leaderboard.nearbyView': 'نزدیک شما',
+    'leaderboard.nearbyView': "اطراف شما",
     'leaderboard.you': 'شما',
     'leaderboard.global': 'جهانی',
     'leaderboard.myCountry': 'کشور من',
@@ -11333,6 +11369,10 @@ const fa: Dict = {
 
 // ── Hindi ──────────────────────────────────────────────────────────────
 const hi: Dict = {
+    "leaderboard.scopeGlobal": "वैश्विक",
+    "leaderboard.scopeCountry": "आपके देश में रैंक",
+    "discover.country_leaderboard.label": "आपके देश में रैंक",
+    "discover.country_leaderboard.blurb": "सिर्फ़ दुनिया भर में नहीं, अपने देश के मुसलमानों के बीच अपनी रैंक देखें — एक ऐसी सूची जिसमें आप वाकई शीर्ष पर आ सकते हैं।",
     "auth.networkErrorBody": "अपना इंटरनेट कनेक्शन जांचें और फिर से कोशिश करें।",
     "onboard.premium.title": "पूरा अनुभव अनलॉक करें",
     "paywall.trialWinbackBadge": "वापसी पर स्वागत ऑफ़र",
@@ -11863,7 +11903,7 @@ const hi: Dict = {
     'leaderboard.thisWeek': 'इस सप्ताह',
     'leaderboard.allTime': 'सर्वकालिक',
     'leaderboard.topView': 'शीर्ष',
-    'leaderboard.nearbyView': 'आपके निकट',
+    'leaderboard.nearbyView': "आपके आसपास",
     'leaderboard.you': 'आप',
     'leaderboard.global': 'वैश्विक',
     'leaderboard.myCountry': 'मेरा देश',
@@ -12579,6 +12619,10 @@ const hi: Dict = {
 
 // ── Russian ────────────────────────────────────────────────────────────
 const ru: Dict = {
+    "leaderboard.scopeGlobal": "Мир",
+    "leaderboard.scopeCountry": "Ваш рейтинг в стране",
+    "discover.country_leaderboard.label": "Ваш рейтинг в стране",
+    "discover.country_leaderboard.blurb": "Узнайте своё место среди мусульман вашей страны, а не только в мире — рейтинг, который реально возглавить.",
     "auth.networkErrorBody": "Проверьте подключение к интернету и попробуйте снова.",
     "onboard.premium.title": "Откройте все возможности",
     "paywall.trialWinbackBadge": "Предложение к возвращению",
@@ -13109,7 +13153,7 @@ const ru: Dict = {
     'leaderboard.thisWeek': 'На этой неделе',
     'leaderboard.allTime': 'За всё время',
     'leaderboard.topView': 'Топ',
-    'leaderboard.nearbyView': 'Рядом с вами',
+    'leaderboard.nearbyView': "Рядом с вами",
     'leaderboard.you': 'Вы',
     'leaderboard.global': 'Глобально',
     'leaderboard.myCountry': 'Моя страна',
@@ -13825,6 +13869,10 @@ const ru: Dict = {
 
 // ── Bosnian ────────────────────────────────────────────────────────────
 const bs: Dict = {
+    "leaderboard.scopeGlobal": "Globalno",
+    "leaderboard.scopeCountry": "Tvoj plasman u državi",
+    "discover.country_leaderboard.label": "Tvoj plasman u državi",
+    "discover.country_leaderboard.blurb": "Vidi gdje si među muslimanima u svojoj državi, ne samo u svijetu — lista koju zaista možeš predvoditi.",
     "auth.networkErrorBody": "Provjeri internet vezu i pokušaj ponovo.",
     "onboard.premium.title": "Otključaj potpuno iskustvo",
     "paywall.trialWinbackBadge": "Ponuda dobrodošlice nazad",
@@ -14355,7 +14403,7 @@ const bs: Dict = {
     'leaderboard.thisWeek': 'Ove sedmice',
     'leaderboard.allTime': 'Svih vremena',
     'leaderboard.topView': 'Najbolji',
-    'leaderboard.nearbyView': 'Blizu tebe',
+    'leaderboard.nearbyView': "Oko tebe",
     'leaderboard.you': 'Ti',
     'leaderboard.global': 'Globalno',
     'leaderboard.myCountry': 'Moja zemlja',
@@ -15071,6 +15119,10 @@ const bs: Dict = {
 
 // ── Spanish ────────────────────────────────────────────────────────────
 const es: Dict = {
+    "leaderboard.scopeGlobal": "Global",
+    "leaderboard.scopeCountry": "Tu clasificación nacional",
+    "discover.country_leaderboard.label": "Tu clasificación nacional",
+    "discover.country_leaderboard.blurb": "Mira tu puesto entre los musulmanes de tu país, no solo del mundo — una clasificación que sí puedes liderar.",
     "auth.networkErrorBody": "Comprueba tu conexión a internet e inténtalo de nuevo.",
     "onboard.premium.title": "Desbloquea la experiencia completa",
     "paywall.trialWinbackBadge": "Oferta de bienvenida",
@@ -15601,7 +15653,7 @@ const es: Dict = {
     'leaderboard.thisWeek': 'Esta semana',
     'leaderboard.allTime': 'Histórico',
     'leaderboard.topView': 'Mejores',
-    'leaderboard.nearbyView': 'Cerca de ti',
+    'leaderboard.nearbyView': "Cerca de ti",
     'leaderboard.you': 'Tú',
     'leaderboard.global': 'Global',
     'leaderboard.myCountry': 'Mi país',
@@ -16317,6 +16369,10 @@ const es: Dict = {
 
 // ── German ─────────────────────────────────────────────────────────────
 const de: Dict = {
+    "leaderboard.scopeGlobal": "Weltweit",
+    "leaderboard.scopeCountry": "Dein Ranking im Land",
+    "discover.country_leaderboard.label": "Dein Ranking im Land",
+    "discover.country_leaderboard.blurb": "Sieh, wo du unter den Muslimen in deinem Land stehst, nicht nur weltweit — eine Rangliste, die du wirklich anführen kannst.",
     "auth.networkErrorBody": "Überprüfe deine Internetverbindung und versuche es erneut.",
     "onboard.premium.title": "Schalte das volle Erlebnis frei",
     "paywall.trialWinbackBadge": "Willkommen-zurück-Angebot",
@@ -16847,7 +16903,7 @@ const de: Dict = {
     'leaderboard.thisWeek': 'Diese Woche',
     'leaderboard.allTime': 'Gesamt',
     'leaderboard.topView': 'Top',
-    'leaderboard.nearbyView': 'In deiner Nähe',
+    'leaderboard.nearbyView': "Um dich herum",
     'leaderboard.you': 'Du',
     'leaderboard.global': 'Global',
     'leaderboard.myCountry': 'Mein Land',
@@ -17563,6 +17619,10 @@ const de: Dict = {
 
 // ── Albanian ───────────────────────────────────────────────────────────
 const sq: Dict = {
+    "leaderboard.scopeGlobal": "Global",
+    "leaderboard.scopeCountry": "Renditja jote në vend",
+    "discover.country_leaderboard.label": "Renditja jote në vend",
+    "discover.country_leaderboard.blurb": "Shih ku renditesh mes myslimanëve në vendin tënd, jo vetëm në botë — një listë që vërtet mund ta kryesosh.",
     "auth.networkErrorBody": "Kontrollo lidhjen e internetit dhe provo përsëri.",
     "onboard.premium.title": "Zhbllokoni përvojën e plotë",
     "paywall.trialWinbackBadge": "Ofertë mirëseardhjeje",
@@ -18093,7 +18153,7 @@ const sq: Dict = {
     'leaderboard.thisWeek': 'Këtë Javë',
     'leaderboard.allTime': 'Gjithë Kohërave',
     'leaderboard.topView': 'Më të mirët',
-    'leaderboard.nearbyView': 'Afër teje',
+    'leaderboard.nearbyView': "Rreth teje",
     'leaderboard.you': 'Ti',
     'leaderboard.global': 'Global',
     'leaderboard.myCountry': 'Vendi im',

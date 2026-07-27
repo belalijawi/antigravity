@@ -434,7 +434,7 @@ export const Leaderboard = {
      */
     async getNearbyEntries(
         metric: LeaderboardMetric, window: LeaderboardWindow, myValue: number,
-        aboveCount = 5, belowCount = 5,
+        aboveCount = 5, belowCount = 5, countryFilter?: string | null,
     ): Promise<{ above: LeaderboardEntry[]; below: LeaderboardEntry[] }> {
         try {
             await ensureSignedIn();
@@ -452,6 +452,7 @@ export const Leaderboard = {
                 getDocs(query(
                     collection(db, 'leaderboard'),
                     where('hidden', '==', false),
+                    ...(countryFilter ? [where('country', '==', countryFilter)] : []),
                     where(field, '>', myValue),
                     orderBy(field, 'asc'),
                     limit(aboveCount),
@@ -465,6 +466,7 @@ export const Leaderboard = {
                 getDocs(query(
                     collection(db, 'leaderboard'),
                     where('hidden', '==', false),
+                    ...(countryFilter ? [where('country', '==', countryFilter)] : []),
                     where(field, '>', 0),
                     where(field, '<', myValue),
                     orderBy(field, 'desc'),

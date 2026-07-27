@@ -22,6 +22,8 @@ import {
     LeaderboardEntry, LeaderboardStatus,
 } from '../utils/leaderboard';
 import { flagEmoji, countryName, isValidCountryCode } from '../utils/countries';
+import { usePurchases } from '../context/PurchasesContext';
+import { markFeatureUsed } from '../utils/featureDiscovery';
 import { CommunityProfileStore } from '../utils/communityProfile';
 import { CountryPickerOverlay } from './CountryPickerOverlay';
 import { STARS } from './DuaWall';
@@ -160,6 +162,11 @@ export function LeaderboardModal({ visible, onClose }: Props) {
     // fetched neighbors — same assumption the top-N list already makes by
     // using its array index for rank).
     const [viewMode, setViewMode] = useState<'top' | 'nearby'>('top');
+    // Global board vs. only people who picked the same country as you.
+    // Premium-gated: free users see the control (so the value is visible)
+    // but tapping it opens the paywall instead of switching.
+    const [scope, setScope] = useState<'global' | 'country'>('global');
+    const { isPremium, openPaywall } = usePurchases();
     const [nearbyList, setNearbyList] = useState<Array<LeaderboardEntry & { rank: number; isMe: boolean }>>([]);
     const [nearbyLoading, setNearbyLoading] = useState(false);
 
@@ -251,7 +258,9 @@ export function LeaderboardModal({ visible, onClose }: Props) {
     useEffect(() => {
         if (!visible) return;
         const state = { cancelled: false };
-        const cacheKey = `${metric}-${windowSel}`;
+        // null in global scope, or when the user never set a country.
+        const countryFilter = scope === 'country' ? (statusRef.current.country ?? null) : null;
+        const cacheKey = `${metric}-${windowSel}-${countryFilter ?? 'global'}`;
 
         // Rank-change vs. the last time this exact metric/window combination
         // was checked — a static "#12" doesn't feel alive; knowing you moved
@@ -291,8 +300,8 @@ export function LeaderboardModal({ visible, onClose }: Props) {
             const s = statusRef.current;
             const preloadedValue = s.optedIn ? s.values?.[metric]?.[windowSel] : undefined;
             Promise.all([
-                Leaderboard.getTopN(metric, windowSel),
-                Leaderboard.getMyRank(metric, windowSel, undefined, preloadedValue),
+                Leaderboard.getTopN(metric, windowSel, 50, countryFilter),
+                Leaderboard.getMyRank(metric, windowSel, countryFilter, preloadedValue),
                 Leaderboard.getCommunityTotal(metric, windowSel),
             ]).then(async ([top, rank, total]) => {
                 if (state.cancelled) return;
@@ -325,7 +334,7 @@ export function LeaderboardModal({ visible, onClose }: Props) {
             if (next === 'active') loadBoard(false);
         });
         return () => { state.cancelled = true; appStateSub.remove(); };
-    }, [visible, metric, windowSel]);
+    }, [visible, metric, windowSel, scope]);
 
     // "Near You" data — separate from the main load above since it depends
     // on myRank (fetched there) rather than being fetchable independently.
@@ -336,11 +345,12 @@ export function LeaderboardModal({ visible, onClose }: Props) {
     useEffect(() => {
         if (viewMode !== 'nearby' || !myRank || !status.optedIn) return;
         let cancelled = false;
-        const cacheKey = `${metric}-${windowSel}`;
+        const nearbyCountry = scope === 'country' ? (status.country ?? null) : null;
+        const cacheKey = `${metric}-${windowSel}-${nearbyCountry ?? 'global'}`;
         const cached = nearbyCacheRef.current.get(cacheKey);
         if (cached) setNearbyList(cached);
         else { setNearbyLoading(true); setNearbyList([]); }
-        Leaderboard.getNearbyEntries(metric, windowSel, myRank.value).then(({ above, below }) => {
+        Leaderboard.getNearbyEntries(metric, windowSel, myRank.value, 5, 5, nearbyCountry).then(({ above, below }) => {
             if (cancelled) return;
             const myRankNum = myRank.rank;
             const combined = [
@@ -353,7 +363,7 @@ export function LeaderboardModal({ visible, onClose }: Props) {
             nearbyCacheRef.current.set(cacheKey, combined);
         });
         return () => { cancelled = true; };
-    }, [viewMode, metric, windowSel, myRank, status.optedIn, status.nickname, status.country]);
+    }, [viewMode, scope, metric, windowSel, myRank, status.optedIn, status.nickname, status.country]);
 
     const startEditingProfile = () => {
         setNicknameInput(status.nickname ?? '');
@@ -657,6 +667,46 @@ export function LeaderboardModal({ visible, onClose }: Props) {
                                     accessibilityState={{ selected: viewMode === 'nearby' }}
                                 >
                                     <Text style={[styles.windowChipText, viewMode === 'nearby' && { color: colors.accent }]}>{t('leaderboard.nearbyView')}</Text>
+                                </TouchableOpacity>
+                            </View>
+                        )}
+
+                        {/* Global vs. your own country. Premium-gated, but the
+                            control is deliberately visible to everyone —
+                            hiding it entirely would mean free users never
+                            learn the feature exists. Only shown once a country
+                            is actually set, since there is nothing to scope to
+                            otherwise. */}
+                        {status.optedIn && status.country && (
+                            <View style={styles.windowRow}>
+                                <TouchableOpacity
+                                    onPress={() => { haptic.light(); setScope('global'); }}
+                                    style={[styles.windowChip, scope === 'global' && { backgroundColor: colors.accent + '22', borderColor: colors.accent + '66' }]}
+                                    accessibilityRole="button"
+                                    accessibilityState={{ selected: scope === 'global' }}
+                                >
+                                    <Text style={[styles.windowChipText, scope === 'global' && { color: colors.accent }]}>
+                                        {t('leaderboard.scopeGlobal')}
+                                    </Text>
+                                </TouchableOpacity>
+                                <TouchableOpacity
+                                    onPress={() => {
+                                        haptic.light();
+                                        if (!isPremium) {
+                                            openPaywall('feature_gate:country_leaderboard', 'country_leaderboard');
+                                            return;
+                                        }
+                                        setScope('country');
+                                        markFeatureUsed('country_leaderboard').catch(() => {});
+                                    }}
+                                    style={[styles.windowChip, scope === 'country' && { backgroundColor: colors.accent + '22', borderColor: colors.accent + '66' }]}
+                                    accessibilityRole="button"
+                                    accessibilityState={{ selected: scope === 'country' }}
+                                >
+                                    <Text style={[styles.windowChipText, scope === 'country' && { color: colors.accent }]}>
+                                        {`${flagEmoji(status.country)} ${countryName(status.country)}`}
+                                        {!isPremium ? ' 🔒' : ''}
+                                    </Text>
                                 </TouchableOpacity>
                             </View>
                         )}

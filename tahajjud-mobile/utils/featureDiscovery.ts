@@ -33,6 +33,7 @@ export type FeatureId =
     | 'widget'
     | 'dua_replies'
     | 'dua_map_pin'
+    | 'country_leaderboard'
     | 'leaderboard';
 
 export interface FeatureMeta {
@@ -135,6 +136,12 @@ export const FEATURES: Record<FeatureId, FeatureMeta> = {
         id: 'dua_map_pin',
         label: 'Pin to the Map',
         blurb: 'Show your dua on tonight\'s global map so more hearts across the world can find and pray for you.',
+        premium: true,
+    },
+    country_leaderboard: {
+        id: 'country_leaderboard',
+        label: 'Your Country Ranking',
+        blurb: "See where you rank among Muslims in your own country, not just worldwide — a board you can actually top.",
         premium: true,
     },
     leaderboard: {
