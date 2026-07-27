@@ -24,6 +24,8 @@ import {
 import { flagEmoji, countryName, isValidCountryCode } from '../utils/countries';
 import { usePurchases } from '../context/PurchasesContext';
 import { markFeatureUsed } from '../utils/featureDiscovery';
+import type { FeatureId } from '../utils/featureDiscovery';
+import Paywall from './Paywall';
 import { CommunityProfileStore } from '../utils/communityProfile';
 import { CountryPickerOverlay } from './CountryPickerOverlay';
 import { STARS } from './DuaWall';
@@ -122,6 +124,37 @@ const EXTRA_STARS = [
 
 const MEDALS = ['🥇', '🥈', '🥉'];
 
+/** Two-option segmented control: a single rounded track with equal-width
+ *  halves, so it reads as "pick one of these two" instead of two unrelated
+ *  pills. Fills its parent's row, letting several sit side by side. */
+function Segmented({ options, value, onChange, accent }: {
+    options: { key: string; label: string }[];
+    value: string;
+    onChange: (key: string) => void;
+    accent: string;
+}) {
+    return (
+        <View style={styles.segTrack}>
+            {options.map(o => {
+                const active = o.key === value;
+                return (
+                    <TouchableOpacity
+                        key={o.key}
+                        onPress={() => onChange(o.key)}
+                        style={[styles.segItem, active && { backgroundColor: accent + '26' }]}
+                        accessibilityRole="button"
+                        accessibilityState={{ selected: active }}
+                    >
+                        <Text numberOfLines={1} style={[styles.segText, active && { color: accent }]}>
+                            {o.label}
+                        </Text>
+                    </TouchableOpacity>
+                );
+            })}
+        </View>
+    );
+}
+
 export function LeaderboardModal({ visible, onClose }: Props) {
     const { colors } = useTheme();
     const [status, setStatus] = useState<LeaderboardStatus>({ optedIn: false });
@@ -167,6 +200,12 @@ export function LeaderboardModal({ visible, onClose }: Props) {
     // but tapping it opens the paywall instead of switching.
     const [scope, setScope] = useState<'global' | 'country'>('global');
     const { isPremium, openPaywall } = usePurchases();
+    // Paywall shown as a plain View INSIDE this modal, never as a second
+    // <Modal>. iOS presents only one modal per view controller, so calling
+    // the root-level openPaywall() from in here silently does nothing —
+    // exactly the trap DuaWall documents. Verified: tapping the locked
+    // country chip did nothing at all until this overlay existed.
+    const [paywallOverlay, setPaywallOverlay] = useState<{ source: string; featureId?: FeatureId } | null>(null);
     const [nearbyList, setNearbyList] = useState<Array<LeaderboardEntry & { rank: number; isMe: boolean }>>([]);
     const [nearbyLoading, setNearbyLoading] = useState(false);
 
@@ -258,8 +297,11 @@ export function LeaderboardModal({ visible, onClose }: Props) {
     useEffect(() => {
         if (!visible) return;
         const state = { cancelled: false };
-        // null in global scope, or when the user never set a country.
-        const countryFilter = scope === 'country' ? (statusRef.current.country ?? null) : null;
+        // null in global scope, or when the user never set a country. Read
+        // from `status` (not the ref) so that CHANGING your country in the
+        // profile re-runs this effect and reloads the board for the new
+        // country — see this effect's deps.
+        const countryFilter = scope === 'country' ? (status.country ?? null) : null;
         const cacheKey = `${metric}-${windowSel}-${countryFilter ?? 'global'}`;
 
         // Rank-change vs. the last time this exact metric/window combination
@@ -334,7 +376,7 @@ export function LeaderboardModal({ visible, onClose }: Props) {
             if (next === 'active') loadBoard(false);
         });
         return () => { state.cancelled = true; appStateSub.remove(); };
-    }, [visible, metric, windowSel, scope]);
+    }, [visible, metric, windowSel, scope, status.country]);
 
     // "Near You" data — separate from the main load above since it depends
     // on myRank (fetched there) rather than being fetchable independently.
@@ -622,92 +664,66 @@ export function LeaderboardModal({ visible, onClose }: Props) {
                             <SegmentButton active={metric === 'quranAyahs'} label={`📖 ${t('leaderboard.quran')}`} onPress={() => setMetric('quranAyahs')} accent={colors.accent} />
                             <SegmentButton active={metric === 'tahajjud'} label={`🌙 ${t('leaderboard.tahajjud')}`} onPress={() => setMetric('tahajjud')} accent={colors.accent} />
                         </View>
-                        {/* Window is a secondary refinement of the metric choice
-                            above, not an equally-weighted decision — small,
-                            auto-width chips instead of another full-width
-                            segmented row, so it doesn't visually compete with
-                            (or look identical to) the primary metric tabs. */}
-                        <View style={styles.windowRow}>
-                            <TouchableOpacity
-                                onPress={() => { haptic.light(); setWindowSel('week'); }}
-                                style={[styles.windowChip, windowSel === 'week' && { backgroundColor: colors.accent + '22', borderColor: colors.accent + '66' }]}
-                                accessibilityRole="button"
-                                accessibilityState={{ selected: windowSel === 'week' }}
-                            >
-                                <Text style={[styles.windowChipText, windowSel === 'week' && { color: colors.accent }]}>{t('leaderboard.thisWeek')}</Text>
-                            </TouchableOpacity>
-                            <TouchableOpacity
-                                onPress={() => { haptic.light(); setWindowSel('allTime'); }}
-                                style={[styles.windowChip, windowSel === 'allTime' && { backgroundColor: colors.accent + '22', borderColor: colors.accent + '66' }]}
-                                accessibilityRole="button"
-                                accessibilityState={{ selected: windowSel === 'allTime' }}
-                            >
-                                <Text style={[styles.windowChipText, windowSel === 'allTime' && { color: colors.accent }]}>{t('leaderboard.allTime')}</Text>
-                            </TouchableOpacity>
+                        {/* Filters are paired into full-width segmented
+                            controls rather than loose auto-width pills. Three
+                            stacked rows of differently-sized chips read as
+                            clutter and gave no hint which options were
+                            alternatives to each other; a segmented track makes
+                            "one of these two" obvious at a glance and keeps the
+                            rows aligned. Window and view sit together on one
+                            row (both are "how am I looking at this"), with
+                            scope — the bigger, premium decision — on its own
+                            full-width row beneath. */}
+                        <View style={styles.segRow}>
+                            <Segmented
+                                accent={colors.accent}
+                                value={windowSel}
+                                onChange={(v: string) => { haptic.light(); setWindowSel(v as LeaderboardWindow); }}
+                                options={[
+                                    { key: 'week', label: t('leaderboard.thisWeek') },
+                                    { key: 'allTime', label: t('leaderboard.allTime') },
+                                ]}
+                            />
+                            {!!myRank && (
+                                <Segmented
+                                    accent={colors.accent}
+                                    value={viewMode}
+                                    onChange={(v: string) => { haptic.light(); setViewMode(v as 'top' | 'nearby'); }}
+                                    options={[
+                                        { key: 'top', label: t('leaderboard.topView') },
+                                        { key: 'nearby', label: t('leaderboard.nearbyView') },
+                                    ]}
+                                />
+                            )}
                         </View>
 
-                        {/* Top-50 is realistically unreachable once the board
-                            has hundreds of people — "Near You" answers "who
-                            am I actually racing" instead, reusing indexes
-                            already deployed for getMyRank's count queries. */}
-                        {!!myRank && (
-                            <View style={styles.windowRow}>
-                                <TouchableOpacity
-                                    onPress={() => { haptic.light(); setViewMode('top'); }}
-                                    style={[styles.windowChip, viewMode === 'top' && { backgroundColor: colors.accent + '22', borderColor: colors.accent + '66' }]}
-                                    accessibilityRole="button"
-                                    accessibilityState={{ selected: viewMode === 'top' }}
-                                >
-                                    <Text style={[styles.windowChipText, viewMode === 'top' && { color: colors.accent }]}>{t('leaderboard.topView')}</Text>
-                                </TouchableOpacity>
-                                <TouchableOpacity
-                                    onPress={() => { haptic.light(); setViewMode('nearby'); }}
-                                    style={[styles.windowChip, viewMode === 'nearby' && { backgroundColor: colors.accent + '22', borderColor: colors.accent + '66' }]}
-                                    accessibilityRole="button"
-                                    accessibilityState={{ selected: viewMode === 'nearby' }}
-                                >
-                                    <Text style={[styles.windowChipText, viewMode === 'nearby' && { color: colors.accent }]}>{t('leaderboard.nearbyView')}</Text>
-                                </TouchableOpacity>
-                            </View>
-                        )}
-
                         {/* Global vs. your own country. Premium-gated, but the
-                            control is deliberately visible to everyone —
-                            hiding it entirely would mean free users never
-                            learn the feature exists. Only shown once a country
-                            is actually set, since there is nothing to scope to
-                            otherwise. */}
+                            control stays visible to everyone — hiding it means
+                            free users never learn the feature exists. Only
+                            rendered once a country is set, since there is
+                            nothing to scope to otherwise. */}
                         {status.optedIn && status.country && (
-                            <View style={styles.windowRow}>
-                                <TouchableOpacity
-                                    onPress={() => { haptic.light(); setScope('global'); }}
-                                    style={[styles.windowChip, scope === 'global' && { backgroundColor: colors.accent + '22', borderColor: colors.accent + '66' }]}
-                                    accessibilityRole="button"
-                                    accessibilityState={{ selected: scope === 'global' }}
-                                >
-                                    <Text style={[styles.windowChipText, scope === 'global' && { color: colors.accent }]}>
-                                        {t('leaderboard.scopeGlobal')}
-                                    </Text>
-                                </TouchableOpacity>
-                                <TouchableOpacity
-                                    onPress={() => {
+                            <View style={styles.segRow}>
+                                <Segmented
+                                    accent={colors.accent}
+                                    value={scope}
+                                    onChange={(v: string) => {
                                         haptic.light();
-                                        if (!isPremium) {
-                                            openPaywall('feature_gate:country_leaderboard', 'country_leaderboard');
+                                        if (v === 'country' && !isPremium) {
+                                            setPaywallOverlay({ source: 'feature_gate:country_leaderboard', featureId: 'country_leaderboard' });
                                             return;
                                         }
-                                        setScope('country');
-                                        markFeatureUsed('country_leaderboard').catch(() => {});
+                                        setScope(v as 'global' | 'country');
+                                        if (v === 'country') markFeatureUsed('country_leaderboard').catch(() => {});
                                     }}
-                                    style={[styles.windowChip, scope === 'country' && { backgroundColor: colors.accent + '22', borderColor: colors.accent + '66' }]}
-                                    accessibilityRole="button"
-                                    accessibilityState={{ selected: scope === 'country' }}
-                                >
-                                    <Text style={[styles.windowChipText, scope === 'country' && { color: colors.accent }]}>
-                                        {`${flagEmoji(status.country)} ${countryName(status.country)}`}
-                                        {!isPremium ? ' 🔒' : ''}
-                                    </Text>
-                                </TouchableOpacity>
+                                    options={[
+                                        { key: 'global', label: t('leaderboard.scopeGlobal') },
+                                        {
+                                            key: 'country',
+                                            label: `${flagEmoji(status.country)} ${countryName(status.country)}${isPremium ? '' : ' 🔒'}`,
+                                        },
+                                    ]}
+                                />
                             </View>
                         )}
 
@@ -880,6 +896,16 @@ export function LeaderboardModal({ visible, onClose }: Props) {
                 {/* Country picker — plain overlay, not a nested Modal (this
                     screen is already a Modal; a second one would silently
                     fail to present — see DuaWall for the documented case). */}
+                {paywallOverlay && (
+                    <View style={styles.paywallOverlay}>
+                        <Paywall
+                            onClose={() => setPaywallOverlay(null)}
+                            source={paywallOverlay.source}
+                            featureId={paywallOverlay.featureId}
+                        />
+                    </View>
+                )}
+
                 <CountryPickerOverlay
                     visible={showCountryPicker}
                     onClose={() => setShowCountryPicker(false)}
@@ -947,6 +973,21 @@ const styles = StyleSheet.create({
     // secondary refinement of the metric choice above it, not an equal peer,
     // so it needs to visually read as "smaller" rather than another full row.
     windowRow: { flexDirection: 'row', gap: 8, paddingHorizontal: 16, marginBottom: 12 },
+    segRow: { flexDirection: 'row', gap: 10, paddingHorizontal: 16, marginBottom: 10 },
+    paywallOverlay: {
+        position: 'absolute',
+        top: 0, left: 0, right: 0, bottom: 0,
+        zIndex: 10,
+        backgroundColor: '#08091e',
+    },
+    segTrack: {
+        flex: 1, flexDirection: 'row',
+        backgroundColor: 'rgba(255,255,255,0.05)',
+        borderRadius: 12, padding: 3,
+        borderWidth: 1, borderColor: 'rgba(255,255,255,0.08)',
+    },
+    segItem: { flex: 1, paddingVertical: 8, paddingHorizontal: 6, borderRadius: 9, alignItems: 'center', justifyContent: 'center' },
+    segText: { fontSize: 12, fontWeight: '700', color: '#94a3b8' },
     windowChip: {
         paddingHorizontal: 12, paddingVertical: 6, borderRadius: 10, borderWidth: 1,
         borderColor: 'rgba(255,255,255,0.08)',

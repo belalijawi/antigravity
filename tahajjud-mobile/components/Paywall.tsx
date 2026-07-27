@@ -278,6 +278,11 @@ const Paywall: React.FC<PaywallProps> = ({ onClose, source = 'unknown', featureI
             title: t('paywall.f10t'),
             desc: t('paywall.f10d'),
         },
+        {
+            icon: <Trophy size={20} color={colors.accent} />,
+            title: t('paywall.f11t'),
+            desc: t('paywall.f11d'),
+        },
     ];
 
     if (loading) {

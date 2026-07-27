@@ -46,6 +46,8 @@ const LOCALE_KEY = 'app_locale_v1';
 type Dict = Record<string, string>;
 
 const en: Dict = {
+    "paywall.f11t": "Your Country Ranking",
+    "paywall.f11d": "See where you rank among Muslims in your own country, not just worldwide — a board you can actually top.",
     "leaderboard.scopeGlobal": "Global",
     "leaderboard.scopeCountry": "Your Country Ranking",
     "discover.country_leaderboard.label": "Your Country Ranking",
@@ -1326,6 +1328,8 @@ const en: Dict = {
 };
 
 const ar: Dict = {
+    "paywall.f11t": "ترتيبك في بلدك",
+    "paywall.f11d": "اعرف ترتيبك بين المسلمين في بلدك، وليس في العالم فقط — لوحة يمكنك تصدرها فعلاً.",
     "leaderboard.scopeGlobal": "عالمي",
     "leaderboard.scopeCountry": "ترتيبك في بلدك",
     "discover.country_leaderboard.label": "ترتيبك في بلدك",
@@ -2597,6 +2601,8 @@ const ar: Dict = {
 };
 
 const ur: Dict = {
+    "paywall.f11t": "آپ کے ملک میں درجہ",
+    "paywall.f11d": "اپنے ملک کے مسلمانوں میں اپنا درجہ دیکھیں، صرف دنیا بھر میں نہیں — ایک ایسا بورڈ جس میں آپ سرِفہرست آ سکتے ہیں۔",
     "leaderboard.scopeGlobal": "عالمی",
     "leaderboard.scopeCountry": "آپ کے ملک میں درجہ",
     "discover.country_leaderboard.label": "آپ کے ملک میں درجہ",
@@ -3869,6 +3875,8 @@ const ur: Dict = {
 
 // ── Turkish ────────────────────────────────────────────────────────────
 const tr: Dict = {
+    "paywall.f11t": "Ülkendeki Sıralaman",
+    "paywall.f11d": "Sadece dünyada değil, kendi ülkendeki Müslümanlar arasında sıranı gör — gerçekten zirveye çıkabileceğin bir liste.",
     "leaderboard.scopeGlobal": "Küresel",
     "leaderboard.scopeCountry": "Ülkendeki Sıralaman",
     "discover.country_leaderboard.label": "Ülkendeki Sıralaman",
@@ -5119,6 +5127,8 @@ const tr: Dict = {
 
 // ── Indonesian ─────────────────────────────────────────────────────────
 const id: Dict = {
+    "paywall.f11t": "Peringkat di Negaramu",
+    "paywall.f11d": "Lihat peringkatmu di antara Muslim di negaramu sendiri, bukan hanya sedunia — papan yang benar-benar bisa kamu puncaki.",
     "leaderboard.scopeGlobal": "Global",
     "leaderboard.scopeCountry": "Peringkat di Negaramu",
     "discover.country_leaderboard.label": "Peringkat di Negaramu",
@@ -6369,6 +6379,8 @@ const id: Dict = {
 
 // ── Malay ──────────────────────────────────────────────────────────────
 const ms: Dict = {
+    "paywall.f11t": "Kedudukan di Negara Anda",
+    "paywall.f11d": "Lihat kedudukan anda dalam kalangan Muslim di negara anda sendiri, bukan sedunia sahaja — papan yang anda benar-benar boleh terajui.",
     "leaderboard.scopeGlobal": "Global",
     "leaderboard.scopeCountry": "Kedudukan di Negara Anda",
     "discover.country_leaderboard.label": "Kedudukan di Negara Anda",
@@ -7619,6 +7631,8 @@ const ms: Dict = {
 
 // ── Bengali ────────────────────────────────────────────────────────────
 const bn: Dict = {
+    "paywall.f11t": "আপনার দেশে অবস্থান",
+    "paywall.f11d": "শুধু বিশ্বজুড়ে নয়, নিজের দেশের মুসলিমদের মধ্যে আপনার অবস্থান দেখুন — এমন একটি তালিকা যেখানে আপনি সত্যিই শীর্ষে যেতে পারেন।",
     "leaderboard.scopeGlobal": "বিশ্বব্যাপী",
     "leaderboard.scopeCountry": "আপনার দেশে অবস্থান",
     "discover.country_leaderboard.label": "আপনার দেশে অবস্থান",
@@ -8869,6 +8883,8 @@ const bn: Dict = {
 
 // ── French ─────────────────────────────────────────────────────────────
 const fr: Dict = {
+    "paywall.f11t": "Votre classement national",
+    "paywall.f11d": "Voyez votre classement parmi les musulmans de votre pays, et pas seulement dans le monde — un classement que vous pouvez vraiment dominer.",
     "leaderboard.scopeGlobal": "Mondial",
     "leaderboard.scopeCountry": "Votre classement national",
     "discover.country_leaderboard.label": "Votre classement national",
@@ -10119,6 +10135,8 @@ const fr: Dict = {
 
 // ── Persian / Farsi (RTL) ──────────────────────────────────────────────
 const fa: Dict = {
+    "paywall.f11t": "رتبه شما در کشورتان",
+    "paywall.f11d": "ببینید در میان مسلمانان کشور خودتان چه رتبه‌ای دارید، نه فقط در سطح جهان — جدولی که واقعاً می‌توانید صدرنشین آن شوید.",
     "leaderboard.scopeGlobal": "جهانی",
     "leaderboard.scopeCountry": "رتبه شما در کشورتان",
     "discover.country_leaderboard.label": "رتبه شما در کشورتان",
@@ -11369,6 +11387,8 @@ const fa: Dict = {
 
 // ── Hindi ──────────────────────────────────────────────────────────────
 const hi: Dict = {
+    "paywall.f11t": "आपके देश में रैंक",
+    "paywall.f11d": "सिर्फ़ दुनिया भर में नहीं, अपने देश के मुसलमानों के बीच अपनी रैंक देखें — एक ऐसी सूची जिसमें आप वाकई शीर्ष पर आ सकते हैं।",
     "leaderboard.scopeGlobal": "वैश्विक",
     "leaderboard.scopeCountry": "आपके देश में रैंक",
     "discover.country_leaderboard.label": "आपके देश में रैंक",
@@ -12619,6 +12639,8 @@ const hi: Dict = {
 
 // ── Russian ────────────────────────────────────────────────────────────
 const ru: Dict = {
+    "paywall.f11t": "Ваш рейтинг в стране",
+    "paywall.f11d": "Узнайте своё место среди мусульман вашей страны, а не только в мире — рейтинг, который реально возглавить.",
     "leaderboard.scopeGlobal": "Мир",
     "leaderboard.scopeCountry": "Ваш рейтинг в стране",
     "discover.country_leaderboard.label": "Ваш рейтинг в стране",
@@ -13869,6 +13891,8 @@ const ru: Dict = {
 
 // ── Bosnian ────────────────────────────────────────────────────────────
 const bs: Dict = {
+    "paywall.f11t": "Tvoj plasman u državi",
+    "paywall.f11d": "Vidi gdje si među muslimanima u svojoj državi, ne samo u svijetu — lista koju zaista možeš predvoditi.",
     "leaderboard.scopeGlobal": "Globalno",
     "leaderboard.scopeCountry": "Tvoj plasman u državi",
     "discover.country_leaderboard.label": "Tvoj plasman u državi",
@@ -15119,6 +15143,8 @@ const bs: Dict = {
 
 // ── Spanish ────────────────────────────────────────────────────────────
 const es: Dict = {
+    "paywall.f11t": "Tu clasificación nacional",
+    "paywall.f11d": "Mira tu puesto entre los musulmanes de tu país, no solo del mundo — una clasificación que sí puedes liderar.",
     "leaderboard.scopeGlobal": "Global",
     "leaderboard.scopeCountry": "Tu clasificación nacional",
     "discover.country_leaderboard.label": "Tu clasificación nacional",
@@ -16369,6 +16395,8 @@ const es: Dict = {
 
 // ── German ─────────────────────────────────────────────────────────────
 const de: Dict = {
+    "paywall.f11t": "Dein Ranking im Land",
+    "paywall.f11d": "Sieh, wo du unter den Muslimen in deinem Land stehst, nicht nur weltweit — eine Rangliste, die du wirklich anführen kannst.",
     "leaderboard.scopeGlobal": "Weltweit",
     "leaderboard.scopeCountry": "Dein Ranking im Land",
     "discover.country_leaderboard.label": "Dein Ranking im Land",
@@ -17619,6 +17647,8 @@ const de: Dict = {
 
 // ── Albanian ───────────────────────────────────────────────────────────
 const sq: Dict = {
+    "paywall.f11t": "Renditja jote në vend",
+    "paywall.f11d": "Shih ku renditesh mes myslimanëve në vendin tënd, jo vetëm në botë — një listë që vërtet mund ta kryesosh.",
     "leaderboard.scopeGlobal": "Global",
     "leaderboard.scopeCountry": "Renditja jote në vend",
     "discover.country_leaderboard.label": "Renditja jote në vend",
