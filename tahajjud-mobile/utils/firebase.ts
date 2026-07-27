@@ -1,7 +1,11 @@
 import { initializeApp, getApps, getApp, FirebaseApp } from 'firebase/app';
-import { getAuth, Auth, initializeAuth, signInAnonymously, onAuthStateChanged } from 'firebase/auth';
+import {
+    getAuth, Auth, initializeAuth, signInAnonymously, onAuthStateChanged,
+    signInWithCredential, linkWithCredential, AuthCredential, UserCredential,
+} from 'firebase/auth';
 import { getFirestore, initializeFirestore, Firestore } from 'firebase/firestore';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { track } from './analytics';
 
 // Firebase config is safe to be in source — web API keys are public-facing by design.
 // Previously stored in AsyncStorage: empty on fresh install → null auth → SIGABRT crash.
@@ -40,7 +44,18 @@ if (getApps().length) {
     auth = getAuth(app);
     db = initDb(app);
 } else {
-    app = initializeApp(FIREBASE_CONFIG);
+    try {
+        app = initializeApp(FIREBASE_CONFIG);
+    } catch (e) {
+        // Unguarded, this throws at module-evaluation time — before React even
+        // mounts — so nothing downstream could catch it and every user would
+        // hit a guaranteed, opaque cold-launch crash. Can't meaningfully
+        // recover without a Firebase app, but logging turns an undecipherable
+        // downstream crash (initializeAuth/initDb called with an undefined
+        // app) into a clearly diagnosable one.
+        console.error('[firebase] initializeApp failed:', e);
+        throw e;
+    }
     try {
         // Use initializeAuth with AsyncStorage for persistent sessions across app restarts.
         // getReactNativePersistence is imported inline to avoid TypeScript path resolution issues.
@@ -84,6 +99,11 @@ export function ensureSignedIn(): Promise<void> {
                 .then(() => resolve())
                 .catch((e) => {
                     console.log('[firebase] anonymous sign-in failed:', e);
+                    // Every Firebase-backed feature (map, Dua Wall, testimonies,
+                    // Accountability Partner) degrades silently when this fails —
+                    // without this event a report like "X isn't showing up" is
+                    // undiagnosable after the fact.
+                    track('firebase_anon_signin_failed', { error_code: e?.code ?? String(e) });
                     // Don't cache the failure — a flaky cold-start network would
                     // otherwise leave the whole session unauthenticated (every
                     // Firestore read permission-denied) with no retry path.
@@ -107,6 +127,39 @@ ensureSignedIn().catch(() => {});
 export async function resetToAnonymous(): Promise<void> {
     anonSignInPromise = null;
     await ensureSignedIn();
+}
+
+/**
+ * Upgrade the current session to a real Google/Apple account WITHOUT
+ * changing the Firebase UID when possible. Every UID-keyed doc (leaderboard
+ * opt-in, Accountability Partner pairing) is written against
+ * auth.currentUser.uid — a plain signInWithCredential() replaces the
+ * anonymous user with a brand-new one that has a DIFFERENT uid, silently
+ * orphaning all of that (the old doc still exists in Firestore, just
+ * unreachable from this device since nobody is signed in as that uid
+ * anymore). linkWithCredential() upgrades the anonymous user in place, so
+ * the uid — and everything keyed to it — survives sign-in.
+ *
+ * Falls back to a plain sign-in only if the credential already belongs to
+ * a different existing account (nothing to link to — e.g. they signed in
+ * with this same Google/Apple ID on another device first). That's the one
+ * case anonymous data can't be preserved; every anonymous-first app has
+ * this same unavoidable edge case.
+ */
+export async function upgradeAnonymousAccount(credential: AuthCredential): Promise<UserCredential> {
+    const current = auth.currentUser;
+    if (current?.isAnonymous) {
+        try {
+            return await linkWithCredential(current, credential);
+        } catch (e: any) {
+            if (e?.code !== 'auth/credential-already-in-use' && e?.code !== 'auth/email-already-in-use') {
+                throw e;
+            }
+            // Falls through to a plain sign-in — an account already exists
+            // for this identity, so there's nothing to link.
+        }
+    }
+    return signInWithCredential(auth, credential);
 }
 
 // Kept for backwards compatibility

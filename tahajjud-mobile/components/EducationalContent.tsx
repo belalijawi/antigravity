@@ -4,6 +4,7 @@ import { Moon, Droplets, Heart, BookOpen, Hand, Star, ChevronDown, ChevronUp, Li
 import { LinearGradient } from 'expo-linear-gradient';
 import Animated, { FadeInDown, FadeInUp } from 'react-native-reanimated';
 import { useTheme } from '../context/ThemeContext';
+import { tc } from '../data/contentTranslations';
 
 const STEPS = [
     {
@@ -100,12 +101,12 @@ function StepCard({ step, index, colors }: StepProps) {
                 <View style={styles.stepIconContainer}>
                     <Icon size={16} color={colors.primaryText} strokeWidth={2} />
                 </View>
-                <Text style={[styles.stepTitle, { color: colors.primaryText }]}>{step.title}</Text>
+                <Text style={[styles.stepTitle, { color: colors.primaryText }]}>{tc(`edu.step${step.number}.title`, step.title)}</Text>
             </View>
-            <Text style={[styles.stepDescription, { color: colors.secondaryText }]}>{step.description}</Text>
+            <Text style={[styles.stepDescription, { color: colors.secondaryText }]}>{tc(`edu.step${step.number}.description`, step.description)}</Text>
             <View style={[styles.tipRow, { borderTopColor: 'rgba(255,255,255,0.06)' }]}>
                 <Lightbulb size={13} color={colors.accent} strokeWidth={2.5} style={{ alignSelf: 'center', marginBottom: 6 }} />
-                <Text style={[styles.tipText, { color: colors.accent, textAlign: 'center' }]}>{step.tip}</Text>
+                <Text style={[styles.tipText, { color: colors.accent, textAlign: 'center' }]}>{tc(`edu.step${step.number}.tip`, step.tip)}</Text>
             </View>
         </Animated.View>
     );
@@ -127,14 +128,14 @@ function FAQItem({ item, index, colors }: FAQProps) {
                 activeOpacity={0.8}
             >
                 <View style={styles.faqHeader}>
-                    <Text style={[styles.faqQuestion, { color: colors.primaryText }]}>{item.q}</Text>
+                    <Text style={[styles.faqQuestion, { color: colors.primaryText }]}>{tc(`edu.faq${index + 1}.q`, item.q)}</Text>
                     {open
                         ? <ChevronUp size={15} color={colors.secondaryText} />
                         : <ChevronDown size={15} color={colors.secondaryText} />
                     }
                 </View>
                 {open && (
-                    <Text style={[styles.faqAnswer, { color: colors.secondaryText }]}>{item.a}</Text>
+                    <Text style={[styles.faqAnswer, { color: colors.secondaryText }]}>{tc(`edu.faq${index + 1}.a`, item.a)}</Text>
                 )}
             </TouchableOpacity>
         </Animated.View>
@@ -162,15 +163,15 @@ export function EducationalContent() {
             {/* Hero */}
             <Animated.View entering={FadeInUp.duration(550)} style={styles.hero}>
                 <Moon size={38} color={colors.primaryText} strokeWidth={1.5} />
-                <Text style={[styles.heroTitle, { color: colors.primaryText }]}>How to Pray Tahajjud</Text>
+                <Text style={[styles.heroTitle, { color: colors.primaryText }]}>{tc('edu.hero.title', 'How to Pray Tahajjud')}</Text>
                 <Text style={[styles.heroSubtitle, { color: colors.secondaryText }]}>
-                    A complete step-by-step guide for beginners and those returning to the night prayer.
+                    {tc('edu.hero.subtitle', "A complete step-by-step guide for beginners and those returning to the night prayer.")}
                 </Text>
             </Animated.View>
 
             {/* Steps */}
             <View style={styles.section}>
-                <Text style={[styles.sectionLabel, { color: colors.accent }]}>THE 6 STEPS</Text>
+                <Text style={[styles.sectionLabel, { color: colors.accent }]}>{tc('edu.section1.label', 'THE 6 STEPS')}</Text>
                 {STEPS.map((step, i) => (
                     <StepCard key={step.number} step={step} index={i} colors={colors} />
                 ))}
@@ -180,17 +181,16 @@ export function EducationalContent() {
             <Animated.View entering={FadeInDown.delay(420).duration(450)} style={styles.witrCard}>
                 <CheckCircle size={20} color={colors.accent} strokeWidth={2} />
                 <View style={{ flex: 1 }}>
-                    <Text style={[styles.witrTitle, { color: colors.primaryText }]}>Don't Forget Witr</Text>
+                    <Text style={[styles.witrTitle, { color: colors.primaryText }]}>{tc('edu.witr.title', "Don't Forget Witr")}</Text>
                     <Text style={[styles.witrDesc, { color: colors.secondaryText }]}>
-                        Always end your night prayer with Witr — at least 1 rak'ah.{'\n'}
-                        "Pray Witr before Fajr enters." — Sahih Muslim
+                        {tc('edu.witr.description', "Always end your night prayer with Witr — at least 1 rak'ah.\n\"Pray Witr before Fajr enters.\" — Sahih Muslim")}
                     </Text>
                 </View>
             </Animated.View>
 
             {/* FAQ */}
             <View style={styles.section}>
-                <Text style={[styles.sectionLabel, { color: colors.accent }]}>COMMON QUESTIONS</Text>
+                <Text style={[styles.sectionLabel, { color: colors.accent }]}>{tc('edu.section2.label', 'COMMON QUESTIONS')}</Text>
                 {FAQS.map((item, i) => (
                     <FAQItem key={i} item={item} index={i} colors={colors} />
                 ))}
@@ -199,7 +199,7 @@ export function EducationalContent() {
             {/* Closing */}
             <Animated.View entering={FadeInDown.delay(500).duration(450)} style={styles.closing}>
                 <Text style={[styles.closingText, { color: colors.secondaryText }]}>
-                    "Start with two rak'ahs. Be sincere. Show up.{'\n'}Allah sees your effort."
+                    {tc('edu.closing.text', "\"Start with two rak'ahs. Be sincere. Show up.\nAllah sees your effort.\"")}
                 </Text>
             </Animated.View>
         </ScrollView>

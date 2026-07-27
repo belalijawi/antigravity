@@ -13,6 +13,8 @@ import { haptic } from '../utils/haptic';
 import { format } from 'date-fns';
 import Animated, { FadeInDown } from 'react-native-reanimated';
 import { t } from '../utils/i18n';
+import { CommunityProfileStore } from '../utils/communityProfile';
+import { KnownNameField } from './KnownNameField';
 
 interface PartnerStatus {
     prayed: boolean;
@@ -40,6 +42,13 @@ export function AccountabilityPartnerCard() {
     const [showModal, setShowModal] = useState(false);
     const [codeInput, setCodeInput] = useState('');
     const [nameInput, setNameInput] = useState('');
+    // Known name from CommunityProfileStore — see KnownNameField. Shows
+    // "Known as X · not you?" instead of a blank-looking box once a name is
+    // already known from the Dua Wall, a comment, the Leaderboard, or a
+    // Testimony — still required here (your partner needs to know who's
+    // waking them up), just not asked again from scratch.
+    const [nameProfileName, setNameProfileName] = useState<string | null>(null);
+    const [editingNameInput, setEditingNameInput] = useState(false);
     const [connecting, setConnecting] = useState(false);
     const [copied, setCopied] = useState(false);
     const [wakingPartnerId, setWakingPartnerId] = useState<string | null>(null);
@@ -110,13 +119,22 @@ export function AccountabilityPartnerCard() {
 
     const handleOpenAddPartner = () => {
         if (!isPremium) {
-            openPaywall('feature_gate:accountability');
+            openPaywall('feature_gate:accountability', 'accountability_partner');
             return;
         }
         if (atPartnerLimit) {
             Alert.alert(t('partner.circleFullTitle'), t('partner.circleFullBody', { n: PREMIUM_PARTNER_LIMIT }));
             return;
         }
+        // Prefill from the shared community name (set on the Leaderboard, a
+        // dua post, or a comment reply) — same name people already recognize
+        // you by elsewhere, instead of a blank field every time.
+        CommunityProfileStore.get().then(profile => {
+            if (!profile?.nickname) return;
+            setNameProfileName(profile.nickname);
+            setNameInput(prev => prev || profile.nickname);
+        });
+        setEditingNameInput(false);
         setShowModal(true);
     };
 
@@ -128,6 +146,9 @@ export function AccountabilityPartnerCard() {
         setConnecting(false);
         if (result.success) {
             haptic.success();
+            // Propagate this name to the Leaderboard, Dua Wall, and comments —
+            // whichever surface you name yourself on first flows to the others.
+            CommunityProfileStore.set(nameInput).catch(() => {});
             const updated = await AccountabilityPartner.getOrCreate();
             setPartnerData(updated);
             syncListeners(updated.partners);
@@ -356,13 +377,18 @@ export function AccountabilityPartnerCard() {
                         <Text style={styles.sectionLabel}>{t('partner.enterTheirCode')}</Text>
                         <Text style={styles.sectionSub}>{t('partner.enterCodeSub')}</Text>
 
-                        <TextInput
-                            style={[styles.textInput, { borderColor: 'rgba(255,255,255,0.12)', color: '#f1f5f9' }]}
+                        <KnownNameField
+                            name={nameInput}
+                            onChangeName={setNameInput}
+                            knownName={nameProfileName}
+                            editing={editingNameInput}
+                            onStartEditing={() => setEditingNameInput(true)}
+                            accent={colors.accent}
+                            prefixKey="partner.namedAs"
                             placeholder={t('partner.namePlaceholder')}
-                            placeholderTextColor="#334155"
-                            value={nameInput}
-                            onChangeText={setNameInput}
                             autoCapitalize="words"
+                            inputStyle={[styles.textInput, { borderColor: 'rgba(255,255,255,0.12)', color: '#f1f5f9' }]}
+                            rowStyle={styles.knownNameRow}
                         />
 
                         <TextInput
@@ -450,6 +476,10 @@ const styles = StyleSheet.create({
     textInput: {
         borderWidth: 1, borderRadius: 12, padding: 14,
         backgroundColor: 'rgba(255,255,255,0.04)', fontSize: 15,
+    },
+    knownNameRow: {
+        borderWidth: 1, borderRadius: 12, padding: 14,
+        borderColor: 'rgba(255,255,255,0.12)', backgroundColor: 'rgba(255,255,255,0.04)',
     },
     connectBtn: { borderRadius: 14, paddingVertical: 14, alignItems: 'center', marginTop: 4 },
     connectBtnText: { color: '#fff', fontSize: 16, fontWeight: '800' },

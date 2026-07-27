@@ -5,5 +5,9 @@
     "esModuleInterop": true,
     "jsx": "react-native",
     "skipLibCheck": true
-  }
+  },
+  // Node-only verification scripts, run via tsx (which resolves the explicit
+  // .ts import extensions the app's compiler settings disallow). Not part of
+  // the app bundle.
+  "exclude": ["scripts"]
 }

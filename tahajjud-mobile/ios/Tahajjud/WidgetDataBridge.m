@@ -7,6 +7,10 @@ RCT_EXTERN_METHOD(
   nextPrayerTime:(double)nextPrayerTime
   streak:(nonnull NSNumber *)streak
   tahajjudStart:(double)tahajjudStart
+  loggablePrayer:(NSString *)loggablePrayer
+  prayerTimesJSON:(NSString *)prayerTimesJSON
+  todayDateStr:(NSString *)todayDateStr
+  loggedToday:(NSArray *)loggedToday
 )
 
 RCT_EXTERN_METHOD(

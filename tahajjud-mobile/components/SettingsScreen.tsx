@@ -35,7 +35,7 @@ import { MosqueEditModal } from './MosqueEditModal';
 import { getMosqueTimetable, MosqueTimetable } from '../utils/mosqueTimetable';
 import { localDateStr as localDate } from '../utils/localDate';
 import { openAppStoreReview } from '../utils/weeklyReview';
-import { GoogleAuthProvider, OAuthProvider, signInWithCredential } from 'firebase/auth';
+import { GoogleAuthProvider, OAuthProvider } from 'firebase/auth';
 
 // Native modules — not available in Expo Go, so we load them safely
 let AppleAuthentication: typeof import('expo-apple-authentication') | null = null;
@@ -44,7 +44,7 @@ let statusCodes: any = {};
 try { AppleAuthentication = require('expo-apple-authentication'); } catch (_) { }
 try { const gs = require('@react-native-google-signin/google-signin'); GoogleSignin = gs.GoogleSignin; statusCodes = gs.statusCodes; } catch (_) { }
 import { deleteCloudData } from '../utils/syncService';
-import { getFirebaseAuth, resetToAnonymous } from '../utils/firebase';
+import { getFirebaseAuth, resetToAnonymous, upgradeAnonymousAccount } from '../utils/firebase';
 import { GlassBg as BlurView } from './GlassBg';
 import { LinearGradient } from 'expo-linear-gradient';
 import Animated, { FadeInDown, FadeInUp } from 'react-native-reanimated';
@@ -53,13 +53,15 @@ import { usePurchases } from '../context/PurchasesContext';
 import { PrivacyPolicy } from './PrivacyPolicy';
 import { SourcesMethodology } from './SourcesMethodology';
 import { WidgetPromo } from './WidgetPromo';
-import { TestimonyModerationModal } from './TestimonyModerationModal';
-import { DuaWallModerationModal } from './DuaWallModerationModal';
+import { ModerationModal } from './ModerationModal';
 import { isCurrentUserAdmin } from '../utils/admins';
 import { APP_URLS } from '../utils/urls';
 import Paywall from './Paywall';
 import { haptic } from '../utils/haptic';
+import { CommunityProfileStore } from '../utils/communityProfile';
 import { tabletContentStyle } from '../utils/layout';
+import { friendlyAuthErrorMessage } from '../utils/authErrors';
+import type { FeatureId } from '../utils/featureDiscovery';
 
 interface SettingsScreenProps {
     onClose: () => void;
@@ -70,8 +72,10 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ onClose }) => {
     const [isDeleting, setIsDeleting] = useState(false);
     const [localPaywallVisible, setLocalPaywallVisible] = useState(false);
     const [localPaywallSource, setLocalPaywallSource] = useState('settings');
-    const openPaywall = (source: string = 'settings') => {
+    const [localPaywallFeatureId, setLocalPaywallFeatureId] = useState<FeatureId | undefined>(undefined);
+    const openPaywall = (source: string = 'settings', featureId?: FeatureId) => {
         setLocalPaywallSource(source);
+        setLocalPaywallFeatureId(featureId);
         setLocalPaywallVisible(true);
     };
     const insets = useSafeAreaInsets();
@@ -81,7 +85,6 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ onClose }) => {
     const [showPrivacy, setShowPrivacy] = useState(false);
     const [showSources, setShowSources] = useState(false);
     const [showModeration, setShowModeration] = useState(false);
-    const [showDuaWallModeration, setShowDuaWallModeration] = useState(false);
     const [showWidgetGuide, setShowWidgetGuide] = useState(false);
     const [currentLocale, setCurrentLocale] = useState<Locale>(getLocale());
     // isAdmin must react to auth-state changes — calling once on render
@@ -244,7 +247,17 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ onClose }) => {
 
     const handleEditName = () => {
         haptic.medium();
-        setNameInput(userName === 'Servant' ? '' : userName);
+        if (userName === 'Servant') {
+            // No spiritual name set yet — check whether one was already given
+            // on the Dua Wall, a comment, the Leaderboard, or the Partner
+            // circle instead of showing a blank field regardless.
+            setNameInput('');
+            CommunityProfileStore.get().then(profile => {
+                if (profile?.nickname) setNameInput(profile.nickname);
+            });
+        } else {
+            setNameInput(userName);
+        }
         setShowNameModal(true);
     };
 
@@ -295,7 +308,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ onClose }) => {
             if (!auth) throw new Error('Firebase not initialised');
 
             const credential = GoogleAuthProvider.credential(idToken);
-            const result = await signInWithCredential(auth, credential);
+            const result = await upgradeAnonymousAccount(credential);
             setUser(result.user);
             setIsSyncEnabled(true);
             haptic.success();
@@ -309,7 +322,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ onClose }) => {
                 Alert.alert(t('settings.alertErrorTitle'), t('settings.alertPlayServicesUnavailable'));
             } else {
                 console.error('Google sign-in error:', error);
-                Alert.alert(t('settings.alertSignInFailedTitle'), error.message || t('settings.alertSignInFailedGoogleBody'));
+                Alert.alert(t('settings.alertSignInFailedTitle'), friendlyAuthErrorMessage(error, t('settings.alertSignInFailedGoogleBody')));
             }
         } finally {
             setIsSigningIn(false);
@@ -342,7 +355,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ onClose }) => {
             const firebaseCredential = provider.credential({
                 idToken: credential.identityToken!,
             });
-            const result = await signInWithCredential(auth, firebaseCredential);
+            const result = await upgradeAnonymousAccount(firebaseCredential);
 
             // Apple only gives name on first sign-in — persist it
             const displayName = credential.fullName
@@ -358,7 +371,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ onClose }) => {
                 // user cancelled — no alert needed
             } else {
                 console.error('Apple sign-in error:', error);
-                Alert.alert(t('settings.alertSignInFailedTitle'), error.message || t('settings.alertSignInFailedAppleBody'));
+                Alert.alert(t('settings.alertSignInFailedTitle'), friendlyAuthErrorMessage(error, t('settings.alertSignInFailedAppleBody')));
             }
         } finally {
             setIsSigningIn(false);
@@ -853,7 +866,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ onClose }) => {
                                     </TouchableOpacity>
                                 )}
                                 <TouchableOpacity
-                                    onPress={() => isPremium ? setShowMosqueImport(true) : openPaywall('feature_gate:mosque_timetable')}
+                                    onPress={() => isPremium ? setShowMosqueImport(true) : openPaywall('feature_gate:mosque_timetable', 'mosque_timetable')}
                                     style={{ paddingHorizontal: 14, paddingVertical: 7, borderRadius: 20, borderWidth: 1, borderColor: colors.accent + '55', backgroundColor: colors.accent + '15' }}
                                 >
                                     <Text style={{ color: colors.accent, fontSize: 13, fontWeight: '700' }}>
@@ -928,7 +941,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ onClose }) => {
                     <View style={styles.card}>
                         <BlurView intensity={Math.round(20 * blurIntensity)} tint="dark" style={[StyleSheet.absoluteFill, { backgroundColor: cardBg }]} />
 
-                        <View style={[styles.cardItem, styles.cardItemBorder]}>
+                        <View style={[styles.cardItem, allPrayersEnabled && styles.cardItemBorder]}>
                             <View style={styles.cardIconContainer}>
                                 <Bell size={20} color={colors.primaryText} strokeWidth={2.5} />
                             </View>
@@ -946,7 +959,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ onClose }) => {
 
                         {allPrayersEnabled && (
                             <TouchableOpacity
-                                style={[styles.cardItem, styles.cardItemBorder]}
+                                style={styles.cardItem}
                                 onPress={() => setShowReminderModal(true)}
                             >
                                 <View style={styles.cardIconContainer}>
@@ -961,7 +974,6 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ onClose }) => {
                                 <ChevronRight size={18} color="#475569" />
                             </TouchableOpacity>
                         )}
-
                     </View>
                 </Animated.View>
 
@@ -1004,27 +1016,25 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ onClose }) => {
                     </View>
                 </Animated.View>
 
-                {/* ── Home Screen Widget (iOS only) ── */}
-                {Platform.OS === 'ios' && (
-                    <Animated.View entering={FadeInDown.delay(193).duration(800)} style={styles.section}>
-                        <Text style={[styles.sectionHeader, { color: colors.secondaryText }]}>{t('settings.homeScreen')}</Text>
-                        <View style={styles.card}>
-                            <BlurView intensity={Math.round(20 * blurIntensity)} tint="dark" style={[StyleSheet.absoluteFill, { backgroundColor: cardBg }]} />
-                            <TouchableOpacity style={styles.cardItem} onPress={() => setShowWidgetGuide(true)}>
-                                <View style={styles.cardIconContainer}>
-                                    <Star size={20} color="#f8fafc" strokeWidth={2.5} />
-                                </View>
-                                <View style={styles.cardTextContainer}>
-                                    <Text style={[styles.cardLabel, { color: colors.primaryText }]}>{t('settings.addWidget')}</Text>
-                                    <Text style={[styles.cardSub, { color: colors.secondaryText }]}>
-                                        {t('settings.addWidgetSub')}
-                                    </Text>
-                                </View>
-                                <ChevronRight size={18} color="#475569" />
-                            </TouchableOpacity>
-                        </View>
-                    </Animated.View>
-                )}
+                {/* ── Home Screen Widget ── */}
+                <Animated.View entering={FadeInDown.delay(193).duration(800)} style={styles.section}>
+                    <Text style={[styles.sectionHeader, { color: colors.secondaryText }]}>{t('settings.homeScreen')}</Text>
+                    <View style={styles.card}>
+                        <BlurView intensity={Math.round(20 * blurIntensity)} tint="dark" style={[StyleSheet.absoluteFill, { backgroundColor: cardBg }]} />
+                        <TouchableOpacity style={styles.cardItem} onPress={() => setShowWidgetGuide(true)}>
+                            <View style={styles.cardIconContainer}>
+                                <Star size={20} color="#f8fafc" strokeWidth={2.5} />
+                            </View>
+                            <View style={styles.cardTextContainer}>
+                                <Text style={[styles.cardLabel, { color: colors.primaryText }]}>{t('settings.addWidget')}</Text>
+                                <Text style={[styles.cardSub, { color: colors.secondaryText }]}>
+                                    {t('settings.addWidgetSub')}
+                                </Text>
+                            </View>
+                            <ChevronRight size={18} color="#475569" />
+                        </TouchableOpacity>
+                    </View>
+                </Animated.View>
 
                 <Animated.View onLayout={setSectionY('profile')} entering={FadeInDown.delay(200).duration(800)} style={styles.section}>
                     <Text style={[styles.sectionHeader, { color: colors.secondaryText }]}>{t('settings.profile')}</Text>
@@ -1173,30 +1183,15 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ onClose }) => {
                             <TouchableOpacity
                                 style={styles.cardItem}
                                 onPress={() => setShowModeration(true)}
-                            >
-                                <View style={[styles.cardIconContainer, { backgroundColor: colors.accent + '22' }]}>
-                                    <Check size={20} color={colors.accent} strokeWidth={2.5} />
-                                </View>
-                                <View style={styles.cardTextContainer}>
-                                    <Text style={styles.cardLabel}>{t('settings.moderateTestimonies')}</Text>
-                                    <Text style={styles.cardSub}>{t('settings.moderateTestimoniesSub')}</Text>
-                                </View>
-                                <ChevronRight size={18} color="#475569" />
-                            </TouchableOpacity>
-                        )}
-                        {isAdmin && (
-                            <TouchableOpacity
-                                style={styles.cardItem}
-                                onPress={() => setShowDuaWallModeration(true)}
                                 accessibilityRole="button"
-                                accessibilityLabel="Moderate Dua Wall"
+                                accessibilityLabel="Moderation"
                             >
                                 <View style={[styles.cardIconContainer, { backgroundColor: colors.accent + '22' }]}>
                                     <Shield size={20} color={colors.accent} strokeWidth={2.5} />
                                 </View>
                                 <View style={styles.cardTextContainer}>
-                                    <Text style={styles.cardLabel}>{t('settings.moderateDuaWall')}</Text>
-                                    <Text style={styles.cardSub}>{t('settings.moderateDuaWallSub')}</Text>
+                                    <Text style={styles.cardLabel}>{t('settings.moderateCommunity')}</Text>
+                                    <Text style={styles.cardSub}>{t('settings.moderateCommunitySub')}</Text>
                                 </View>
                                 <ChevronRight size={18} color="#475569" />
                             </TouchableOpacity>
@@ -1362,16 +1357,10 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ onClose }) => {
                 <SourcesMethodology onClose={() => setShowSources(false)} />
             </Modal>
 
-            {/* Testimony Moderation Modal (admin only) */}
-            <TestimonyModerationModal
+            {/* Moderation Modal (admin only) — Duas, Stories, Leaderboard in one */}
+            <ModerationModal
                 visible={showModeration}
                 onClose={() => setShowModeration(false)}
-            />
-
-            {/* Dua Wall Moderation Modal (admin only) */}
-            <DuaWallModerationModal
-                visible={showDuaWallModeration}
-                onClose={() => setShowDuaWallModeration(false)}
             />
 
 
@@ -1472,6 +1461,10 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ onClose }) => {
                                     const trimmed = nameInput.trim();
                                     if (trimmed) {
                                         await setUserName(trimmed);
+                                        // Propagate to the Dua Wall, comments, Leaderboard,
+                                        // Testimonies, and Partner circle — whichever surface
+                                        // you name yourself on first flows to the others.
+                                        CommunityProfileStore.set(trimmed).catch(() => {});
                                         haptic.success();
                                     }
                                     setShowNameModal(false);
@@ -1491,7 +1484,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ onClose }) => {
                 presentationStyle="fullScreen"
                 onRequestClose={() => setLocalPaywallVisible(false)}
             >
-                <Paywall onClose={() => setLocalPaywallVisible(false)} source={localPaywallSource} />
+                <Paywall onClose={() => setLocalPaywallVisible(false)} source={localPaywallSource} featureId={localPaywallFeatureId} />
             </Modal>
 
             {/* Mosque Timetable Import */}

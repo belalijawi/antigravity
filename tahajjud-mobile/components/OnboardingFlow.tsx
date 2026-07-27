@@ -26,8 +26,9 @@ import { t } from '../utils/i18n';
 import { scheduleMorningAfter } from '../utils/notifications';
 import { getPrayerTimes } from '../lib/api';
 import Paywall from './Paywall';
-import { GoogleAuthProvider, OAuthProvider, signInWithCredential } from 'firebase/auth';
-import { getFirebaseAuth } from '../utils/firebase';
+import { GoogleAuthProvider, OAuthProvider } from 'firebase/auth';
+import { getFirebaseAuth, upgradeAnonymousAccount } from '../utils/firebase';
+import { friendlyAuthErrorMessage } from '../utils/authErrors';
 
 // Safe requires for native modules not available in Expo Go
 let AppleAuthentication: typeof import('expo-apple-authentication') | null = null;
@@ -261,13 +262,13 @@ export function OnboardingFlow({ onComplete }: Props) {
             const auth = getFirebaseAuth();
             if (!auth) throw new Error('Firebase not initialised');
             const credential = GoogleAuthProvider.credential(idToken);
-            await signInWithCredential(auth, credential);
+            await upgradeAnonymousAccount(credential);
             track('onboarding_auth_succeeded', { provider: 'google' });
             setStep(s => s + 1);
             haptic.success();
         } catch (error: any) {
             if (error.code !== statusCodes.SIGN_IN_CANCELLED) {
-                Alert.alert(t('onboard.signInFailed'), error.message || t('onboard.signInFailedGoogle'));
+                Alert.alert(t('onboard.signInFailed'), friendlyAuthErrorMessage(error, t('onboard.signInFailedGoogle')));
             }
         } finally {
             setSigningIn(false);
@@ -292,13 +293,13 @@ export function OnboardingFlow({ onComplete }: Props) {
             if (!credential.identityToken) throw new Error('No identity token from Apple');
             const provider = new OAuthProvider('apple.com');
             const firebaseCredential = provider.credential({ idToken: credential.identityToken });
-            await signInWithCredential(auth, firebaseCredential);
+            await upgradeAnonymousAccount(firebaseCredential);
             track('onboarding_auth_succeeded', { provider: 'apple' });
             setStep(s => s + 1);
             haptic.success();
         } catch (error: any) {
             if (error.code !== 'ERR_REQUEST_CANCELED') {
-                Alert.alert(t('onboard.signInFailed'), error.message || t('onboard.signInFailedApple'));
+                Alert.alert(t('onboard.signInFailed'), friendlyAuthErrorMessage(error, t('onboard.signInFailedApple')));
             }
         } finally {
             setSigningIn(false);

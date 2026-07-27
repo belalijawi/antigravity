@@ -144,7 +144,7 @@ export function HifzTab({ embedded = false }: { embedded?: boolean }) {
                             const startedElsewhere = Object.entries(statsMap)
                                 .some(([n, s]) => s.started > 0 && Number(n) !== item.number);
                             if (startedElsewhere) {
-                                openPaywall('feature_gate:hifz_second_surah');
+                                openPaywall('feature_gate:hifz_second_surah', 'hifz_mode');
                                 return;
                             }
                         }
@@ -268,7 +268,7 @@ export function HifzTab({ embedded = false }: { embedded?: boolean }) {
                 {!loading && !isPremium && (
                     <TouchableOpacity
                         style={styles.freeBanner}
-                        onPress={() => { if (freeSlotUsed) openPaywall('hifz_banner'); }}
+                        onPress={() => { if (freeSlotUsed) openPaywall('hifz_banner', 'hifz_mode'); }}
                         activeOpacity={freeSlotUsed ? 0.8 : 1}
                     >
                         <Lock size={12} color="#a78bfa" />
@@ -407,6 +407,7 @@ const styles = StyleSheet.create({
         backgroundColor: 'rgba(124,58,237,0.10)',
         borderWidth: 1,
         borderColor: 'rgba(124,58,237,0.25)',
+        marginHorizontal: 20,
         marginBottom: 10,
     },
     freeBannerText: {

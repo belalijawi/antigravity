@@ -196,17 +196,47 @@ const AyahRow = React.memo(function AyahRow({
                 </View>
             </View>
 
-            {/* Karaoke highlight only for the active ayah while playing */}
+            {/* Karaoke highlight only for the active ayah while playing.
+                BUG FIX: this used to split ayah.text by spaces and render
+                each word RAW — for the quran-tajweed edition, ayah.text has
+                markup like "[h:9421[ٱ]" embedded inline, so the currently-
+                playing ayah showed literal bracket codes instead of Arabic
+                (every OTHER ayah looked fine because it takes the
+                isTajweedEdition branch below, which already called
+                parseTajweed — only the active/playing ayah skipped it).
+                Fix: the active (currently-spoken) word keeps its bold cyan
+                highlight but with markup stripped to plain text — tajweed
+                per-letter coloring would just wash out that highlight, and
+                the point of this word is "this is being read right now",
+                not its recitation rules. Non-active words in this same
+                karaoke view get full tajweed coloring like everywhere else. */}
             {isActive && isPlaying ? (() => {
                 const words = ayah.text.split(' ');
+                const tajweed = isTajweedEdition(edition);
                 return (
                     <View>
                         <Text style={baseTextStyle}>
-                            {words.map((word: string, wi: number) => (
-                                <Text key={wi} style={wi === activeWordIndex ? styles.wordActive : styles.wordUpcoming}>
-                                    {word}{wi < words.length - 1 ? ' ' : ''}
-                                </Text>
-                            ))}
+                            {words.map((word: string, wi: number) => {
+                                const isCurrent = wi === activeWordIndex;
+                                if (tajweed && !isCurrent) {
+                                    return (
+                                        <Text key={wi} style={styles.wordUpcoming}>
+                                            {parseTajweed(word).map((tok, ti) => (
+                                                <Text key={ti} style={{ color: TAJWEED_COLORS[tok.rule] }}>{tok.text}</Text>
+                                            ))}
+                                            {wi < words.length - 1 ? ' ' : ''}
+                                        </Text>
+                                    );
+                                }
+                                const plainWord = tajweed
+                                    ? parseTajweed(word).map(tok => tok.text).join('')
+                                    : word;
+                                return (
+                                    <Text key={wi} style={isCurrent ? styles.wordActive : styles.wordUpcoming}>
+                                        {plainWord}{wi < words.length - 1 ? ' ' : ''}
+                                    </Text>
+                                );
+                            })}
                         </Text>
                         {activeMeaning ? (
                             <View style={styles.wordMeaningPill}>
@@ -297,6 +327,33 @@ export function SurahReader({ surahNumber: initialSurahNumber, edition = 'en.sah
     const playbackDuration = Math.max(progress.duration * 1000, 1);
     const [ayahTimingData, setAyahTimingData] = useState<AyahAudioData[]>([]);
     const [ayahWordData, setAyahWordData] = useState<AyahWords[]>([]);
+
+    // Leaderboard: count an ayah as "read" once its recitation plays through
+    // naturally. No separate "was this a skip" check needed — position can
+    // only reach the end of a track by actually playing it there; a manual
+    // skip/seek away never gets close. Keyed by surah+ayah so moving to the
+    // next ayah (a different key) naturally allows it to fire again — this
+    // is a self-cleaning guard, not something that needs manual resetting.
+    //
+    // Threshold is PROPORTIONAL (85% through), not a flat "within 1 second
+    // of the end" — a flat tolerance is meaningless for a short ayah (a
+    // ~1s clip would satisfy "within 1s of the end" almost the instant
+    // playback starts, long before it actually finished). A percentage
+    // scales correctly at any clip length, same fix as the dwell-time
+    // word-count scaling above, just for audio instead of silent reading.
+    const audioReadRecordedForRef = useRef<string | null>(null);
+    useEffect(() => {
+        if (!isPlaying || progress.duration <= 0) return;
+        const COMPLETION_FRACTION = 0.85;
+        if (progress.position < progress.duration * COMPLETION_FRACTION) return;
+        const surahNum = audio.currentSurahNumber;
+        const ayahNum = audio.currentAyahNumber;
+        if (surahNum == null || ayahNum == null) return;
+        const key = `${surahNum}:${ayahNum}`;
+        if (audioReadRecordedForRef.current === key) return;
+        audioReadRecordedForRef.current = key;
+        import('../utils/quranReadingTracker').then(m => m.recordAyahRead()).catch(() => {});
+    }, [progress.position, progress.duration, isPlaying, audio.currentSurahNumber, audio.currentAyahNumber]);
 
     // Surah is declared after these states — guarded inline below.
     // Compute the active word index for the CURRENTLY playing ayah only.
@@ -932,11 +989,58 @@ export function SurahReader({ surahNumber: initialSurahNumber, edition = 'en.sah
         );
     }, [currentAyahIndex, bookmarkedAyah, isPlaying, audioLoading, edition, activeWordIndex, activeMeaning, colors.accent, handleAyahPress, handleAyahPlayPress]);
 
+    // onViewableItemsChanged is a stable useRef callback (never recreated),
+    // so it can't close over fresh `isPlaying` state — mirror it into a ref,
+    // same pattern this file already uses for currentAyahIndexRef etc.
+    const isPlayingRef = useRef(false);
+    useEffect(() => { isPlayingRef.current = isPlaying; }, [isPlaying]);
+
+    // Leaderboard: dwell-time reading detection for SILENT readers (no
+    // audio). Gated on `!isPlayingRef.current` so this never double-counts
+    // an ayah the audio-completion effect above already covers. One-shot
+    // per arrival at a new ayah — staying on the same ayah longer than the
+    // dwell time doesn't keep incrementing, only the first arrival does.
+    //
+    // The dwell time SCALES with the ayah's word count rather than being a
+    // flat duration — a flat threshold (e.g. 4s) would systematically miss
+    // short ayahs: a genuine reader passes "الٓمٓ" in a second or two, well
+    // under any flat threshold long enough to also filter out flick-
+    // scrolling on longer ayahs. Floor and ceiling keep it sane at both
+    // extremes (a 1-word ayah still needs some real time; a very long ayah
+    // doesn't demand an unreasonably long stare before it counts).
+    const dwellAyahRef = useRef<number | null>(null);
+    const dwellTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+    const MIN_DWELL_MS = 1200;
+    const MAX_DWELL_MS = 6000;
+    const MS_PER_WORD = 350;
+    function dwellMsForAyah(ayah: Ayah): number {
+        const wordCount = ayah.text.trim().split(/\s+/).filter(Boolean).length;
+        return Math.min(MAX_DWELL_MS, Math.max(MIN_DWELL_MS, wordCount * MS_PER_WORD));
+    }
+    useEffect(() => () => { if (dwellTimerRef.current) clearTimeout(dwellTimerRef.current); }, []);
+
     const onViewableItemsChanged = useRef(({ viewableItems }: { viewableItems: ViewToken[] }) => {
         if (viewableItems.length > 0) {
             const topItem = viewableItems[0];
             if (topItem.index !== null) {
-                lastReadAyahRef.current = topItem.index + 1;
+                const ayahNumber = topItem.index + 1;
+                lastReadAyahRef.current = ayahNumber;
+
+                if (isPlayingRef.current) {
+                    // Audio is handling completion — don't also run a dwell timer.
+                    if (dwellTimerRef.current) { clearTimeout(dwellTimerRef.current); dwellTimerRef.current = null; }
+                    dwellAyahRef.current = null;
+                } else if (dwellAyahRef.current !== ayahNumber) {
+                    if (dwellTimerRef.current) clearTimeout(dwellTimerRef.current);
+                    dwellAyahRef.current = ayahNumber;
+                    const ayahItem = topItem.item as Ayah | undefined;
+                    const dwellMs = ayahItem ? dwellMsForAyah(ayahItem) : MIN_DWELL_MS;
+                    dwellTimerRef.current = setTimeout(() => {
+                        if (!isPlayingRef.current && dwellAyahRef.current === ayahNumber) {
+                            import('../utils/quranReadingTracker').then(m => m.recordAyahRead()).catch(() => {});
+                        }
+                    }, dwellMs);
+                }
             }
         }
     }).current;
@@ -999,7 +1103,7 @@ export function SurahReader({ surahNumber: initialSurahNumber, edition = 'en.sah
                                     const { getStartedSurahNumbers } = await import('../utils/hifzStorage');
                                     const started = await getStartedSurahNumbers();
                                     if (started.length > 0 && !started.includes(surah.number)) {
-                                        openPaywall('feature_gate:hifz_second_surah');
+                                        openPaywall('feature_gate:hifz_second_surah', 'hifz_mode');
                                         return;
                                     }
                                 } catch { /* on error, err on the generous side */ }

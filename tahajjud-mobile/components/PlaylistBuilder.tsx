@@ -43,7 +43,7 @@ export function PlaylistBuilder({ visible, onClose, onSave, editPlaylist }: Prop
         QuranService.getSurahList().then(list => {
             setSurahs(list);
             setFiltered(list);
-        });
+        }).catch(() => {});
     }, []);
 
     // Pre-fill when editing

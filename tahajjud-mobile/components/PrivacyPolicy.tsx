@@ -76,6 +76,7 @@ export function PrivacyPolicy({ onClose }: Props) {
                     <P>• Cached Quran text and translations</P>
                     <P>• Bedtime suggestions and biphasic sleep configuration</P>
                     <P>• Letters to Allah (private writings)</P>
+                    <P>• Your chosen community nickname and country — remembered locally so you don't have to re-enter them each time you post or join the Leaderboard</P>
                 </Section>
 
                 {/* ── Cloud sync (opt-in) ─────────────────────── */}
@@ -108,6 +109,8 @@ export function PrivacyPolicy({ onClose }: Props) {
                 <Section icon={AlertCircle} title="Push notifications">
                     <P>• Prayer reminders and Tahajjud wake-ups are scheduled locally on your device. iOS handles them — no server involved.</P>
                     <P>• Accountability partner "Wake" notifications are sent via Expo's push service to your partner's saved token. Only the message text ("[Your name] is calling you to Tahajjud") is transmitted.</P>
+                    <P>• Community activity — if someone replies to your dua/story, likes your reply, or your post is featured, we send a short generic push (e.g. "Someone replied to your dua") via Expo using your saved token. Reactors are never identified to you in the notification.</P>
+                    <P>• Leaderboard rank notifications are generated and shown entirely on your device — nothing is sent to or from our servers for these.</P>
                     <P>{'\n'}You can disable any notification in iOS Settings → Tahajjud+ → Notifications.</P>
                 </Section>
 
@@ -117,10 +120,16 @@ export function PrivacyPolicy({ onClose }: Props) {
                         Some features are intentionally public when you opt in:
                     </P>
                     <P>{'\n'}
-                        <Text style={styles.bold}>Dua Wall.</Text> If you tap "Publish" on the Dua Wall, your dua text appears anonymously to other users. We store your Firebase user ID server-side to enforce rate limits and respond to reports — but it is NEVER displayed alongside the dua. When you tap Ameen or "Praying for," we store an idempotency marker (your user ID + dua ID) to prevent duplicate counts — this is never shown to anyone.
+                        <Text style={styles.bold}>Dua Wall.</Text> If you tap "Publish" on the Dua Wall, your dua text appears anonymously to other users, along with an optional self-reported country flag if you've set one. We store your Firebase user ID server-side to enforce rate limits and respond to reports — but it is NEVER displayed alongside the dua. When you tap Ameen or "Praying for," we store an idempotency marker (your user ID + dua ID) to prevent duplicate counts — this is never shown to anyone.
                     </P>
                     <P>{'\n'}
-                        <Text style={styles.bold}>Global Tahajjud Map.</Text> If you tap "I'm praying now" on the map, a single anonymous dot appears at your approximate city level. No user ID, name, or precise coordinates are stored — only a rounded lat/lng and a timestamp. The dot disappears automatically after 24 hours.
+                        <Text style={styles.bold}>Replies & comments.</Text> If you reply to a dua or a Tahajjud Story, your reply text, the name you choose to show (or "Anonymous"), and an optional country flag are visible to everyone who views that thread. Your Firebase user ID is stored server-side only to enforce spacing between replies and respond to reports — never displayed.
+                    </P>
+                    <P>{'\n'}
+                        <Text style={styles.bold}>Leaderboard.</Text> Entirely opt-in — nobody appears unless they choose a nickname and tap Join. If you join, your nickname, an optional self-reported country, and your dhikr, Qur'an-reading, and Tahajjud counts become publicly visible and ranked, weekly and all-time. Your real name or account is never shown alongside your entry. Leaving the Leaderboard deletes your entry entirely. Rank-milestone notifications (like reaching the Top 10) are generated entirely on your device — nothing is sent to us for this.
+                    </P>
+                    <P>{'\n'}
+                        <Text style={styles.bold}>Global Tahajjud Map.</Text> If you tap "I'm praying now" on the map, a single anonymous dot appears at your approximate city level. No user ID, name, or precise coordinates are stored — only a rounded lat/lng and a timestamp. The dot disappears automatically after 24 hours. If you also choose to pin a published dua to the map, that same rounded, city-level location shows alongside the dua's pin for 24 hours — still with no name or account information attached.
                     </P>
                     <P>{'\n'}
                         <Text style={styles.bold}>Testimony submissions.</Text> Stories you submit through "Share Your Story" go to a moderation queue. If approved, they appear in the community feed under whatever author name you entered ("Anonymous", a first name, etc.) — never your account info.
@@ -240,7 +249,7 @@ export function PrivacyPolicy({ onClose }: Props) {
 
                 <View style={styles.footer}>
                     <Text style={[styles.footerText, { color: colors.secondaryText }]}>
-                        Last Updated: June 2026{'\n'}
+                        Last Updated: July 27, 2026{'\n'}
                         We update this policy when we change what we collect. Major changes are announced in-app.{'\n\n'}
                         Full Privacy Policy:{'\n'}
                         <Text

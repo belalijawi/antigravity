@@ -9,11 +9,216 @@
       ]
     },
     {
+      "collectionGroup": "public-duas",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "hidden",     "order": "ASCENDING"  },
+        { "fieldPath": "answered",   "order": "ASCENDING"  },
+        { "fieldPath": "answeredAt", "order": "DESCENDING" }
+      ]
+    },
+    {
       "collectionGroup": "community-submissions",
       "queryScope": "COLLECTION",
       "fields": [
         { "fieldPath": "status",      "order": "ASCENDING"  },
         { "fieldPath": "submittedAt", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "public-duas",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "onMap",     "order": "ASCENDING"  },
+        { "fieldPath": "createdAt", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "comments",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "parentType", "order": "ASCENDING" },
+        { "fieldPath": "parentId",   "order": "ASCENDING" },
+        { "fieldPath": "hidden",     "order": "ASCENDING" },
+        { "fieldPath": "createdAt",  "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "comments",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "parentType", "order": "ASCENDING" },
+        { "fieldPath": "parentId",   "order": "ASCENDING" },
+        { "fieldPath": "hidden",     "order": "ASCENDING" },
+        { "fieldPath": "createdAt",  "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "leaderboard",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "hidden",      "order": "ASCENDING"  },
+        { "fieldPath": "dhikr.week",  "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "leaderboard",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "hidden",         "order": "ASCENDING"  },
+        { "fieldPath": "dhikr.allTime",  "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "leaderboard",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "hidden",             "order": "ASCENDING"  },
+        { "fieldPath": "quranAyahs.week",     "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "leaderboard",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "hidden",             "order": "ASCENDING"  },
+        { "fieldPath": "quranAyahs.allTime",  "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "leaderboard",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "hidden",      "order": "ASCENDING" },
+        { "fieldPath": "dhikr.week",  "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "leaderboard",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "hidden",         "order": "ASCENDING" },
+        { "fieldPath": "dhikr.allTime",  "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "leaderboard",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "hidden",           "order": "ASCENDING" },
+        { "fieldPath": "quranAyahs.week",  "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "leaderboard",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "hidden",              "order": "ASCENDING" },
+        { "fieldPath": "quranAyahs.allTime",  "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "leaderboard",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "hidden",         "order": "ASCENDING"  },
+        { "fieldPath": "tahajjud.week",  "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "leaderboard",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "hidden",            "order": "ASCENDING"  },
+        { "fieldPath": "tahajjud.allTime",  "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "leaderboard",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "hidden",         "order": "ASCENDING" },
+        { "fieldPath": "tahajjud.week",  "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "leaderboard",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "hidden",            "order": "ASCENDING" },
+        { "fieldPath": "tahajjud.allTime",  "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "leaderboard",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "hidden",     "order": "ASCENDING" },
+        { "fieldPath": "country",    "order": "ASCENDING" },
+        { "fieldPath": "dhikr.week", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "leaderboard",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "hidden",     "order": "ASCENDING" },
+        { "fieldPath": "country",    "order": "ASCENDING" },
+        { "fieldPath": "dhikr.week", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "leaderboard",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "hidden",         "order": "ASCENDING" },
+        { "fieldPath": "country",        "order": "ASCENDING" },
+        { "fieldPath": "dhikr.allTime",  "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "leaderboard",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "hidden",         "order": "ASCENDING" },
+        { "fieldPath": "country",        "order": "ASCENDING" },
+        { "fieldPath": "dhikr.allTime",  "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "leaderboard",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "hidden",           "order": "ASCENDING" },
+        { "fieldPath": "country",          "order": "ASCENDING" },
+        { "fieldPath": "quranAyahs.week",  "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "leaderboard",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "hidden",           "order": "ASCENDING" },
+        { "fieldPath": "country",          "order": "ASCENDING" },
+        { "fieldPath": "quranAyahs.week",  "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "leaderboard",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "hidden",              "order": "ASCENDING" },
+        { "fieldPath": "country",             "order": "ASCENDING" },
+        { "fieldPath": "quranAyahs.allTime",  "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "leaderboard",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "hidden",              "order": "ASCENDING" },
+        { "fieldPath": "country",             "order": "ASCENDING" },
+        { "fieldPath": "quranAyahs.allTime",  "order": "ASCENDING" }
       ]
     }
   ],

@@ -368,35 +368,60 @@ export const AccountabilityPartner = {
         } catch { /* ignore */ }
     },
 
-    // Listen to your own partnership document — fires when anyone connects/disconnects
+    // Listen to your own partnership document — fires when anyone connects/disconnects.
+    // Mirrors tahajjudMap.ts's subscribeTahajjudMap / duaWall.ts's pattern: wait
+    // for auth (anon sign-in may still be in flight on a cold start — attaching
+    // before it resolves gets a permission-denied that permanently closes the
+    // listener) and re-attach with backoff on any later error, instead of the
+    // Accountability Partner card silently getting stuck showing stale data
+    // until the app is force-restarted.
     listenToPartnership(onUpdate: (data: PartnerData) => void): Unsubscribe {
-        const user = getFirebaseAuth().currentUser;
-        if (!user) return () => {};
-
         const db = getFirebaseDb();
-        return onSnapshot(
-            doc(db, 'partnerships', user.uid),
-            async (snap) => {
-                if (!snap.exists()) return;
-                const data = snap.data();
-                const local = await loadLocal();
-                const myCode = local?.myCode ?? generateCode(user.uid);
+        let cancelled = false;
+        let unsubSnap: (() => void) | null = null;
+        let retryTimer: ReturnType<typeof setTimeout> | undefined;
+        let retryDelay = 5 * 1000;
 
-                const partners: PartnerEntry[] = (data.partners ?? []).filter(
-                    (p: any) => p.userId && p.code && p.name
+        const attach = () => {
+            ensureSignedIn().finally(() => {
+                if (cancelled) return;
+                const user = getFirebaseAuth().currentUser;
+                if (!user) return;
+
+                unsubSnap = onSnapshot(
+                    doc(db, 'partnerships', user.uid),
+                    async (snap) => {
+                        retryDelay = 5 * 1000; // healthy again — reset backoff
+                        if (!snap.exists()) return;
+                        const data = snap.data();
+                        const local = await loadLocal();
+                        const myCode = local?.myCode ?? generateCode(user.uid);
+
+                        const partners: PartnerEntry[] = (data.partners ?? []).filter(
+                            (p: any) => p.userId && p.code && p.name
+                        );
+
+                        // Only update if partner list actually changed
+                        const localIds = (local?.partners ?? []).map(p => p.userId).sort().join(',');
+                        const remoteIds = partners.map(p => p.userId).sort().join(',');
+                        if (localIds === remoteIds) return;
+
+                        const updated: PartnerData = { myCode, partners };
+                        await saveLocal(updated);
+                        onUpdate(updated);
+                    },
+                    () => {
+                        if (cancelled) return;
+                        unsubSnap?.(); unsubSnap = null;
+                        retryTimer = setTimeout(attach, retryDelay);
+                        retryDelay = Math.min(retryDelay * 2, 2 * 60 * 1000);
+                    }
                 );
+            });
+        };
+        attach();
 
-                // Only update if partner list actually changed
-                const localIds = (local?.partners ?? []).map(p => p.userId).sort().join(',');
-                const remoteIds = partners.map(p => p.userId).sort().join(',');
-                if (localIds === remoteIds) return;
-
-                const updated: PartnerData = { myCode, partners };
-                await saveLocal(updated);
-                onUpdate(updated);
-            },
-            () => {}
-        );
+        return () => { cancelled = true; unsubSnap?.(); if (retryTimer) clearTimeout(retryTimer); };
     },
 
     // Log tonight's Tahajjud and notify ALL partners.
@@ -475,23 +500,40 @@ export const AccountabilityPartner = {
         onUpdate: (prayedTonight: boolean, prayedAt: string | null) => void
     ): Unsubscribe {
         let currentUnsub: Unsubscribe | null = null;
+        let cancelled = false;
+        let retryTimer: ReturnType<typeof setTimeout> | undefined;
+        let retryDelay = 5 * 1000;
 
+        // Same auth-wait + backoff-retry rationale as listenToPartnership
+        // above — a permission-denied on a cold-start auth race otherwise
+        // permanently closes this listener, leaving the partner's status
+        // frozen on "hasn't prayed" with no error indication.
         const subscribe = () => {
             currentUnsub?.();
-            const today = localDateStr(new Date());
-            const db = getFirebaseDb();
-            currentUnsub = onSnapshot(
-                doc(db, 'tahajjud_logs', `${partnerUserId}_${today}`),
-                (snap) => {
-                    if (snap.exists()) {
-                        const data = snap.data() as { prayedAt: string };
-                        onUpdate(true, data.prayedAt);
-                    } else {
+            ensureSignedIn().finally(() => {
+                if (cancelled) return;
+                const today = localDateStr(new Date());
+                const db = getFirebaseDb();
+                currentUnsub = onSnapshot(
+                    doc(db, 'tahajjud_logs', `${partnerUserId}_${today}`),
+                    (snap) => {
+                        retryDelay = 5 * 1000; // healthy again — reset backoff
+                        if (snap.exists()) {
+                            const data = snap.data() as { prayedAt: string };
+                            onUpdate(true, data.prayedAt);
+                        } else {
+                            onUpdate(false, null);
+                        }
+                    },
+                    () => {
                         onUpdate(false, null);
+                        if (cancelled) return;
+                        currentUnsub?.(); currentUnsub = null;
+                        retryTimer = setTimeout(subscribe, retryDelay);
+                        retryDelay = Math.min(retryDelay * 2, 2 * 60 * 1000);
                     }
-                },
-                () => onUpdate(false, null)
-            );
+                );
+            });
         };
 
         subscribe();
@@ -510,8 +552,10 @@ export const AccountabilityPartner = {
         }, 60_000);
 
         return () => {
+            cancelled = true;
             currentUnsub?.();
             clearInterval(midnightTimer);
+            if (retryTimer) clearTimeout(retryTimer);
         };
     },
 };

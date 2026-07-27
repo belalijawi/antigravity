@@ -82,15 +82,15 @@
 <div class="container">
 
     <nav>
-        <a href="/" class="logo">
-            <div class="logo-icon"><img src="/icon.png" alt="" /></div>
+        <a href="index.html" class="logo">
+            <div class="logo-icon"><img src="icon.png" alt="" /></div>
             <span>Tahajjud+</span>
         </a>
-        <a href="/" class="back">← Back</a>
+        <a href="index.html" class="back">← Back</a>
     </nav>
 
     <h1>Privacy Policy</h1>
-    <div class="updated">Last updated: June 7, 2026</div>
+    <div class="updated">Last updated: July 27, 2026</div>
 
     <div class="callout">
         <p>Most of what you do in Tahajjud+ stays on your device. The few things that don't are listed below, explicitly.</p>
@@ -109,6 +109,7 @@
         <li>Cached Quran text and translations</li>
         <li>Bedtime suggestions and biphasic sleep configuration</li>
         <li>Letters to Allah (private writings)</li>
+        <li>Your chosen community nickname and country (see "Community features" below) — remembered locally so you don't have to re-enter them each time you post or join the Leaderboard</li>
     </ul>
 
     <h2>2. Cloud sync (opt-in only)</h2>
@@ -128,12 +129,20 @@
     <p>Some features are intentionally public when you opt in:</p>
 
     <h3>Dua Wall</h3>
-    <p>If you tap "Publish" on the Dua Wall, your dua text appears anonymously to other users. We store your Firebase user ID server-side to enforce rate limits and respond to reports — but it is <strong>never displayed alongside the dua</strong>.</p>
+    <p>If you tap "Publish" on the Dua Wall, your dua text appears anonymously to other users, along with an optional self-reported country flag if you've set one. We store your Firebase user ID server-side to enforce rate limits and respond to reports — but it is <strong>never displayed alongside the dua</strong>.</p>
     <p>When you tap <strong>Ameen</strong> or <strong>Pray for</strong> on a community dua, we record an idempotency marker (your user ID + the dua ID) in Firestore so the count can't be inflated. This marker is not shown to anyone. You can undo an Ameen or Pray, which deletes your marker.</p>
     <p>If you tap <strong>Report</strong> on a dua, we store the report (your user ID + the dua ID + auto-hide threshold) so moderators can review. Reporters are never disclosed to the author.</p>
 
+    <h3>Replies &amp; comments</h3>
+    <p>If you reply to a dua or a Tahajjud Story, your reply text, the name you choose to show (or "Anonymous"), and an optional country flag are visible to everyone who views that thread. We store your Firebase user ID server-side to enforce spacing between replies and to respond to reports — it is never displayed. If the original author hearts your reply, that's shown as a small badge; no account information is disclosed by this.</p>
+
+    <h3>Leaderboard</h3>
+    <p>The Leaderboard is entirely opt-in — nobody appears on it unless they choose a nickname and tap Join. If you join, your nickname, an optional self-reported country (shown as a flag), and your dhikr, Qur'an-reading, and Tahajjud counts become publicly visible and ranked against other participants, both weekly and all-time, worldwide or filtered by country. Your real name, account, or any other app content is never shown alongside your leaderboard entry. Leaving the Leaderboard deletes your entry entirely — nothing lingers.</p>
+    <p>The app may occasionally show you a local notification when your own rank crosses a milestone (like reaching the Top 10). This is calculated entirely on your device from your own data and involves no additional data collection or transmission.</p>
+
     <h3>Global Tahajjud Map</h3>
     <p>If you tap "I'm praying now" on the Global Map, a single anonymous dot appears at your approximate city level. We store only a rounded latitude/longitude (imprecise enough to cover a several-kilometre radius) and a UTC timestamp — <strong>no user ID, name, or precise coordinates</strong> are stored. The dot disappears automatically after 24 hours and cannot be traced back to you.</p>
+    <p>If you choose to also pin a published dua to the map (a separate opt-in step when publishing), that same rounded, city-level location is shown alongside the dua's pin for 24 hours, tappable by other users — still with no name or account information attached.</p>
 
     <h3>Testimony submissions</h3>
     <p>Stories you submit through "Share Your Story" go to a moderation queue. If approved, they appear in the community feed under whatever author name you entered ("Anonymous", a first name, etc.) — never your account information.</p>
@@ -157,6 +166,8 @@
         <li><strong>Prayer reminders</strong> — scheduled locally on your device. iOS handles delivery without any server.</li>
         <li><strong>Tahajjud wake-up reminders</strong> — also scheduled locally.</li>
         <li><strong>Accountability partner wake-ups</strong> — when a partner taps "Wake," we send a push from <a href="https://expo.dev" target="_blank">Expo's push service</a> to your device using the token saved in Firestore. The message content (e.g. "[Partner name] is calling you to Tahajjud") is the only data transmitted. We do not see the message; Expo briefly relays it to Apple's APNs.</li>
+        <li><strong>Community activity</strong> — if someone replies to your dua or story, likes your reply, or your dua/story is chosen as a featured pick, we send a push the same way (via Expo, using your saved token) so you know to check the app. No message content beyond a short, generic notice (e.g. "Someone replied to your dua") is transmitted, and reactors are never identified to you in the notification itself.</li>
+        <li><strong>Leaderboard rank</strong> — shown as a notification entirely generated and displayed on your device when your own rank crosses a milestone; nothing is sent to or from our servers for this one.</li>
     </ul>
     <p>You can disable any notification in iOS Settings → Tahajjud+ → Notifications.</p>
 
@@ -222,7 +233,7 @@
     </p>
 
     <footer>
-        © 2026 Tahajjud+ · <a href="/">Home</a> · <a href="/terms">Terms of Use</a> · <a href="/support">Support</a>
+        © 2026 Tahajjud+ · <a href="index.html">Home</a> · <a href="terms.html">Terms of Use</a> · <a href="support.html">Support</a>
     </footer>
 </div>
 </body>

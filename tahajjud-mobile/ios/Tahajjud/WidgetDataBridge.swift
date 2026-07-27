@@ -10,15 +10,30 @@ class WidgetDataBridge: NSObject {
     private let storageKey = "widget_data"
 
     /// Called from React Native with:
-    ///   - nextPrayer:     name of the next prayer (e.g. "Dhuhr")
-    ///   - nextPrayerTime: Unix timestamp (seconds) of the next prayer
-    ///   - streak:         current Tahajjud streak count
-    ///   - tahajjudStart:  Unix timestamp (seconds) of tonight's last-third start (0 if unknown)
+    ///   - nextPrayer:      name of the next prayer (e.g. "Dhuhr") — fallback only, see prayerTimesJSON
+    ///   - nextPrayerTime:  Unix timestamp (seconds) of the next prayer — fallback only
+    ///   - streak:          current Tahajjud streak count
+    ///   - tahajjudStart:   Unix timestamp (seconds) of tonight's last-third start (0 if unknown)
+    ///   - loggablePrayer:  lowercase key of a daily prayer that's started but isn't logged yet ("" if none) — fallback only
+    ///   - prayerTimesJSON: JSON object of today's 5 daily-prayer Unix timestamps (fajr/dhuhr/asr/maghrib/isha, 0 if unknown)
+    ///   - todayDateStr:    "YYYY-MM-DD" (device-local) the above times and loggedToday apply to
+    ///   - loggedToday:     lowercase keys of today's daily prayers already logged
+    ///
+    /// nextPrayer/nextPrayerTime/loggablePrayer are also stored as a fallback
+    /// for widgets that haven't reloaded past a stale cache, but WidgetData
+    /// (TahajjudWidget target) prefers deriving them live from
+    /// prayerTimesJSON/todayDateStr/loggedToday against the CURRENT time —
+    /// that's what lets the widget stay correct across a prayer transition
+    /// without needing the app reopened to push a fresh snapshot.
     @objc func writeWidgetData(
         _ nextPrayer: String,
         nextPrayerTime: Double,
         streak: NSNumber,
-        tahajjudStart: Double
+        tahajjudStart: Double,
+        loggablePrayer: String,
+        prayerTimesJSON: String,
+        todayDateStr: String,
+        loggedToday: [String]
     ) {
         guard let defaults = UserDefaults(suiteName: suiteName) else { return }
 
@@ -27,9 +42,15 @@ class WidgetDataBridge: NSObject {
             "nextPrayerTime": nextPrayerTime,
             "streak":         streak.intValue,
             "updatedAt":      Date().timeIntervalSince1970,
+            "prayerTimesJSON": prayerTimesJSON,
+            "todayDateStr":   todayDateStr,
+            "loggedToday":    loggedToday,
         ]
         if tahajjudStart > 0 {
             payload["tahajjudStart"] = tahajjudStart
+        }
+        if !loggablePrayer.isEmpty {
+            payload["loggablePrayer"] = loggablePrayer
         }
 
         if let data = try? JSONSerialization.data(withJSONObject: payload) {

@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useState, useCallback, useMemo } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, ScrollView } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { GlassBg as BlurView } from './GlassBg';
@@ -45,33 +45,44 @@ function YearHeatmap({ dateMap, colors }: { dateMap: DateMap; colors: any }) {
     // Build 52 weeks ending today. Time flows left-to-right: oldest week
     // is on the far left, the CURRENT week sits on the far right — matches
     // GitHub / Apple Health / Strava heatmap conventions.
-    const today = new Date();
-    const weeks: Date[][] = [];
-    // Start from the Sunday 51 weeks ago
-    const start = new Date(today);
-    start.setDate(start.getDate() - (start.getDay()) - 51 * 7);
+    //
+    // This is purely date-arithmetic (371 Date objects), independent of
+    // dateMap, so it only needs to recompute when the calendar day actually
+    // changes — not on every render (e.g. from an unrelated theme-context
+    // update via useTheme() elsewhere in this component).
+    const todayKey = localDateStr(new Date());
+    const { weeks, monthLabels } = useMemo(() => {
+        const today = new Date();
+        const weeks: Date[][] = [];
+        // Start from the Sunday 51 weeks ago
+        const start = new Date(today);
+        start.setDate(start.getDate() - (start.getDay()) - 51 * 7);
 
-    for (let w = 0; w < 53; w++) {
-        const week: Date[] = [];
-        for (let d = 0; d < 7; d++) {
-            const day = new Date(start);
-            day.setDate(start.getDate() + w * 7 + d);
-            if (day <= today) week.push(day);
+        for (let w = 0; w < 53; w++) {
+            const week: Date[] = [];
+            for (let d = 0; d < 7; d++) {
+                const day = new Date(start);
+                day.setDate(start.getDate() + w * 7 + d);
+                if (day <= today) week.push(day);
+            }
+            if (week.length > 0) weeks.push(week);
         }
-        if (week.length > 0) weeks.push(week);
-    }
 
-    // Month labels: find where each month starts
-    const monthLabels: { label: string; weekIdx: number }[] = [];
-    weeks.forEach((week, wi) => {
-        const firstDay = week[0];
-        if (firstDay.getDate() <= 7) {
-            monthLabels.push({
-                label: firstDay.toLocaleString(getLocale(), { month: 'short' }),
-                weekIdx: wi,
-            });
-        }
-    });
+        // Month labels: find where each month starts
+        const monthLabels: { label: string; weekIdx: number }[] = [];
+        weeks.forEach((week, wi) => {
+            const firstDay = week[0];
+            if (firstDay.getDate() <= 7) {
+                monthLabels.push({
+                    label: firstDay.toLocaleString(getLocale(), { month: 'short' }),
+                    weekIdx: wi,
+                });
+            }
+        });
+
+        return { weeks, monthLabels };
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [todayKey]);
 
     return (
         <ScrollView
@@ -105,7 +116,7 @@ function YearHeatmap({ dateMap, colors }: { dateMap: DateMap; colors: any }) {
                             const day = week[dayOfWeek];
                             if (!day) return <View key={wi} style={{ width: CELL + GAP }} />;
                             const dateStr = localDateStr(day);
-                            const isToday = dateStr === localDateStr(today);
+                            const isToday = dateStr === todayKey;
                             const count = dateMap[dateStr]?.size ?? 0;
                             return (
                                 <View
@@ -249,7 +260,7 @@ export function HistoryCalendar() {
                                 style={styles.detailItem}
                                 disabled={!isPast}
                                 onPress={() => {
-                                    if (!isPremium) { openPaywall('history_backfill'); return; }
+                                    if (!isPremium) { openPaywall('history_backfill', 'prayer_analytics'); return; }
                                     toggleDayPrayer(selectedDate, pk);
                                 }}
                                 activeOpacity={0.7}
@@ -355,7 +366,7 @@ export function HistoryCalendar() {
                         return (
                             <TouchableOpacity
                                 key={mode}
-                                onPress={() => locked ? openPaywall('feature_gate:history_view') : setViewMode(mode)}
+                                onPress={() => locked ? openPaywall('feature_gate:history_view', 'prayer_analytics') : setViewMode(mode)}
                                 style={[
                                     styles.toggleBtn,
                                     active && { backgroundColor: colors.accent + '22', borderColor: colors.accent + '55' },
@@ -539,7 +550,7 @@ export function HistoryCalendar() {
                                 <Lock size={22} color="#f59e0b" />
                                 <Text style={styles.lockedTitle}>{t('historyCal.lockedMonthTitle')}</Text>
                                 <Text style={styles.lockedSub}>{t('historyCal.lockedMonthSub')}</Text>
-                                <TouchableOpacity style={[styles.lockedBtn, { backgroundColor: colors.accent }]} onPress={() => openPaywall('feature_gate:history_month')}>
+                                <TouchableOpacity style={[styles.lockedBtn, { backgroundColor: colors.accent }]} onPress={() => openPaywall('feature_gate:history_month', 'prayer_analytics')}>
                                     <Text style={styles.lockedBtnText}>{t('historyCal.unlockBtn')}</Text>
                                 </TouchableOpacity>
                             </View>
@@ -559,7 +570,7 @@ export function HistoryCalendar() {
                                     <Lock size={22} color="#f59e0b" />
                                     <Text style={styles.lockedTitle}>{t('historyCal.lockedYearTitle')}</Text>
                                     <Text style={styles.lockedSub}>{t('historyCal.lockedYearSub')}</Text>
-                                    <TouchableOpacity style={[styles.lockedBtn, { backgroundColor: colors.accent }]} onPress={() => openPaywall('feature_gate:history_year')}>
+                                    <TouchableOpacity style={[styles.lockedBtn, { backgroundColor: colors.accent }]} onPress={() => openPaywall('feature_gate:history_year', 'prayer_analytics')}>
                                         <Text style={styles.lockedBtnText}>{t('historyCal.unlockBtn')}</Text>
                                     </TouchableOpacity>
                                 </View>

@@ -57,7 +57,9 @@ export function WidgetPromo({ onDismiss }: WidgetPromoProps) {
         ]).start(onDismiss);
     };
 
-    if (Platform.OS !== 'ios') return null;
+    const steps = Platform.OS === 'android'
+        ? [t('widgetPromo.step1'), t('widgetPromo.step2Android'), t('widgetPromo.step3Android'), t('widgetPromo.step4Android')]
+        : [t('widgetPromo.step1'), t('widgetPromo.step2'), t('widgetPromo.step3'), t('widgetPromo.step4')];
 
     return (
         <Animated.View style={[styles.wrapper, { opacity, transform: [{ translateY }] }]}>
@@ -98,12 +100,7 @@ export function WidgetPromo({ onDismiss }: WidgetPromoProps) {
 
                 {/* Step-by-step */}
                 <View style={styles.steps}>
-                    {[
-                        t('widgetPromo.step1'),
-                        t('widgetPromo.step2'),
-                        t('widgetPromo.step3'),
-                        t('widgetPromo.step4'),
-                    ].map((step, i) => (
+                    {steps.map((step, i) => (
                         <View key={i} style={styles.stepRow}>
                             <View style={styles.stepNum}>
                                 <Text style={styles.stepNumText}>{i + 1}</Text>
@@ -130,7 +127,6 @@ export function WidgetPromo({ onDismiss }: WidgetPromoProps) {
 
 /** Call this to check whether the promo should be shown */
 export async function shouldShowWidgetPromo(): Promise<boolean> {
-    if (Platform.OS !== 'ios') return false;
     const dismissed = await AsyncStorage.getItem(DISMISSED_KEY);
     return dismissed !== 'true';
 }

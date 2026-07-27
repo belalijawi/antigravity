@@ -4,11 +4,59 @@ import SwiftUI
 // MARK: - Shared data model
 
 struct WidgetData: Codable {
-    var nextPrayer: String
-    var nextPrayerTime: Date
     var streak: Int
     var updatedAt: Date
     var tahajjudStart: Date?
+
+    // ── Raw ingredients for LIVE computation ──────────────────────────────
+    // "Next prayer" and "loggable prayer" used to be computed once in JS and
+    // baked into this struct at push time — correct only until the next
+    // prayer transition, then stuck (e.g. "Log Dhuhr" still showing well
+    // after Asr had also started, because nothing told the widget time had
+    // moved on while the app stayed closed). Storing the raw times instead
+    // and computing against Date() on every render fixes that: WidgetKit
+    // reloads this struct on its own schedule (see refresh policy below)
+    // regardless of whether the app is open.
+    var prayerTimesToday: [String: Date]   // keys: fajr/dhuhr/asr/maghrib/isha
+    var todayDateStr: String?              // "YYYY-MM-DD", device-local — which day loggedToday applies to
+    var loggedToday: [String]              // lowercase prayer keys already logged today
+
+    // Fallback snapshot — used only when prayerTimesToday is empty, i.e. a
+    // widget still showing a cached blob from before this field existed.
+    var fallbackNextPrayer: String
+    var fallbackNextPrayerTime: Date
+    var fallbackLoggablePrayer: String?
+
+    private static let prayerOrder = ["fajr", "dhuhr", "asr", "maghrib", "isha"]
+
+    /// "YYYY-MM-DD" in the device's local calendar — matches the JS side's
+    /// localDateStr() semantics so date comparisons agree.
+    private static func localDateStr(_ date: Date) -> String {
+        let c = Calendar.current.dateComponents([.year, .month, .day], from: date)
+        return String(format: "%04d-%02d-%02d", c.year ?? 0, c.month ?? 0, c.day ?? 0)
+    }
+
+    private var liveNext: (name: String, date: Date)? {
+        guard !prayerTimesToday.isEmpty else { return nil }
+        let now = Date()
+        for key in Self.prayerOrder {
+            guard let t = prayerTimesToday[key], t > now else { continue }
+            return (key.prefix(1).uppercased() + key.dropFirst(), t)
+        }
+        // All of today's have passed — next is Fajr. Roll it forward a day
+        // at a time until it's actually in the future, so this stays correct
+        // even if the widget goes unrefreshed for more than one day.
+        guard var fajr = prayerTimesToday["fajr"] else { return nil }
+        var guardCount = 0
+        while fajr <= now && guardCount < 14 {
+            fajr = fajr.addingTimeInterval(24 * 3600)
+            guardCount += 1
+        }
+        return ("Fajr", fajr)
+    }
+
+    var nextPrayer: String { liveNext?.name ?? fallbackNextPrayer }
+    var nextPrayerTime: Date { liveNext?.date ?? fallbackNextPrayerTime }
 
     /// tahajjudStart, but only while it's still meaningful to display. The
     /// app writes whatever night it last calculated — opened at 1am that's
@@ -24,12 +72,42 @@ struct WidgetData: Codable {
         return t
     }
 
+    /// The most recent of today's daily prayers whose time has started but
+    /// that isn't in loggedToday yet — computed live against Date(). nil if
+    /// prayerTimesToday is unavailable, or if todayDateStr doesn't match
+    /// today (the pushed data is stale by more than a day, so loggedToday
+    /// would refer to the wrong day — better to fall back than guess wrong).
+    private var liveLoggablePrayer: String? {
+        guard !prayerTimesToday.isEmpty,
+              let stamped = todayDateStr, stamped == Self.localDateStr(Date())
+        else { return nil }
+        let now = Date()
+        var best: (prayer: String, time: Date)?
+        for key in Self.prayerOrder {
+            guard let t = prayerTimesToday[key], t <= now else { continue }
+            if loggedToday.contains(key) { continue }
+            if best == nil || t > best!.time { best = (key, t) }
+        }
+        return best?.prayer
+    }
+
+    /// The prayer key the widget's "Log" button should target right now, if
+    /// any — the open Tahajjud gate takes priority over a daily prayer.
+    var loggableNow: String? {
+        if let t = freshTahajjudStart, Date() >= t { return "tahajjud" }
+        return liveLoggablePrayer ?? fallbackLoggablePrayer
+    }
+
     static let placeholder = WidgetData(
-        nextPrayer: "Isha",
-        nextPrayerTime: Date().addingTimeInterval(3600),
         streak: 7,
         updatedAt: Date(),
-        tahajjudStart: Date().addingTimeInterval(18000) // ~5 hours from now
+        tahajjudStart: Date().addingTimeInterval(18000), // ~5 hours from now
+        prayerTimesToday: [:],
+        todayDateStr: nil,
+        loggedToday: [],
+        fallbackNextPrayer: "Isha",
+        fallbackNextPrayerTime: Date().addingTimeInterval(3600),
+        fallbackLoggablePrayer: "asr"
     )
 
     static func load() -> WidgetData {
@@ -38,18 +116,35 @@ struct WidgetData: Codable {
               let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
         else { return .placeholder }
 
-        let nextPrayer     = json["nextPrayer"] as? String ?? "Prayer"
-        let nextPrayerTime = (json["nextPrayerTime"] as? Double).map { Date(timeIntervalSince1970: $0) } ?? Date()
         let streak         = json["streak"] as? Int ?? 0
         let updatedAt      = (json["updatedAt"] as? Double).map { Date(timeIntervalSince1970: $0) } ?? Date()
         let tahajjudStart  = (json["tahajjudStart"] as? Double).map { Date(timeIntervalSince1970: $0) }
 
+        var prayerTimesToday: [String: Date] = [:]
+        if let rawJSON = json["prayerTimesJSON"] as? String,
+           let rawData = rawJSON.data(using: .utf8),
+           let times = try? JSONSerialization.jsonObject(with: rawData) as? [String: Double] {
+            for (key, seconds) in times where seconds > 0 {
+                prayerTimesToday[key] = Date(timeIntervalSince1970: seconds)
+            }
+        }
+        let todayDateStr = json["todayDateStr"] as? String
+        let loggedToday  = json["loggedToday"] as? [String] ?? []
+
+        let fallbackNextPrayer     = json["nextPrayer"] as? String ?? "Prayer"
+        let fallbackNextPrayerTime = (json["nextPrayerTime"] as? Double).map { Date(timeIntervalSince1970: $0) } ?? Date()
+        let fallbackLoggablePrayer = json["loggablePrayer"] as? String
+
         return WidgetData(
-            nextPrayer: nextPrayer,
-            nextPrayerTime: nextPrayerTime,
             streak: streak,
             updatedAt: updatedAt,
-            tahajjudStart: tahajjudStart
+            tahajjudStart: tahajjudStart,
+            prayerTimesToday: prayerTimesToday,
+            todayDateStr: todayDateStr,
+            loggedToday: loggedToday,
+            fallbackNextPrayer: fallbackNextPrayer,
+            fallbackNextPrayerTime: fallbackNextPrayerTime,
+            fallbackLoggablePrayer: fallbackLoggablePrayer
         )
     }
 }
@@ -262,9 +357,30 @@ struct MediumWidgetView: View {
                     .frame(width: 1)
                     .padding(.vertical, 12)
 
-                // Right: streak
+                // Right: log button (when something's loggable) or streak
                 VStack(spacing: 4) {
-                    if entry.widgetData.streak > 0 {
+                    if let prayer = entry.widgetData.loggableNow {
+                        Button(intent: LogPrayerIntent(prayer: prayer)) {
+                            VStack(spacing: 2) {
+                                Image(systemName: "checkmark.circle.fill")
+                                    .font(.system(size: 22))
+                                Text("Log")
+                                    .font(.system(size: 12, weight: .bold))
+                                // Names the exact prayer this button logs —
+                                // without it, "Log" next to "Next Prayer: Asr"
+                                // on the left reads as if it logs Asr, when it
+                                // actually logs whichever passed prayer is
+                                // still unlogged (which could be an earlier
+                                // one, e.g. Dhuhr). Matches LargeWidgetView's
+                                // "Log <Prayer>" label for the same reason.
+                                Text(prayer.capitalized)
+                                    .font(.system(size: 10, weight: .semibold))
+                                    .foregroundColor(Color(hex: "22d3ee").opacity(0.8))
+                            }
+                            .foregroundColor(Color(hex: "22d3ee"))
+                        }
+                        .buttonStyle(.plain)
+                    } else if entry.widgetData.streak > 0 {
                         Text("🔥")
                             .font(.system(size: 28))
                         Text("\(entry.widgetData.streak)")
@@ -467,6 +583,23 @@ struct LargeWidgetView: View {
                     }
 
                     Spacer()
+
+                    if let prayer = entry.widgetData.loggableNow {
+                        Button(intent: LogPrayerIntent(prayer: prayer)) {
+                            HStack(spacing: 6) {
+                                Image(systemName: "checkmark.circle.fill")
+                                    .font(.system(size: 14))
+                                Text("Log \(prayer.capitalized)")
+                                    .font(.system(size: 13, weight: .bold))
+                            }
+                            .foregroundColor(Color(hex: "020617"))
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 8)
+                            .background(Color(hex: "22d3ee"))
+                            .cornerRadius(10)
+                        }
+                        .buttonStyle(.plain)
+                    }
                 }
             }
             .padding(18)

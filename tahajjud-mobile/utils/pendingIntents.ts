@@ -1,17 +1,21 @@
-import { NativeModules, Platform } from 'react-native';
+import { NativeModules, DeviceEventEmitter } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { localDateStr } from './localDate';
 import { logTahajjudToMap, MAP_WINDOW_MS } from './tahajjudMap';
+import { track } from './analytics';
+import { checkAchievements } from './achievements';
+import { AccountabilityPartner } from './accountabilityPartner';
+import { TahajjudChallenge } from './tahajjudChallenge';
+import { refreshWeeklyDigest } from './weeklyDigest';
 
 /**
- * Drains pending prayer-log intents from the iOS shared App Group.
- * Called on app launch — picks up logs that Siri/Shortcuts wrote while the
- * app was closed and merges them into the local tracker.
+ * Drains pending prayer-log intents written outside the JS app — the
+ * widget's "Log" button on both platforms (ios/TahajjudWidget/LogPrayerIntent.swift,
+ * android/.../widget/LogPrayerAction.kt), picked up on next app launch or
+ * foreground and merged into the local tracker.
  *
- * The native side (TahajjudAppIntents.swift) writes entries like
- * "fajr|2026-05-10T03:48:00Z" to UserDefaults under "pending-prayer-logs".
- *
- * On Android this is a no-op (App Intents are iOS-specific).
+ * The native side writes entries like "fajr|2026-05-10T03:48:00Z" to shared
+ * storage under a pending-logs key (see PendingIntentsBridge on each platform).
  */
 
 const { PendingIntentsBridge } = NativeModules;
@@ -24,7 +28,7 @@ interface PendingLog {
 }
 
 export async function drainPendingPrayerLogs(): Promise<number> {
-    if (Platform.OS !== 'ios' || !PendingIntentsBridge) return 0;
+    if (!PendingIntentsBridge) return 0;
 
     let entries: string[] = [];
     try {
@@ -56,17 +60,27 @@ export async function drainPendingPrayerLogs(): Promise<number> {
             if (!already) {
                 (history[e.prayer] as string[]).push(e.iso);
                 merged++;
-                // A Siri/Shortcuts Tahajjud log is just as real as one logged
-                // in-app, so it should count on the global map too — but only
-                // if it's still recent enough to fall in the map's rolling
-                // window. An older one (e.g. phone was offline for days) would
-                // misrepresent a past night as happening right now.
-                if (e.prayer === 'tahajjud' && Date.now() - new Date(e.iso).getTime() <= MAP_WINDOW_MS) {
-                    logTahajjudToMap().catch(() => {});
+                track('prayer_logged', { prayer: e.prayer, source: 'widget' });
+                if (e.prayer === 'tahajjud') {
+                    // A widget-tap Tahajjud log is just as real as one logged
+                    // in-app, so it should count on the global map too — but only
+                    // if it's still recent enough to fall in the map's rolling
+                    // window. An older one (e.g. phone was offline for days) would
+                    // misrepresent a past night as happening right now.
+                    if (Date.now() - new Date(e.iso).getTime() <= MAP_WINDOW_MS) {
+                        logTahajjudToMap().catch(() => {});
+                    }
+                    checkAchievements('prayer', (history.tahajjud as string[]).length).catch(() => {});
+                    AccountabilityPartner.logTahajjudForPartner().catch(() => {});
+                    import('./streakReminder').then(m => m.cancelStreakAtRisk()).catch(() => {});
+                    refreshWeeklyDigest().catch(() => {});
+                    TahajjudChallenge.recordTahajjudToday().catch(() => {});
+                    import('./liveActivity').then(m => m.LiveActivity.endAll()).catch(() => {});
                 }
             }
         }
         await AsyncStorage.setItem(TRACKER_KEY, JSON.stringify(history));
+        if (merged > 0) DeviceEventEmitter.emit('prayerLogged');
     } catch {
         return 0; // don't ack — try again next launch
     }

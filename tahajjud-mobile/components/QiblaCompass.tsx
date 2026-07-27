@@ -24,7 +24,7 @@ export function QiblaCompass() {
     const rotationAnim = useRef(new Animated.Value(0)).current;
     const roseAnim = useRef(new Animated.Value(0)).current;
     const pulseAnim = useRef(new Animated.Value(1)).current;
-    const lockTimerRef = useRef<NodeJS.Timeout | null>(null);
+    const lockTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
     const offTargetCountRef = useRef(0);
     const lastHeadingRef = useRef<number | null>(null);
     const lastTargetRotationRef = useRef<number>(0);
@@ -37,7 +37,7 @@ export function QiblaCompass() {
     // an honest warning instead of a confidently-wrong arrow.
     const [compassUnavailable, setCompassUnavailable] = useState(false);
     const headingReceivedRef = useRef(false);
-    const compassCheckTimerRef = useRef<NodeJS.Timeout | null>(null);
+    const compassCheckTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
     // Local magnetic declination (degrees, +E/−W) at the user's location.
     // On Android we add this to the raw magnetic heading ourselves to get TRUE
     // north — the Qibla bearing is true-north, and Android's built-in
@@ -181,10 +181,14 @@ export function QiblaCompass() {
             // Balanced = WiFi / cell-tower based (~10–100m). Way faster than
             // High (which forces a GPS satellite fix and can take 10–30s
             // indoors on a cold start). 100m accuracy is irrelevant for Qibla.
+            // getCurrentPositionAsync itself has no built-in timeout though —
+            // on a weak/absent fix it can hang indefinitely, leaving "Finding
+            // Qibla..." spinning forever. Race it against a hard cap instead.
             if (!coords) {
-                const location = await Location.getCurrentPositionAsync({
-                    accuracy: Location.Accuracy.Balanced,
-                });
+                const location = await Promise.race([
+                    Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced }),
+                    new Promise<never>((_, reject) => setTimeout(() => reject(new Error('location-timeout')), 6000)),
+                ]);
                 coords = location.coords;
             }
 

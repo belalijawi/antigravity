@@ -196,7 +196,7 @@ export function NightCalculator({ onNightCalcReady, onPrayerTimesReady, refreshK
             }
         };
 
-        start();
+        start().catch(() => {});
 
         // Throttle foreground re-fetches — Android fires AppState 'active' on
         // every focus change (keyboard, system bar, biometric prompt). Without
@@ -261,13 +261,22 @@ export function NightCalculator({ onNightCalcReady, onPrayerTimesReady, refreshK
             const tahajjudNights: { targetTime: Date; buffer: number }[] = [];
             const futurePrayers: { name: string; time: Date }[] = [];
 
-            for (let i = 1; i <= 6; i++) {
-                const night = addDays(new Date(), i);
-                const nextDay = addDays(new Date(), i + 1);
-                const [nightTimes, nextDayTimes] = await Promise.all([
-                    getPrayerTimes(lat, lng, night, method),
-                    getPrayerTimes(lat, lng, nextDay, method),
-                ]);
+            // Each day's pair of fetches was already parallelized, but the
+            // loop itself awaited day-by-day, serializing 6 days of network
+            // round-trips. Fire all 6 days' fetches at once instead.
+            const perDay = await Promise.all(
+                Array.from({ length: 6 }, (_, idx) => {
+                    const i = idx + 1;
+                    const night = addDays(new Date(), i);
+                    const nextDay = addDays(new Date(), i + 1);
+                    return Promise.all([
+                        getPrayerTimes(lat, lng, night, method),
+                        getPrayerTimes(lat, lng, nextDay, method),
+                    ]);
+                })
+            );
+
+            for (const [nightTimes, nextDayTimes] of perDay) {
                 if (tahajjudEnabled) {
                     const calc = calculateLastThird(nightTimes.maghrib, nextDayTimes.fajr);
                     for (const buf of remindBuffers) {
@@ -366,14 +375,32 @@ export function NightCalculator({ onNightCalcReady, onPrayerTimesReady, refreshK
                 return;
             }
             setLocationDenied(false);
-            const loc = await Location.getCurrentPositionAsync({
-                accuracy: Location.Accuracy.Balanced,
-            });
+            // getCurrentPositionAsync has no built-in timeout — on a cold GPS
+            // fix (indoors, poor signal, first launch) it can hang far longer
+            // than the 12s prayer-times API cap, blocking everything behind
+            // it since fetchData() doesn't start until `location` is set.
+            // Race it against a fast last-known-position fallback so a slow
+            // fix never blocks the screen for long.
+            let loc;
+            try {
+                loc = await Promise.race([
+                    Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced }),
+                    new Promise<never>((_, reject) => setTimeout(() => reject(new Error('location-timeout')), 6000)),
+                ]);
+            } catch {
+                const lastKnown = await Location.getLastKnownPositionAsync().catch(() => null);
+                if (!lastKnown) throw new Error('no-location-fix');
+                loc = lastKnown;
+            }
             await applyNewLocation(loc.coords.latitude, loc.coords.longitude);
         } catch (error) {
+            // Permission is already confirmed granted at this point — a thrown
+            // error here means the GPS fix itself failed (cold start, indoors,
+            // timeout), not that access was denied. Don't show the "enable
+            // location" banner for that; just fall back to Makkah for now and
+            // let the next foreground/city-badge retry pick up a real fix.
             console.error('Error fetching location:', error);
             if (!location) {
-                setLocationDenied(true);
                 setLocation({ lat: 21.4225, lng: 39.8262 });
                 setCityName('Makkah');
             }

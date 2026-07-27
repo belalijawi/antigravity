@@ -159,7 +159,16 @@ export async function getPrayerTimes(latitude: number, longitude: number, date?:
     const url = `${ALADHAN_API_URL}/timings/${dateStr}?latitude=${latitude}&longitude=${longitude}&method=${finalMethod}${customParams}`;
 
     try {
-        const response = await fetchWithTimeout(url, 12000);
+        // Retry once on a fresh (uncached) failure — e.g. a new city with no
+        // stale cache to fall back to, on spotty airport/hotel wifi. Without
+        // this, a single dropped packet on the very first fetch for a
+        // location throws immediately with nothing to fall back on.
+        let response: Response;
+        try {
+            response = await fetchWithTimeout(url, 12000);
+        } catch {
+            response = await fetchWithTimeout(url, 12000);
+        }
         if (!response.ok) {
             throw new Error("Failed to fetch prayer times");
         }

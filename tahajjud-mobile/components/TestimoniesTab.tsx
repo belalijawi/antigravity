@@ -1,8 +1,9 @@
-import React, { useState, useRef, useEffect } from 'react';
-import { View, Text, FlatList, TouchableOpacity, StyleSheet, Linking, Share, ScrollView, Platform, Alert, RefreshControl, DeviceEventEmitter, Dimensions, NativeSyntheticEvent, NativeScrollEvent } from 'react-native';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
+import { View, Text, FlatList, TouchableOpacity, StyleSheet, Linking, Share, ScrollView, Alert, RefreshControl, DeviceEventEmitter, Dimensions, NativeSyntheticEvent, NativeScrollEvent, KeyboardAvoidingView, Platform } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Heart, Send, Share2, BookHeart, Sparkles, PenLine, Star } from 'lucide-react-native';
 import { SubmitTestimonyModal } from './SubmitTestimonyModal';
+import { CommentThread } from './CommentThread';
 import { GlassBg as BlurView } from './GlassBg';
 import { LinearGradient } from 'expo-linear-gradient';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -36,7 +37,11 @@ async function setTestimonyLiked(id: string, liked: boolean): Promise<void> {
     } catch {}
 }
 
-const TestimonyCard = ({ item, onShare, isTopStory }: { item: Testimony, onShare: (item: Testimony) => void, isTopStory?: boolean }) => {
+// Memoized like DuaWall.tsx's DuaCard — TestimoniesTab's featured-carousel
+// auto-rotation timer re-renders the whole tab every 5s (see featuredIndex
+// below), which would otherwise re-render every currently-visible card too.
+const TestimonyCard = React.memo(function TestimonyCard({ item, onShare, isTopStory }: { item: Testimony, onShare: (item: Testimony) => void, isTopStory?: boolean }) {
+    const { colors } = useTheme();
     const [liked, setLiked] = useState(false);
     const [count, setCount] = useState(item.reactions);
     // Latest desired like-state, updated synchronously on every tap so taps are
@@ -188,10 +193,22 @@ const TestimonyCard = ({ item, onShare, isTopStory }: { item: Testimony, onShare
                         </Text>
                     </TouchableOpacity>
                 </View>
+
+                {/* Replies — real community stories only; seeds aren't live posts.
+                    This tab isn't a modal, so the global paywall presents fine
+                    (no onRequestPaywall override needed). */}
+                {isServerTestimony && (
+                    <CommentThread
+                        parentType="testimony"
+                        parentId={String(item.id)}
+                        replyCount={item.replyCount ?? 0}
+                        accent={colors.accent}
+                    />
+                )}
             </View>
         </View>
     );
-};
+});
 
 
 function pickFeatured(all: Testimony[]): Testimony[] {
@@ -212,6 +229,10 @@ export function TestimoniesTab() {
     const [featured, setFeatured] = useState<Testimony[]>(() => pickFeatured(initialTestimonies));
     const [featuredIndex, setFeaturedIndex] = useState(0);
     const [showSubmit, setShowSubmit] = useState(false);
+    // Set when a featured carousel card is tapped — scrolls the main list
+    // down to that exact story instead of just opening the share sheet
+    // (sharing already has its own dedicated icon on every card).
+    const [pendingScrollId, setPendingScrollId] = useState<string | null>(null);
     // Admin-picked "Top Story of the Day" — pinned above the featured carousel.
     // Fetched separately since the pick may not be among what's currently loaded.
     const [topStory, setTopStory] = useState<Testimony | null>(null);
@@ -323,6 +344,7 @@ export function TestimoniesTab() {
                             author: data.author || 'Anonymous',
                             location: data.location || '',
                             reactions: data.reactions || 0,
+                            replyCount: data.replyCount || 0,
                             tags: data.tags || [],
                             isCommunity: true,
                             // Firestore Timestamp, epoch millis, or absent — normalize to millis
@@ -365,6 +387,35 @@ export function TestimoniesTab() {
         ? [topStory, ...filteredStories]
         : filteredStories;
 
+    // Scroll to the tapped featured story. No artificial delay needed: the
+    // topic-filter reset in handleFeaturedCardPress (if any) is batched into
+    // the SAME state update as setPendingScrollId, so by the time this effect
+    // runs after commit, orderedStories already reflects it. If the row isn't
+    // measured yet (virtualized list), onScrollToIndexFailed below handles
+    // that — no need to pre-emptively wait for it here.
+    useEffect(() => {
+        if (!pendingScrollId) return;
+        const idx = orderedStories.findIndex(s => s.id === pendingScrollId);
+        if (idx >= 0) {
+            try {
+                flatListRef.current?.scrollToIndex({ index: idx, viewPosition: 0.1, animated: true });
+            } catch { /* scrollToIndex can throw before layout; onScrollToIndexFailed handles it */ }
+        }
+        setPendingScrollId(null);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [pendingScrollId, orderedStories.length, selectedTopic]);
+
+    const handleFeaturedCardPress = (item: Testimony) => {
+        haptic.light();
+        // Guarantee the story is actually present in orderedStories — if a
+        // topic filter is active and this story doesn't match it, "Show me
+        // this story" should win over the filter, not silently fail to scroll.
+        if (selectedTopic !== 'All' && !item.tags.includes(selectedTopic)) {
+            setSelectedTopic('All');
+        }
+        setPendingScrollId(item.id);
+    };
+
     const handleShareStory = async () => {
         haptic.medium();
         try {
@@ -380,7 +431,10 @@ export function TestimoniesTab() {
         } catch (_) {}
     };
 
-    const handleShareQuote = async (item: Testimony) => {
+    // useCallback so TestimonyCard's React.memo actually holds — otherwise a
+    // fresh onShare reference every render (e.g. from the 5s carousel timer)
+    // would defeat the memoization entirely.
+    const handleShareQuote = useCallback(async (item: Testimony) => {
         haptic.medium();
         setSharingQuote(item);
         setTimeout(async () => {
@@ -393,10 +447,17 @@ export function TestimoniesTab() {
                 console.error("Snapshot failed", error);
             }
         }, 800);
-    };
+    }, []);
 
     return (
         <View style={styles.container}>
+            {/* KeyboardAvoidingView so replying inline to a story — via
+                CommentThread inside TestimonyCard — doesn't get covered by the
+                keyboard: "padding" shrinks the list's own height, and
+                automaticallyAdjustKeyboardInsets lets the FlatList scroll the
+                focused input above the keyboard automatically. Same fix as
+                DuaWall.tsx's list, since both embed CommentThread inline. */}
+            <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined} keyboardVerticalOffset={20}>
             <FlatList
                 ref={flatListRef}
                 style={{ flex: 1 }}
@@ -405,8 +466,21 @@ export function TestimoniesTab() {
                     <TestimonyCard item={item} onShare={handleShareQuote} isTopStory={!!topStory && item.id === topStory.id} />
                 )}
                 keyExtractor={item => item.id}
+                onScrollToIndexFailed={info => {
+                    // Row not rendered yet — jump approximately, then retry.
+                    flatListRef.current?.scrollToOffset({ offset: info.averageItemLength * info.index, animated: false });
+                    setTimeout(() => {
+                        try { flatListRef.current?.scrollToIndex({ index: info.index, viewPosition: 0.1, animated: true }); } catch {}
+                    }, 250);
+                }}
                 contentContainerStyle={[styles.listContent, { flexGrow: 1 }]}
-                removeClippedSubviews={Platform.OS === 'android'}
+                // removeClippedSubviews is disabled on Android: RN's clipped-view
+                // detach/reattach races with the render thread and crashes with
+                // "NullPointerException: mViewFlags on a null object reference"
+                // (confirmed in Play Console crash reports across 1.8.5-1.8.9).
+                removeClippedSubviews={false}
+                keyboardShouldPersistTaps="handled"
+                automaticallyAdjustKeyboardInsets
                 initialNumToRender={6}
                 maxToRenderPerBatch={4}
                 windowSize={5}
@@ -446,7 +520,7 @@ export function TestimoniesTab() {
                                             <TouchableOpacity
                                                 activeOpacity={0.85}
                                                 style={[styles.featuredCard, { marginHorizontal: 0 }]}
-                                                onPress={() => setSharingQuote(item)}
+                                                onPress={() => handleFeaturedCardPress(item)}
                                             >
                                                 <BlurView intensity={20} tint="dark" style={StyleSheet.absoluteFill} />
                                                 <LinearGradient
@@ -505,6 +579,7 @@ export function TestimoniesTab() {
                 }
                 showsVerticalScrollIndicator={false}
             />
+            </KeyboardAvoidingView>
 
             <TouchableOpacity
                 style={[styles.fab, { shadowColor: colors.shadow }]}

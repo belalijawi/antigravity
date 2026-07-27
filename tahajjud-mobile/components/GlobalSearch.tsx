@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import {
     Modal, View, Text, TextInput, TouchableOpacity, StyleSheet,
     SectionList, ActivityIndicator, Platform, Keyboard,
@@ -55,12 +55,20 @@ function tabSubtitle(tabName: 'Home' | 'Guide' | 'Duas' | 'Quran' | 'Prayers'): 
 
 const VERSE_REF_REGEX = /^\s*(\d{1,3})\s*:\s*(\d{1,3})\s*$/;
 
-// Normalize: lowercase, strip diacritics, strip everything non-alphanumeric.
-// Turns "Al-Fatiha" → "alfatiha", "Sūratu l-Mulk" → "suratulmulk", etc.
+// Same normalize/subsequence/plural/"al-" tolerance the Duas tab and Quran
+// tab searches already use — Global Search used to have its own weaker,
+// duplicated copy of this logic with no subsequence fallback at all, so
+// typing "ftha" found nothing here even though the in-tab Quran search
+// (which does have a subsequence fallback) happily finds Al-Fatiha with it.
+// Safe to reuse the more capable version here too: Global Search already
+// restricts matching to short identifying fields (names/titles), never long
+// free text — the false-positive risk a subsequence fallback would pose only
+// applies to long body text, which this never searches against.
 function normalize(s: string): string {
     return s.toLowerCase()
-        .normalize('NFD').replace(/[\u0300-\u036f]/g, '')   // strip diacritics
-        .replace(/[^a-z0-9]/g, '');                          // strip dashes / spaces / punctuation
+        .normalize('NFD').replace(/[\u0300-\u036f]/g, '')   // strip Latin diacritics
+        .replace(/[\u064b-\u065f\u0670\u06d6-\u06ed]/g, '')  // strip Arabic diacritics/tashkeel
+        .replace(/[^a-z0-9\u0600-\u06ff]/g, '');             // strip punctuation, keep Arabic script
 }
 
 // English plural \u2192 singular tolerance for short queries.
@@ -86,13 +94,6 @@ function dropAl(s: string): string {
     return s.startsWith('al') && s.length > 3 ? s.slice(2) : s;
 }
 
-/**
- * Strict cross-category match. Returns true only if the haystack literally
- * contains the needle (after normalization + "al-" tolerance). NO subsequence
- * fallback — that's too loose for global search; a stray "f-a-t-i-h-a" inside
- * a long dua translation shouldn't surface that dua when the user types
- * "fatiha" looking for Surah Al-Fatiha.
- */
 function fuzzyMatch(haystack: string, needle: string): boolean {
     const h = normalize(haystack);
     const n = normalize(needle);
@@ -105,6 +106,7 @@ function fuzzyMatch(haystack: string, needle: string): boolean {
     for (const v of variants) {
         if (!v) continue;
         if (h.includes(v) || hs.includes(v)) return true;
+        if (isSubsequence(v, hs) || isSubsequence(v, h)) return true;
     }
     return false;
 }
@@ -162,6 +164,9 @@ export function GlobalSearch({ visible, onClose, onResultPress }: Props) {
             .filter(s =>
                 fuzzyMatch(s.englishName, q)
                 || fuzzyMatch(s.englishNameTranslation ?? '', q)
+                // Arabic name (e.g. "الفاتحة") — the in-tab Quran search already
+                // matched against this field; Global Search was missing it.
+                || fuzzyMatch(s.name ?? '', q)
                 || String(s.number) === q
             )
             .slice(0, 10)
@@ -204,7 +209,7 @@ export function GlobalSearch({ visible, onClose, onResultPress }: Props) {
         return out;
     }, [query, surahs, letters, journal]);
 
-    const renderItem = ({ item }: { item: SearchResult }) => {
+    const renderItem = useCallback(({ item }: { item: SearchResult }) => {
         const onPress = () => {
             onResultPress?.(item);
             onClose();
@@ -302,7 +307,7 @@ export function GlobalSearch({ visible, onClose, onResultPress }: Props) {
                 </View>
             </TouchableOpacity>
         );
-    };
+    }, [colors, onResultPress, onClose]);
 
     return (
         <Modal visible={visible} animationType="fade" presentationStyle="overFullScreen" transparent onRequestClose={onClose}>

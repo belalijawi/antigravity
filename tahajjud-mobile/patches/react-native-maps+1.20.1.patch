@@ -1,0 +1,24 @@
+diff --git a/node_modules/react-native-maps/ios/AirMaps/AIRMap.m b/node_modules/react-native-maps/ios/AirMaps/AIRMap.m
+index 07a4638..2d1cde6 100644
+--- a/node_modules/react-native-maps/ios/AirMaps/AIRMap.m
++++ b/node_modules/react-native-maps/ios/AirMaps/AIRMap.m
+@@ -135,7 +135,18 @@ - (void)insertReactSubview:(id<RCTComponent>)subview atIndex:(NSInteger)atIndex
+             [self insertReactSubview:(UIView *)childSubviews[i] atIndex:atIndex];
+         }
+     }
+-    [_reactSubviews insertObject:(UIView *)subview atIndex:(NSUInteger) atIndex];
++    // Upstream nil-safety fix (react-native-maps #5217/#5871, unmerged as of
++    // this writing): under the New Architecture's legacy-interop layer,
++    // rapid add/remove of markers/overlays (e.g. viewport-culled dots
++    // during a fast pan/zoom) can hand this a nil subview, or an atIndex
++    // beyond the current bounds if a removal raced ahead of this insert.
++    // insertObject:atIndex: with either one is a hard crash
++    // ("object cannot be nil" / "index beyond bounds") — guard both.
++    if (subview == nil) {
++        return;
++    }
++    NSUInteger safeIndex = MIN((NSUInteger)atIndex, _reactSubviews.count);
++    [_reactSubviews insertObject:(UIView *)subview atIndex:safeIndex];
+ }
+ #pragma clang diagnostic pop
+ 

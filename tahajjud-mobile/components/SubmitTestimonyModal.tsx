@@ -1,14 +1,19 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
     Modal, View, Text, TextInput, TouchableOpacity, ScrollView,
     KeyboardAvoidingView, Platform, ActivityIndicator, Alert, StyleSheet,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
+import { ChevronRight } from 'lucide-react-native';
 import { useTheme } from '../context/ThemeContext';
 import { TestimonySubmission, SubmittedTestimony } from '../utils/testimonySubmission';
 import { storyTopics } from '../data/testimonies';
 import { haptic } from '../utils/haptic';
 import { t } from '../utils/i18n';
+import { CommunityProfileStore } from '../utils/communityProfile';
+import { KnownNameField } from './KnownNameField';
+import { CountryPickerOverlay } from './CountryPickerOverlay';
+import { flagEmoji, countryName, isValidCountryCode } from '../utils/countries';
 
 interface Props { visible: boolean; onClose: () => void; }
 
@@ -21,11 +26,45 @@ export function SubmitTestimonyModal({ visible, onClose }: Props) {
     const [body, setBody] = useState('');
     const [author, setAuthor] = useState('');
     const [location, setLocation] = useState('');
+    // Country picker, same one Dua Wall compose uses — replaces free-typed
+    // location with a one-tap pick, consistent across both screens. Still
+    // stored as the same plain `location` string field (e.g. "Ireland"), so
+    // no data-model change for existing testimonies.
+    const [locationCountryCode, setLocationCountryCode] = useState<string | null>(null);
+    const [showLocationPicker, setShowLocationPicker] = useState(false);
     const [tags, setTags] = useState<string[]>([]);
     const [submitting, setSubmitting] = useState(false);
+    // Known name from CommunityProfileStore — see KnownNameField. Shows
+    // "Sharing as X · not you?" instead of a blank-looking box once a name
+    // is already known from the Dua Wall, a comment, the Leaderboard, or the
+    // Partner circle.
+    const [authorProfileName, setAuthorProfileName] = useState<string | null>(null);
+    const [editingAuthorName, setEditingAuthorName] = useState(false);
+    const mountedRef = useRef(true);
+    useEffect(() => {
+        mountedRef.current = true;
+        return () => { mountedRef.current = false; };
+    }, []);
+
+    useEffect(() => {
+        if (!visible) return;
+        CommunityProfileStore.get().then(profile => {
+            if (!mountedRef.current) return;
+            if (profile?.nickname) {
+                setAuthorProfileName(profile.nickname);
+                setAuthor(prev => prev || profile.nickname);
+            }
+            if (profile?.country && isValidCountryCode(profile.country)) {
+                setLocationCountryCode(prev => prev ?? profile.country ?? null);
+                setLocation(prev => prev || countryName(profile.country));
+            }
+        });
+    }, [visible]);
 
     const reset = () => {
         setTitle(''); setBody(''); setAuthor(''); setLocation(''); setTags([]);
+        setEditingAuthorName(false);
+        setLocationCountryCode(null);
     };
 
     const toggleTag = (tag: string) => {
@@ -56,6 +95,10 @@ export function SubmitTestimonyModal({ visible, onClose }: Props) {
         }
 
         haptic.success();
+        // Propagate this name to the Dua Wall, comments, Leaderboard, and
+        // Partner circle — whichever surface you name yourself on first
+        // flows to the others.
+        if (author.trim()) CommunityProfileStore.set(author, locationCountryCode).catch(() => {});
         reset();
         onClose();
         Alert.alert(
@@ -136,28 +179,57 @@ export function SubmitTestimonyModal({ visible, onClose }: Props) {
                         {/* Author + Location row */}
                         <View style={styles.row}>
                             <View style={{ flex: 1 }}>
-                                <Field label={t('submitTestimony.nameLabel')}>
-                                    <TextInput
-                                        value={author}
-                                        onChangeText={setAuthor}
+                                {authorProfileName && !editingAuthorName ? (
+                                    <KnownNameField
+                                        name={author}
+                                        onChangeName={setAuthor}
+                                        knownName={authorProfileName}
+                                        editing={editingAuthorName}
+                                        onStartEditing={() => setEditingAuthorName(true)}
+                                        accent={colors.accent}
+                                        prefixKey="submitTestimony.sharingAs"
                                         placeholder={t('submitTestimony.anonymousPlaceholder')}
-                                        placeholderTextColor="#475569"
-                                        style={[styles.input, { color: colors.primaryText }]}
                                         maxLength={40}
                                     />
-                                </Field>
+                                ) : (
+                                    <Field label={t('submitTestimony.nameLabel')}>
+                                        <KnownNameField
+                                            name={author}
+                                            onChangeName={setAuthor}
+                                            knownName={authorProfileName}
+                                            editing={editingAuthorName}
+                                            onStartEditing={() => setEditingAuthorName(true)}
+                                            accent={colors.accent}
+                                            prefixKey="submitTestimony.sharingAs"
+                                            placeholder={t('submitTestimony.anonymousPlaceholder')}
+                                            maxLength={40}
+                                            inputStyle={styles.input}
+                                        />
+                                    </Field>
+                                )}
                             </View>
                             <View style={{ width: 12 }} />
                             <View style={{ flex: 1 }}>
                                 <Field label={t('submitTestimony.locationLabel')}>
-                                    <TextInput
-                                        value={location}
-                                        onChangeText={setLocation}
-                                        placeholder="London, UK"
-                                        placeholderTextColor="#475569"
-                                        style={[styles.input, { color: colors.primaryText }]}
-                                        maxLength={40}
-                                    />
+                                    <TouchableOpacity
+                                        onPress={() => { haptic.light(); setShowLocationPicker(true); }}
+                                        style={[styles.input, styles.locationPickerBtn]}
+                                        activeOpacity={0.7}
+                                    >
+                                        {locationCountryCode ? (
+                                            <>
+                                                <Text style={styles.locationFlag}>{flagEmoji(locationCountryCode)}</Text>
+                                                <Text style={[styles.locationText, { color: colors.primaryText, flex: 1 }]} numberOfLines={1}>
+                                                    {countryName(locationCountryCode)}
+                                                </Text>
+                                            </>
+                                        ) : (
+                                            <Text style={[styles.locationText, { color: '#475569', flex: 1 }]}>
+                                                {t('submitTestimony.locationLabel')}
+                                            </Text>
+                                        )}
+                                        <ChevronRight size={14} color="#475569" />
+                                    </TouchableOpacity>
                                 </Field>
                             </View>
                         </View>
@@ -188,6 +260,17 @@ export function SubmitTestimonyModal({ visible, onClose }: Props) {
                         </Field>
                     </ScrollView>
                 </KeyboardAvoidingView>
+
+                <CountryPickerOverlay
+                    visible={showLocationPicker}
+                    onClose={() => setShowLocationPicker(false)}
+                    countryCode={locationCountryCode}
+                    onSelect={code => {
+                        setLocationCountryCode(code);
+                        setLocation(code ? countryName(code) : '');
+                        setShowLocationPicker(false);
+                    }}
+                />
             </LinearGradient>
         </Modal>
     );
@@ -224,6 +307,9 @@ const styles = StyleSheet.create({
         paddingHorizontal: 14, paddingVertical: 12, fontSize: 15,
     },
     textarea: { minHeight: 180 },
+    locationPickerBtn: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+    locationFlag: { fontSize: 16 },
+    locationText: { fontSize: 15, flexShrink: 1 },
     counter: { fontSize: 11, marginTop: 4, textAlign: 'right' },
     tagsWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
     tag: {

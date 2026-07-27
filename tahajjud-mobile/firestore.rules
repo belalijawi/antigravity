@@ -43,7 +43,7 @@ service cloud.firestore {
       // runs with service-account credentials and bypasses these rules.
       allow update: if isAdmin()
         || (request.auth != null
-            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['reactions']));
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['reactions', 'replyCount']));
     }
 
     // ─── Testimony like markers (idempotency) ──────────────────────
@@ -88,6 +88,57 @@ service cloud.firestore {
     }
 
     // ─── Public dua wall (anonymous community feed) ────────────────
+    // Server-enforced posting cooldowns. Each user owns one doc holding
+    // "last posted at" timestamps. Content creates REQUIRE (via getAfter)
+    // that the same batch stamps the matching field to request.time, and
+    // this doc's own rules reject stamps that come too soon — so the
+    // spacing holds even against direct Firestore writes that skip the app.
+    match /rate-limits/{uid} {
+      // A field is valid if the write leaves it absent/unchanged, or sets it
+      // to "now" after its cooldown has fully elapsed.
+      function stampCreateOk(field) {
+        return !(field in request.resource.data)
+          || request.resource.data[field] == request.time;
+      }
+      function stampUpdateOk(field, gap) {
+        return !(field in request.resource.data)
+          || request.resource.data[field] == resource.data.get(field, null)
+          || (request.resource.data[field] == request.time
+              && (!(field in resource.data)
+                  || request.time > resource.data[field] + gap));
+      }
+
+      allow read: if request.auth != null && request.auth.uid == uid;
+
+      allow create: if request.auth != null && request.auth.uid == uid
+        && request.resource.data.keys().hasOnly(['lastCommentAt', 'lastDuaAt'])
+        && stampCreateOk('lastCommentAt')
+        && stampCreateOk('lastDuaAt');
+
+      allow update: if request.auth != null && request.auth.uid == uid
+        && request.resource.data.diff(resource.data).affectedKeys()
+            .hasOnly(['lastCommentAt', 'lastDuaAt'])
+        // 8s between replies. Duas: 6h minimum gap — a backstop, not the
+        // real limit. Premium gets up to 3/day client-side (free: 1/day);
+        // rules can't see premium status (never synced to Firestore, same
+        // trust model as every other premium gate here), so this can only
+        // bound the SPACING between posts, not a per-tier daily count. 6h
+        // comfortably fits a real "3 spread across a day" pattern (nobody
+        // legitimately posts 3 duas within the same couple hours) while
+        // still blocking rapid-fire abuse — same "looser server bound,
+        // tighter client logic" shape as the original 20h/24h split.
+        // Reply spacing shortened from 30s to 8s (still applies to everyone,
+        // premium included, for the same reason as above) so premium doesn't
+        // feel throttled by a long wait, without removing spam protection
+        // entirely.
+        && stampUpdateOk('lastCommentAt', duration.value(8, 's'))
+        && stampUpdateOk('lastDuaAt', duration.value(6, 'h'))
+        // Admin has no spacing requirement at all — genuinely unlimited,
+        // not just a looser client-side count. Same isAdmin() bypass shape
+        // used on the leaderboard doc's update rule.
+        || isAdmin();
+    }
+
     match /public-duas/{duaId} {
       allow read: if request.auth != null;
 
@@ -98,7 +149,38 @@ service cloud.firestore {
         && request.resource.data.reportCount == 0
         && request.resource.data.text is string
         && request.resource.data.text.size() >= 5
-        && request.resource.data.text.size() <= 280;
+        && request.resource.data.text.size() <= 280
+        // Optional opt-in map pin: onMap requires plausible city-level coords.
+        && (!('onMap' in request.resource.data)
+            || (request.resource.data.onMap == true
+                && request.resource.data.lat is number
+                && request.resource.data.lat >= -90 && request.resource.data.lat <= 90
+                && request.resource.data.lng is number
+                && request.resource.data.lng >= -180 && request.resource.data.lng <= 180))
+        // Optional first name — NOT required (production clients that predate
+        // this feature don't send it; making it required would break them,
+        // the same mistake the rate-limit stamp made above).
+        && (!('displayName' in request.resource.data)
+            || (request.resource.data.displayName is string
+                && request.resource.data.displayName.size() >= 1
+                && request.resource.data.displayName.size() <= 30))
+        // Optional 2-letter ISO country code, shown as "Name, Country" —
+        // same optional pattern as displayName. Just a format check (like
+        // every other optional field here); it isn't cross-checked against
+        // the real country list since it's a display string, not a security
+        // boundary.
+        && (!('country' in request.resource.data)
+            || (request.resource.data.country is string
+                && request.resource.data.country.size() == 2));
+        // ⚠️ DEFERRED (do NOT re-add until the app build that batches the
+        // rate-limit stamp into publish() has fully shipped): requiring
+        //   getAfter(.../rate-limits/$(request.auth.uid)).data.lastDuaAt == request.time
+        // here broke dua publishing for every production client that predates
+        // the stamp (they don't write it, so create was denied). New clients
+        // already write the stamp and rate-limits rules police its spacing —
+        // once old builds age out, restore the line above to make the dua
+        // cooldown bypass-proof. Comments can keep the requirement: no
+        // production build without the stamp has the comments feature.
 
       // Regular users can bump ameenCount, prayCount, or reportCount.
       // They may also set hidden=true alongside a reportCount bump ONLY when
@@ -108,15 +190,27 @@ service cloud.firestore {
       // Admins can change anything.
       allow update: if (request.auth != null
           && request.resource.data.diff(resource.data).affectedKeys()
-              .hasOnly(['ameenCount', 'prayCount', 'reportCount']))
+              .hasOnly(['ameenCount', 'prayCount', 'reportCount', 'replyCount']))
         || (request.auth != null
             && request.resource.data.diff(resource.data).affectedKeys()
                 .hasOnly(['reportCount', 'hidden'])
             && request.resource.data.hidden == true
             && resource.data.reportCount >= 4)  // 4 existing + this one = 5 = REPORT_THRESHOLD
+        // The dua's own author may mark it answered — one-way (rules refuse
+        // to flip it back to false), and only the author (checked directly
+        // against resource.data since this IS the doc, unlike the comments'
+        // parent-lookup pattern). No get() needed.
+        || (request.auth != null
+            && request.resource.data.diff(resource.data).affectedKeys()
+                .hasOnly(['answered', 'answeredAt'])
+            && resource.data.authorId == request.auth.uid
+            && resource.data.get('answered', false) == false
+            && request.resource.data.answered == true)
         || isAdmin();
 
-      allow delete: if isAdmin();
+      // Author may delete their own dua (e.g. to pull it off the wall/map);
+      // admin can delete any.
+      allow delete: if (request.auth != null && resource.data.authorId == request.auth.uid) || isAdmin();
     }
 
     // ─── Ameen markers (idempotency) ────────────────────────────────
@@ -124,8 +218,16 @@ service cloud.firestore {
       // resource == null allows the idempotency getDoc() on a marker that
       // doesn't exist yet (the normal case for a first Ameen). Without this,
       // that read is denied → the whole Ameen write fails and the UI reverts.
+      //
+      // A dua's own author may also read ALL ameen markers for THEIR dua —
+      // needed to notify everyone who said Ameen when they mark it answered
+      // (utils/duaWall.ts notifyAmeenSayers). Nobody else can browse "who
+      // said Ameen to what" for a dua they don't own — that stays private,
+      // same as before this addition.
       allow read: if request.auth != null
-        && (resource == null || resource.data.userId == request.auth.uid);
+        && (resource == null
+            || resource.data.userId == request.auth.uid
+            || get(/databases/$(database)/documents/public-duas/$(resource.data.duaId)).data.authorId == request.auth.uid);
       allow create: if request.auth != null
         && request.resource.data.userId == request.auth.uid;
       // Allow deleting your OWN marker (undo Ameen). No updates.
@@ -144,6 +246,95 @@ service cloud.firestore {
       // Allow deleting your OWN marker (undo Praying). No updates.
       allow delete: if request.auth != null && resource.data.userId == request.auth.uid;
       allow update: if false;
+    }
+
+    // ─── Comments (replies on duas & testimonies) ───────────────────
+    // Same anonymity + moderation model as public-duas: authorId stored
+    // server-side only, report auto-hide at threshold, admin can moderate.
+    match /comments/{commentId} {
+      // Does the requester author the comment's PARENT (dua or testimony)?
+      // Powers the verified "Author" badge and author-likes. Costs one get()
+      // per write that needs it — reads never pay it.
+      function isParentAuthor(parentType, parentId) {
+        return (parentType == 'dua'
+            && get(/databases/$(database)/documents/public-duas/$(parentId)).data.authorId == request.auth.uid)
+          || (parentType == 'testimony'
+            && get(/databases/$(database)/documents/community/$(parentId)).data.authorId == request.auth.uid);
+      }
+
+      allow read: if request.auth != null;
+
+      allow create: if request.auth != null
+        && request.resource.data.authorId == request.auth.uid
+        && request.resource.data.hidden == false
+        && request.resource.data.reportCount == 0
+        && request.resource.data.likeCount == 0
+        && request.resource.data.parentType in ['dua', 'testimony']
+        && request.resource.data.parentId is string
+        && request.resource.data.text is string
+        && request.resource.data.text.size() >= 1
+        && request.resource.data.text.size() <= 200
+        && request.resource.data.displayName is string
+        && request.resource.data.displayName.size() <= 30
+        // Optional 2-letter ISO country code, same convention/validation as
+        // public-duas' own country field — display only, not a security
+        // boundary, so format-checked rather than matched against the real
+        // country list.
+        && (!('country' in request.resource.data)
+            || (request.resource.data.country is string
+                && request.resource.data.country.size() == 2))
+        // The "Author" badge can't be forged — claiming it requires actually
+        // authoring the parent doc.
+        && (request.resource.data.get('isAuthor', false) == false
+            || isParentAuthor(request.resource.data.parentType, request.resource.data.parentId))
+        // The same batch must stamp the comment cooldown to "now" — the
+        // rate-limits rules enforce the 8s spacing on that stamp.
+        && getAfter(/databases/$(database)/documents/rate-limits/$(request.auth.uid)).data.lastCommentAt == request.time;
+
+      // Users can bump reportCount or likeCount — plus the threshold
+      // auto-hide (same pattern as public-duas). likeCount isn't magnitude-
+      // bounded, same trust level as public-duas' ameenCount/prayCount: the
+      // idempotent comment-likes marker collection is what actually stops a
+      // well-behaved client from double-counting, not a rule-level cap.
+      // The parent's author may toggle authorLiked. Admins can change anything.
+      allow update: if (request.auth != null
+          && request.resource.data.diff(resource.data).affectedKeys()
+              .hasOnly(['reportCount', 'likeCount']))
+        || (request.auth != null
+            && request.resource.data.diff(resource.data).affectedKeys()
+                .hasOnly(['reportCount', 'hidden'])
+            && request.resource.data.hidden == true
+            && resource.data.reportCount >= 4)  // 4 existing + this one = 5
+        || (request.auth != null
+            && request.resource.data.diff(resource.data).affectedKeys()
+                .hasOnly(['authorLiked'])
+            && isParentAuthor(resource.data.parentType, resource.data.parentId))
+        || isAdmin();
+
+      allow delete: if isAdmin();
+    }
+
+    // ─── Comment like markers (idempotency) ─────────────────────────
+    // Same pattern as ameens — one marker doc per (user, comment) so
+    // anyone (not just the parent's author, unlike authorLiked) can like a
+    // reply without double-incrementing likeCount by re-tapping.
+    match /comment-likes/{likeId} {
+      allow read: if request.auth != null
+        && (resource == null || resource.data.userId == request.auth.uid);
+      allow create: if request.auth != null
+        && request.resource.data.userId == request.auth.uid;
+      // Allow deleting your OWN marker (undo like). No updates.
+      allow delete: if request.auth != null && resource.data.userId == request.auth.uid;
+      allow update: if false;
+    }
+
+    // ─── Comment report markers ─────────────────────────────────────
+    match /comment-reports/{reportId} {
+      allow read: if request.auth != null
+        && (resource == null || resource.data.userId == request.auth.uid);
+      allow create: if request.auth != null
+        && request.resource.data.userId == request.auth.uid;
+      allow update, delete: if false;
     }
 
     // ─── Report markers ─────────────────────────────────────────────
@@ -206,6 +397,127 @@ service cloud.firestore {
     match /app_config/{docId} {
       allow read: if request.auth != null;
       allow write: if isAdmin();
+    }
+
+    // ─── Dhikr & Quran-reading leaderboard (opt-in) ────────────────
+    // One doc per opted-in user. Unlike every other rate-limit in this
+    // file (which only bounds WRITE FREQUENCY), a leaderboard score is a
+    // client-chosen number someone could just submit as "+999999" — so
+    // these rules additionally bound the MAGNITUDE a count may grow per
+    // write, scaled by real elapsed time since `updatedAt` (stamped in
+    // the same write, same pattern as rate-limits' cooldown stamps).
+    match /leaderboard/{uid} {
+      // Elapsed seconds since the last update. Falls back to "unbounded"
+      // only on the very first score-sync after create (which itself
+      // forces every counter to start at 0, so there's nothing to abuse
+      // yet regardless).
+      function elapsedSeconds() {
+        return resource.data.get('updatedAt', null) == null
+          ? 1000000000000.0
+          : (request.time.toMillis() - resource.data.updatedAt.toMillis()) / 1000.0;
+      }
+
+      // A generous per-hour rate PLUS a flat burst allowance (so one real,
+      // dedicated session synced in a single write isn't blocked by a
+      // tight per-second extrapolation). Tunable; chosen well above
+      // plausible real usage but low enough that an instant fake score
+      // is impossible.
+      function deltaOk(oldVal, newVal, maxPerHour) {
+        return newVal >= oldVal
+          && (newVal - oldVal) <= (elapsedSeconds() / 3600.0) * maxPerHour + maxPerHour;
+      }
+
+      function rolledOver() {
+        return request.resource.data.weekKey != resource.data.weekKey;
+      }
+
+      allow read: if request.auth != null;
+
+      // Self-reported country tag (never GPS — see utils/countries.ts).
+      // Optional; when present must be a plausible ISO 3166-1 alpha-2 code.
+      function countryOk() {
+        return !('country' in request.resource.data)
+          || (request.resource.data.country is string
+              && request.resource.data.country.matches('^[A-Z]{2}$'));
+      }
+
+      allow create: if request.auth != null && request.auth.uid == uid
+        && request.resource.data.nickname is string
+        && request.resource.data.nickname.size() >= 1
+        && request.resource.data.nickname.size() <= 24
+        && countryOk()
+        && request.resource.data.dhikr.week == 0
+        && request.resource.data.dhikr.allTime == 0
+        && request.resource.data.quranAyahs.week == 0
+        && request.resource.data.quranAyahs.allTime == 0
+        && request.resource.data.tahajjud.week == 0
+        && request.resource.data.tahajjud.allTime == 0
+        && request.resource.data.reportCount == 0
+        && request.resource.data.hidden == false
+        && request.resource.data.updatedAt == request.time;
+
+      allow update: if request.auth != null && request.auth.uid == uid
+        && (
+          // Renaming / changing country — no counts touched.
+          (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['nickname', 'country'])
+            && request.resource.data.nickname is string
+            && request.resource.data.nickname.size() >= 1
+            && request.resource.data.nickname.size() <= 24
+            && countryOk())
+          // Score sync — dhikr/quranAyahs/tahajjud, always with the weekKey +
+          // updatedAt stamp. A sync touching only one metric leaves the
+          // others' nested maps untouched, which the delta checks below
+          // tolerate naturally (an unchanged value has a delta of 0).
+          // tahajjud's cap (3/hour) is far tighter than the others — it's
+          // realistically at most 1/night client-side (see Tracker.tsx's
+          // isLoggedToday guard), so even a generous burst allowance is
+          // small in absolute terms.
+          || (request.resource.data.diff(resource.data).affectedKeys()
+                .hasOnly(['dhikr', 'quranAyahs', 'tahajjud', 'weekKey', 'updatedAt'])
+              && request.resource.data.updatedAt == request.time
+              && deltaOk(resource.data.dhikr.allTime, request.resource.data.dhikr.allTime, 1000)
+              && deltaOk(resource.data.quranAyahs.allTime, request.resource.data.quranAyahs.allTime, 120)
+              && deltaOk(resource.data.tahajjud.allTime, request.resource.data.tahajjud.allTime, 3)
+              && (rolledOver()
+                    // Rollover: weekly figure resets, but only up to the
+                    // all-time delta just applied in this same write — so a
+                    // rollover can't be used to sneak in an unrelated jump.
+                    ? request.resource.data.dhikr.week >= 0
+                      && request.resource.data.dhikr.week
+                          <= request.resource.data.dhikr.allTime - resource.data.dhikr.allTime
+                      && request.resource.data.quranAyahs.week >= 0
+                      && request.resource.data.quranAyahs.week
+                          <= request.resource.data.quranAyahs.allTime - resource.data.quranAyahs.allTime
+                      && request.resource.data.tahajjud.week >= 0
+                      && request.resource.data.tahajjud.week
+                          <= request.resource.data.tahajjud.allTime - resource.data.tahajjud.allTime
+                    : deltaOk(resource.data.dhikr.week, request.resource.data.dhikr.week, 1000)
+                      && deltaOk(resource.data.quranAyahs.week, request.resource.data.quranAyahs.week, 120)
+                      && deltaOk(resource.data.tahajjud.week, request.resource.data.tahajjud.week, 3)))
+        )
+        || isAdmin();
+
+      // Report auto-hide — same shape as public-duas/comments: users may
+      // only bump reportCount, or flip hidden=true on the report that
+      // crosses REPORT_THRESHOLD (5).
+      allow update: if request.auth != null
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['reportCount'])
+        || (request.auth != null
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['reportCount', 'hidden'])
+            && request.resource.data.hidden == true
+            && resource.data.reportCount >= 4);
+
+      allow delete: if request.auth != null && request.auth.uid == uid || isAdmin();
+    }
+
+    // Idempotency markers for leaderboard reports — one per (reporter,
+    // target), same pattern as `reports`.
+    match /leaderboard-reports/{reportId} {
+      allow read: if request.auth != null
+        && (resource == null || resource.data.userId == request.auth.uid);
+      allow create: if request.auth != null
+        && request.resource.data.userId == request.auth.uid;
+      allow update, delete: if false;
     }
   }
 }

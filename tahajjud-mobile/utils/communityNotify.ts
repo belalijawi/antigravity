@@ -34,7 +34,8 @@ export async function sendMilestonePush(
     authorId: string,
     title: string,
     body: string,
-    type: 'dua_milestone' | 'testimony_milestone' | 'top_dua' | 'top_story',
+    type: 'dua_milestone' | 'testimony_milestone' | 'top_dua' | 'top_story' | 'dua_reply' | 'testimony_reply' | 'reply_liked' | 'thread_reply' | 'dua_answered',
+    extraData?: Record<string, string>,
 ): Promise<void> {
     try {
         const me = getFirebaseAuth()?.currentUser;
@@ -60,7 +61,7 @@ export async function sendMilestonePush(
             body: JSON.stringify({
                 to: token, title, body,
                 sound: 'default', priority: 'high',
-                data: { type },
+                data: { type, ...extraData },
             }),
         });
         clearTimeout(tid);

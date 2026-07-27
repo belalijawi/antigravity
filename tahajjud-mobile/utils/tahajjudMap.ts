@@ -15,16 +15,23 @@
  *   }
  */
 
-import { collection, addDoc, query, where, limit, getCountFromServer,
+import { collection, addDoc, query, where, limit, orderBy, getCountFromServer,
          onSnapshot, Timestamp, serverTimestamp } from 'firebase/firestore';
 import { AppState } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { getFirebaseDb, ensureSignedIn } from './firebase';
+import { getFirebaseDb, getFirebaseAuth, ensureSignedIn } from './firebase';
+import { track } from './analytics';
 
 // Hard cap so a large collection can never blow the Firestore read quota
 // fetching individual documents for the live map. Exported so the map modal
 // can tell when its dot count is capped (and thus NOT the true total).
-export const MAP_DOT_LIMIT = 500;   // dots rendered on the live map
+// Raised from 500 as real usage grew — the map's own render-time viewport
+// culling (see GlobalTahajjudMap.tsx) is what actually bounds on-screen
+// overlay count regardless of this number, so this only controls the SIZE
+// OF THE POOL the client picks visible dots from, not how many get drawn at
+// once. A bigger pool means better geographic coverage/accuracy at any
+// given zoom without any extra rendering cost.
+export const MAP_DOT_LIMIT = 3000;   // dots rendered on the live map
 // Rolling window for the map. Kept in sync with the home card's daily total
 // (subscribeDailyTotal) so the dots on the map and the "X prayed in the last
 // 24h" headline always describe the same set of people. Exported so callers
@@ -46,6 +53,32 @@ const COLLECTION = 'tahajjud_map';
 // a successful map write can bump the Home card count immediately instead of
 // waiting up to 5 minutes for the next poll tick.
 const activeCountRefreshers = new Set<() => void>();
+
+/**
+ * City-level position (~11km grid) or null. Never prompts for permission by
+ * default — pass allowPrompt ONLY from an explicit user action (e.g. the
+ * "show on map" compose toggle), per this app's permission policy.
+ */
+export async function getRoundedLocation(
+    allowPrompt = false,
+): Promise<{ lat: number; lng: number } | null> {
+    try {
+        let pos = await Location.getLastKnownPositionAsync({});
+        if (!pos) {
+            let { status } = await Location.getForegroundPermissionsAsync();
+            if (status !== 'granted' && allowPrompt) {
+                ({ status } = await Location.requestForegroundPermissionsAsync());
+            }
+            if (status !== 'granted') return null;
+            pos = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Lowest });
+        }
+        if (!pos) return null;
+        return {
+            lat: Math.round(pos.coords.latitude * 10) / 10,
+            lng: Math.round(pos.coords.longitude * 10) / 10,
+        };
+    } catch { return null; }
+}
 
 /** Call when user logs Tahajjud — writes a city-level dot anonymously. */
 export async function logTahajjudToMap(): Promise<void> {
@@ -108,7 +141,14 @@ export function subscribeTahajjudMap(
                 if (cancelled) return;
                 // Initial cutoff — also filtered client-side so the window stays accurate
                 const cutoff = Timestamp.fromDate(new Date(Date.now() - MAP_WINDOW_MS));
-                const q = query(collection(db, COLLECTION), where('ts', '>=', cutoff), limit(MAP_DOT_LIMIT));
+                // Without an explicit order, Firestore defaults a range-filtered
+                // query to ascending order on the filtered field — so limit()
+                // would keep the OLDEST 500 in the window, not the newest. Once
+                // a busy night exceeds the cap, that silently hid brand-new
+                // submissions until an older one aged out. Order descending so
+                // a capped result is always "the 500 most recent," matching what
+                // "live map" implies.
+                const q = query(collection(db, COLLECTION), where('ts', '>=', cutoff), orderBy('ts', 'desc'), limit(MAP_DOT_LIMIT));
 
                 unsubSnap = onSnapshot(q, snap => {
                     retryDelay = 5 * 1000; // healthy again — reset backoff
@@ -125,6 +165,7 @@ export function subscribeTahajjudMap(
                     // out — a transient error must never blank the map or, via
                     // onLiveTotal, hide the Home card) and re-attach.
                     console.error('[tahajjudMap] dots listener failed, retrying', e);
+                    track('map_dots_listener_failed', { error_code: e?.code ?? String(e) });
                     if (cancelled) return;
                     unsubSnap?.(); unsubSnap = null;
                     retryTimer = setTimeout(attach, retryDelay);
@@ -160,6 +201,10 @@ export function subscribeDailyTotal(onUpdate: (total: number) => void): () => vo
         // dropped from its number. The cutoff is recomputed on every tick.
         let cancelled = false;
         let hasFreshValue = false;
+        // Fires once per subscription so PostHog can compare the actual observed
+        // count across platforms/devices — the only way to tell "her count is
+        // genuinely low" apart from "her fetch is silently failing" without logs.
+        let hasTrackedFirstValue = false;
         let retryTimer: ReturnType<typeof setTimeout> | undefined;
         let retryDelay = 10 * 1000;
 
@@ -196,11 +241,19 @@ export function subscribeDailyTotal(onUpdate: (total: number) => void): () => vo
                         const count = snap.data().count;
                         onUpdate(count);
                         AsyncStorage.setItem(DAILY_TOTAL_CACHE_KEY, String(count)).catch(() => {});
+                        if (!hasTrackedFirstValue) {
+                            hasTrackedFirstValue = true;
+                            track('map_daily_total_observed', { count, card_visible: count >= 50 });
+                        }
                     })
                     .catch(e => {
                         // Keep the previous value, but retry with backoff instead
                         // of waiting the full 5 minutes.
                         console.error('[tahajjudMap] subscribeDailyTotal refresh failed', e);
+                        track('map_daily_total_fetch_failed', {
+                            error_code: e?.code ?? String(e),
+                            has_auth_user: !!getFirebaseAuth().currentUser,
+                        });
                         if (cancelled) return;
                         retryTimer = setTimeout(refresh, retryDelay);
                         retryDelay = Math.min(retryDelay * 2, 5 * 60 * 1000);
@@ -225,4 +278,106 @@ export function subscribeDailyTotal(onUpdate: (total: number) => void): () => vo
             activeCountRefreshers.delete(refresh);
         };
     } catch { onUpdate(0); return () => {}; }
+}
+
+// ── Dua pins ────────────────────────────────────────────────────────────────
+// Wall duas whose authors opted in to "show on tonight's map". Same rolling
+// 24h window as the dots; the dua itself lives on (and is moderated by) the
+// Dua Wall — a pin is just a second surface for the same document.
+
+export interface MapDua {
+    id: string;
+    lat: number;
+    lng: number;
+    text: string;
+    displayName: string;    // 'Anonymous' if the author didn't give a name
+    answered: boolean;
+    ameenCount: number;
+    createdAt: Date;
+}
+
+// Raised alongside MAP_DOT_LIMIT for the same reason — the map now culls/
+// caps dua pins by viewport too (see GlobalTahajjudMap.tsx), so a bigger
+// pool here improves geographic coverage without extra rendering cost.
+const MAP_DUA_LIMIT = 400;
+
+/** Subscribe to duas pinned to the map in the last 24h. */
+export function subscribeMapDuas(
+    onUpdate: (duas: MapDua[]) => void,
+): () => void {
+    try {
+        const db = getFirebaseDb();
+        if (!db) { onUpdate([]); return () => {}; }
+
+        // Same cold-start protection the dots listener above has, and for the
+        // exact same reason — this listener not having it is what made dua
+        // pins "disappear".
+        //
+        // Firestore rules require auth to read public-duas, and a
+        // permission-denied error PERMANENTLY closes an onSnapshot listener.
+        // On a cold start the anonymous sign-in may still be in flight, so if
+        // this listener loses that race (or hits any transient network error)
+        // it used to log, call onUpdate([]) — blanking every pin on the map —
+        // and then stay dead for the entire lifetime of the screen, since
+        // nothing ever re-attached it. The dots listener recovered from the
+        // identical race via retry/backoff, which is why dots would render
+        // while pins silently never appeared, and why closing and reopening
+        // the map (a fresh listener) "fixed" it.
+        //
+        // Note this failure had nothing to do with zoom or with how pins are
+        // rendered — it just tended to be noticed while zooming in on a pin.
+        let cancelled = false;
+        let unsubSnap: (() => void) | null = null;
+        let retryTimer: ReturnType<typeof setTimeout> | undefined;
+        let retryDelay = 5 * 1000;
+        const attach = () => {
+            // ensureSignedIn resolves instantly once a session exists, and
+            // re-attempts sign-in if the previous attempt failed.
+            ensureSignedIn().finally(() => {
+                if (cancelled) return;
+                const cutoff = Timestamp.fromMillis(Date.now() - MAP_WINDOW_MS);
+                const q = query(
+                    collection(db, 'public-duas'),
+                    where('onMap', '==', true),
+                    where('createdAt', '>=', cutoff),
+                    orderBy('createdAt', 'desc'),
+                    limit(MAP_DUA_LIMIT),
+                );
+                unsubSnap = onSnapshot(q, snap => {
+                    retryDelay = 5 * 1000; // healthy again — reset backoff
+                    const out: MapDua[] = [];
+                    snap.forEach(d => {
+                        const data = d.data() as any;
+                        // hidden filtered client-side — the pin count is tiny and
+                        // this avoids another composite index.
+                        if (data.hidden) return;
+                        if (typeof data.lat !== 'number' || typeof data.lng !== 'number') return;
+                        out.push({
+                            id: d.id,
+                            lat: data.lat,
+                            lng: data.lng,
+                            text: data.text ?? '',
+                            displayName: data.displayName ?? 'Anonymous',
+                            answered: data.answered ?? false,
+                            ameenCount: data.ameenCount ?? 0,
+                            createdAt: data.createdAt?.toDate?.() ?? new Date(),
+                        });
+                    });
+                    onUpdate(out);
+                }, e => {
+                    // Deliberately does NOT call onUpdate([]) — keep whatever
+                    // pins are already on screen rather than blanking them for
+                    // what is usually a transient error, then re-attach.
+                    console.error('[tahajjudMap] dua pins listener failed, retrying', e);
+                    track('map_pins_listener_failed', { error_code: (e as any)?.code ?? String(e) });
+                    if (cancelled) return;
+                    unsubSnap?.(); unsubSnap = null;
+                    retryTimer = setTimeout(attach, retryDelay);
+                    retryDelay = Math.min(retryDelay * 2, 2 * 60 * 1000);
+                });
+            });
+        };
+        attach();
+        return () => { cancelled = true; unsubSnap?.(); if (retryTimer) clearTimeout(retryTimer); };
+    } catch { onUpdate([]); return () => {}; }
 }

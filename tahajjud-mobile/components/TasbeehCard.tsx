@@ -238,6 +238,14 @@ export function TasbeehCard() {
         if (Platform.OS === 'ios') Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
         else Vibration.vibrate(20);
 
+        // Leaderboard: every real tap counts toward it immediately (debounced
+        // a few seconds, not batched to round-completion) — previously this
+        // only synced when a round finished (hit dhikr.target) or the user
+        // explicitly reset/switched dhikr, so an in-progress count abandoned
+        // by closing the app or switching tabs never reached the leaderboard
+        // at all. No-ops harmlessly if not opted in.
+        import('../utils/dhikrLeaderboardTracker').then(m => m.recordDhikrTap()).catch(() => {});
+
         tapScale.value = withSequence(
             withSpring(0.93, { damping: 15 }),
             withSpring(1.0,  { damping: 12 }),
@@ -345,7 +353,7 @@ export function TasbeehCard() {
                                     setShowStats(s => !s);
                                     import('../utils/featureDiscovery').then(m => m.markFeatureUsed('tasbeeh_stats')).catch(() => {});
                                 } else {
-                                    openPaywall('feature_gate:dhikr_stats');
+                                    openPaywall('feature_gate:dhikr_stats', 'tasbeeh_stats');
                                 }
                             }}
                             style={[styles.goalBtn, { borderColor: showStats ? colors.accent + '55' : 'rgba(255,255,255,0.10)', backgroundColor: showStats ? colors.accent + '15' : 'rgba(255,255,255,0.04)' }]}

@@ -40,6 +40,7 @@ export function BedtimeCard({ nightCalc }: Props) {
         setLoading(true);
         SleepIntelligence.getSuggestion(nightCalc.lastThirdStart, nightCalc.nightEnd)
             .then(s => { if (active) setSuggestion(s); })
+            .catch(() => {})
             .finally(() => { if (active) setLoading(false); });
         return () => { active = false; };
     }, [enabled, nightCalc?.lastThirdStart?.getTime(), nightCalc?.nightEnd?.getTime()]);

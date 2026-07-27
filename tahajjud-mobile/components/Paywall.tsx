@@ -11,15 +11,16 @@ import {
     Alert,
     Linking,
 } from 'react-native';
-import { X, Check, Star, Moon, CalendarDays, WifiOff, Brain, Users, MapPin, BellRing } from 'lucide-react-native';
+import { X, Check, Star, Moon, CalendarDays, WifiOff, Brain, Users, MapPin, BellRing, BarChart3, Repeat, PenLine, Globe, Trophy } from 'lucide-react-native';
 import { BlurView } from 'expo-blur';
 import RevenueCatService, { ENTITLEMENT_ID } from '../services/revenueCat';
 import { usePurchases } from '../context/PurchasesContext';
 import { useTheme } from '../context/ThemeContext';
-import { PurchasesPackage, PurchasesWinBackOffer } from 'react-native-purchases';
+import { PurchasesPackage, PurchasesWinBackOffer, PurchasesStoreProductDiscount, SubscriptionOption } from 'react-native-purchases';
 import { APP_URLS } from '../utils/urls';
 import { track } from '../utils/analytics';
 import { t } from '../utils/i18n';
+import type { FeatureId } from '../utils/featureDiscovery';
 
 interface PaywallProps {
     onClose: () => void;
@@ -27,9 +28,34 @@ interface PaywallProps {
      *  'streak_milestone', 'scheduled_5day', 'onboarding', 'feature_gate:hifz'.
      *  Lets PostHog answer "which entry points actually convert?" */
     source?: string;
+    /** The specific premium feature that was tapped to get here, if any —
+     *  shown as a highlighted callout above the generic feature list so the
+     *  paywall isn't a cold, undifferentiated wall regardless of what the
+     *  user was actually curious about. */
+    featureId?: FeatureId;
 }
 
-const Paywall: React.FC<PaywallProps> = ({ onClose, source = 'unknown' }) => {
+// Icon per premium feature — reuses the same icons the generic list below
+// already uses where they line up, so the highlighted card doesn't clash.
+const FEATURE_ICONS: Record<FeatureId, React.ReactElement> = {
+    mosque_timetable: <MapPin size={22} color="#fff" />,
+    accountability_partner: <Users size={22} color="#fff" />,
+    hifz_mode: <Brain size={22} color="#fff" />,
+    tasbeeh_stats: <Repeat size={22} color="#fff" />,
+    prayer_analytics: <BarChart3 size={22} color="#fff" />,
+    night_journal: <PenLine size={22} color="#fff" />,
+    dua_wall: <Star size={22} color="#fff" />,
+    global_map: <MapPin size={22} color="#fff" />,
+    qibla: <MapPin size={22} color="#fff" />,
+    challenges: <Star size={22} color="#fff" />,
+    testimonies: <Star size={22} color="#fff" />,
+    widget: <Star size={22} color="#fff" />,
+    dua_replies: <PenLine size={22} color="#fff" />,
+    dua_map_pin: <Globe size={22} color="#fff" />,
+    leaderboard: <Trophy size={22} color="#fff" />,
+};
+
+const Paywall: React.FC<PaywallProps> = ({ onClose, source = 'unknown', featureId }) => {
     const [packages, setPackages] = useState<PurchasesPackage[]>([]);
     const [loading, setLoading] = useState(true);
     const [purchasing, setPurchasing] = useState(false);
@@ -38,6 +64,15 @@ const Paywall: React.FC<PaywallProps> = ({ onClose, source = 'unknown' }) => {
     // paywall was opened from a win-back notification tap (source === 'winback')
     // and the subscriber is actually eligible per App Store Connect / Play Console.
     const [winBackOffers, setWinBackOffers] = useState<Record<string, PurchasesWinBackOffer>>({});
+    // Trial-cancel win-back discount (Promotional Offer), keyed by package
+    // identifier — only populated when opened from that specific notification
+    // (source === 'trial_winback'). Apple applies no automatic eligibility
+    // gate here (unlike Win-Back Offers), so this is just the local discount
+    // metadata for display; actual eligibility is checked at purchase time.
+    const [trialWinbackDiscounts, setTrialWinbackDiscounts] = useState<Record<string, PurchasesStoreProductDiscount>>({});
+    // Same offer, Android shape — Google Play's SubscriptionOption instead of
+    // a discount-then-sign split. Also only populated for source === 'trial_winback'.
+    const [trialWinbackOptions, setTrialWinbackOptions] = useState<Record<string, SubscriptionOption>>({});
     const { isPremium, checkPremiumStatus } = usePurchases();
     const { colors } = useTheme();
 
@@ -81,6 +116,26 @@ const Paywall: React.FC<PaywallProps> = ({ onClose, source = 'unknown' }) => {
                     track('winback_offer_shown', { packages: Object.keys(found).join(',') });
                 }
             }
+
+            // Same idea for the trial-cancel win-back offer, but no round-trip
+            // needed on either platform — the offer metadata is already on
+            // the local product, we just filter for our offer identifier.
+            if (source === 'trial_winback') {
+                const discountEntries = offerings.availablePackages
+                    .map((pkg) => [pkg.identifier, RevenueCatService.getTrialWinbackDiscount(pkg)] as const)
+                    .filter(([, discount]) => !!discount) as [string, PurchasesStoreProductDiscount][];
+                setTrialWinbackDiscounts(Object.fromEntries(discountEntries));
+
+                const optionEntries = offerings.availablePackages
+                    .map((pkg) => [pkg.identifier, RevenueCatService.getTrialWinbackSubscriptionOption(pkg)] as const)
+                    .filter(([, option]) => !!option) as [string, SubscriptionOption][];
+                setTrialWinbackOptions(Object.fromEntries(optionEntries));
+
+                const shownPackages = [...discountEntries.map(([id]) => id), ...optionEntries.map(([id]) => id)];
+                if (shownPackages.length > 0) {
+                    track('trial_winback_offer_shown', { packages: shownPackages.join(',') });
+                }
+            }
         } else {
             console.log('[Paywall] No offering returned from RevenueCat');
         }
@@ -90,13 +145,27 @@ const Paywall: React.FC<PaywallProps> = ({ onClose, source = 'unknown' }) => {
     const handlePurchase = async (pkg: PurchasesPackage) => {
         setPurchasing(true);
         const winBackOffer = winBackOffers[pkg.identifier];
-        track('purchase_started', { package: pkg.identifier, source, via: winBackOffer ? 'winback_offer' : 'standard' });
+        const trialWinbackDiscount = trialWinbackDiscounts[pkg.identifier];
+        const trialWinbackOption = trialWinbackOptions[pkg.identifier];
+        const via = winBackOffer ? 'winback_offer' : (trialWinbackDiscount || trialWinbackOption) ? 'trial_winback_offer' : 'standard';
+        track('purchase_started', { package: pkg.identifier, source, via });
         try {
             const customerInfo = winBackOffer
                 ? await RevenueCatService.purchaseWithWinBackOffer(pkg, winBackOffer)
-                : await RevenueCatService.purchasePackage(pkg);
+                : trialWinbackDiscount
+                    ? await RevenueCatService.purchaseWithTrialWinbackOffer(pkg, trialWinbackDiscount)
+                    : trialWinbackOption
+                        ? await RevenueCatService.purchaseWithSubscriptionOption(trialWinbackOption)
+                        : await RevenueCatService.purchasePackage(pkg);
             if (customerInfo) {
-                track('purchase_completed', { package: pkg.identifier, source, price: winBackOffer ? winBackOffer.price : pkg.product.price, currency: pkg.product.currencyCode, via: winBackOffer ? 'winback_offer' : 'standard' });
+                const price = winBackOffer
+                    ? winBackOffer.price
+                    : trialWinbackDiscount
+                        ? trialWinbackDiscount.price
+                        : trialWinbackOption
+                            ? (trialWinbackOption.pricingPhases[0]?.price.amountMicros ?? 0) / 1_000_000
+                            : pkg.product.price;
+                track('purchase_completed', { package: pkg.identifier, source, price, currency: pkg.product.currencyCode, via });
                 setConverted(true);
                 // If this was a free-trial purchase, schedule the "trial ends soon"
                 // reminder so the paywall's promise is genuinely kept.
@@ -193,6 +262,21 @@ const Paywall: React.FC<PaywallProps> = ({ onClose, source = 'unknown' }) => {
             title: t('paywall.f8t'),
             desc: t('paywall.f8d'),
         },
+        // Both of these are gated as premium (see utils/featureDiscovery.ts)
+        // but were missing from this list, so unless you happened to reach the
+        // paywall from that exact feature — the only other place they appear
+        // is the highlighted card above — you were being charged for two
+        // things the paywall never mentioned.
+        {
+            icon: <Globe size={20} color={colors.accent} />,
+            title: t('paywall.f9t'),
+            desc: t('paywall.f9d'),
+        },
+        {
+            icon: <PenLine size={20} color={colors.accent} />,
+            title: t('paywall.f10t'),
+            desc: t('paywall.f10d'),
+        },
     ];
 
     if (loading) {
@@ -225,6 +309,21 @@ const Paywall: React.FC<PaywallProps> = ({ onClose, source = 'unknown' }) => {
                         <Text style={styles.freeForeverNote}>{t('paywall.freeForever')}</Text>
                     )}
                 </View>
+
+                {/* What the user actually tapped to get here — shown before the
+                    generic list so this doesn't read as a cold, undifferentiated
+                    wall regardless of which feature they were curious about. */}
+                {featureId && (
+                    <View style={[styles.featureHighlight, { borderColor: colors.accent + '55', backgroundColor: colors.accent + '14' }]}>
+                        <View style={[styles.featureHighlightIcon, { backgroundColor: colors.accent }]}>
+                            {FEATURE_ICONS[featureId]}
+                        </View>
+                        <View style={styles.featureText}>
+                            <Text style={styles.featureTitle}>{t(`discover.${featureId}.label`)}</Text>
+                            <Text style={styles.featureDesc}>{t(`discover.${featureId}.blurb`)}</Text>
+                        </View>
+                    </View>
+                )}
 
                 <View style={styles.featuresList}>
                     {features.map((f, i) => (
@@ -287,10 +386,21 @@ const Paywall: React.FC<PaywallProps> = ({ onClose, source = 'unknown' }) => {
                             : t('paywall.freeTrial');
 
                         const winBackOffer = winBackOffers[pkg.identifier];
+                        const trialWinbackDiscount = trialWinbackDiscounts[pkg.identifier];
+                        const trialWinbackOption = trialWinbackOptions[pkg.identifier];
+                        // Unified view of the trial win-back offer regardless of which
+                        // platform shape it came from — everything below reads this.
+                        const trialWinback = trialWinbackDiscount
+                            ? { priceString: trialWinbackDiscount.priceString, cycles: trialWinbackDiscount.cycles }
+                            : trialWinbackOption
+                                ? { priceString: trialWinbackOption.pricingPhases[0]?.price.formatted ?? '', cycles: trialWinbackOption.pricingPhases[0]?.billingCycleCount ?? 1 }
+                                : null;
 
                         const badge = winBackOffer
                             ? { text: `🎉 ${t('paywall.winbackBadge').toUpperCase()}` }
-                            : isAnnual
+                            : trialWinback
+                                ? { text: `🎉 ${t('paywall.trialWinbackBadge').toUpperCase()}` }
+                                : isAnnual
                                 ? { text: isFreeTrial ? t('paywall.bestValueTrial') : t('paywall.bestValue') }
                                 : isFreeTrial
                                     ? { text: `🎁 ${trialLabel.toUpperCase()}` }
@@ -322,6 +432,10 @@ const Paywall: React.FC<PaywallProps> = ({ onClose, source = 'unknown' }) => {
                                             <Text style={[styles.packageDesc, { color: colors.accent }]}>
                                                 {t('paywall.winbackPriceFor', { price: winBackOffer.priceString, n: winBackOffer.cycles })}
                                             </Text>
+                                        ) : trialWinback ? (
+                                            <Text style={[styles.packageDesc, { color: colors.accent }]}>
+                                                {t('paywall.trialWinbackPriceFor', { price: trialWinback.priceString, n: trialWinback.cycles })}
+                                            </Text>
                                         ) : isFreeTrial && isAnnual ? (
                                             <Text style={[styles.packageDesc, { color: colors.accent }]}>
                                                 {weeklyEquivalent
@@ -346,9 +460,9 @@ const Paywall: React.FC<PaywallProps> = ({ onClose, source = 'unknown' }) => {
                                     </View>
                                     <View style={[styles.priceBadge, { backgroundColor: colors.accent }]}>
                                         <Text style={styles.priceText}>
-                                            {winBackOffer ? winBackOffer.priceString : isFreeTrial ? t('paywall.startFree') : pkg.product.priceString}
+                                            {winBackOffer ? winBackOffer.priceString : trialWinback ? trialWinback.priceString : isFreeTrial ? t('paywall.startFree') : pkg.product.priceString}
                                         </Text>
-                                        {!winBackOffer && !isFreeTrial && isAnnual && <Text style={styles.priceSubText}>{t('paywall.perYearBadge')}</Text>}
+                                        {!winBackOffer && !trialWinback && !isFreeTrial && isAnnual && <Text style={styles.priceSubText}>{t('paywall.perYearBadge')}</Text>}
                                     </View>
                                 </TouchableOpacity>
                             </View>
@@ -494,6 +608,22 @@ const styles = StyleSheet.create({
     },
     featuresList: {
         marginBottom: 12,
+    },
+    featureHighlight: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 14,
+        borderRadius: 16,
+        borderWidth: 1,
+        padding: 16,
+        marginBottom: 20,
+    },
+    featureHighlightIcon: {
+        width: 48,
+        height: 48,
+        borderRadius: 14,
+        justifyContent: 'center',
+        alignItems: 'center',
     },
     reassureBox: {
         flexDirection: 'row',

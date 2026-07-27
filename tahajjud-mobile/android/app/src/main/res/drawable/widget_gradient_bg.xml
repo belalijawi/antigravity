@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Approximates the SwiftUI LinearGradient(topLeading -> bottomTrailing, #020617 -> #0d1b3e).
+     Glance has no gradient Brush support, so this is a drawable-backed background. -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android"
+    android:shape="rectangle">
+    <gradient
+        android:angle="315"
+        android:startColor="#020617"
+        android:endColor="#0D1B3E" />
+</shape>

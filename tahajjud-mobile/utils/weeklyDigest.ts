@@ -1,5 +1,6 @@
 import * as Notifications from 'expo-notifications';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { Platform } from 'react-native';
 import { TahajjudJournal } from './tahajjudJournal';
 import { subDays } from 'date-fns';
 import { localDateStr } from './localDate';
@@ -105,18 +106,22 @@ export async function buildDigestMessage(): Promise<{ title: string; body: strin
 export async function scheduleWeeklyDigest(): Promise<void> {
     await cancelWeeklyDigest(); // clear any existing schedule first
 
+    const { status } = await Notifications.getPermissionsAsync();
+    if (status !== 'granted') return;
+
     // Build message NOW (Expo doesn't support dynamic content at fire time on iOS).
     // The user will see this week's stats next Friday — close enough for a digest.
     const { title, body } = await buildDigestMessage();
 
     const id = await Notifications.scheduleNotificationAsync({
         content: { title, body, sound: 'default' },
-        // Friday = 6 in iOS Calendar Trigger (Sunday = 1, Saturday = 7)
+        // Friday = 6 in Expo's weekday convention (Sunday = 1, Saturday = 7)
         trigger: {
             type: Notifications.SchedulableTriggerInputTypes.WEEKLY,
             weekday: 6,
             hour: 9,
             minute: 0,
+            ...(Platform.OS === 'android' && { channelId: 'prayers' }),
         } as any,
     });
 

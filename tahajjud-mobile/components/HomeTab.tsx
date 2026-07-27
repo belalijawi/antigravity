@@ -4,6 +4,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { SlidersHorizontal, Search } from 'lucide-react-native';
 import { t, isRTL } from '../utils/i18n';
+import { tc, tcVars } from '../data/contentTranslations';
 import { GlobalSearch } from './GlobalSearch';
 import { NightCalculator } from './NightCalculator';
 import { TasbeehCard } from './TasbeehCard';
@@ -20,13 +21,18 @@ import { EidCard } from './EidCard';
 import { LiveActivity } from '../utils/liveActivity';
 import { SettingsScreen } from './SettingsScreen';
 import { GlobalTahajjudMap } from './GlobalTahajjudMap';
+import { LeaderboardModal } from './Leaderboard';
 import { logTahajjudToMap, subscribeDailyTotal } from '../utils/tahajjudMap';
-import { Globe, BookOpen, ChevronRight } from 'lucide-react-native';
+import { Globe, BookOpen, ChevronRight, Trophy } from 'lucide-react-native';
 import { DiscoverCard } from './DiscoverCard';
 import { WhatsNewModal, WHATS_NEW_VERSION } from './WhatsNewModal';
+import { AnnouncementModal } from './AnnouncementModal';
+import type { Announcement } from '../utils/announcements';
+import { JoinLeaderboardPrompt } from './JoinLeaderboardPrompt';
 import { SupportModal } from './SupportModal';
 import { NotificationReAskModal } from './NotificationReAskModal';
 import { CancellationSurveyModal } from './CancellationSurveyModal';
+import { WidgetPromo } from './WidgetPromo';
 import { shouldShowNotificationReAsk, getNotificationReAskCount } from '../utils/notificationReAsk';
 import {
     FeatureId, markFeatureUsed,
@@ -85,17 +91,60 @@ export function HomeTab() {
         return () => unsub();
     }, []);
 
-    // "What's New" after a version update — shown once per version
+    // Admin-published announcement — remote-controlled (see
+    // utils/announcements.ts), checked before What's New so the two never
+    // stack on top of each other.
+    const [showAnnouncement, setShowAnnouncement] = useState(false);
+    const [pendingAnnouncement, setPendingAnnouncement] = useState<Announcement | null>(null);
     useEffect(() => {
         let cancelled = false;
         let timer: ReturnType<typeof setTimeout> | undefined;
         (async () => {
+            const { Announcements } = await import('../utils/announcements');
+            const announcement = await Announcements.get().catch(() => null);
+            const show = await Announcements.shouldShow(announcement).catch(() => false);
+            if (cancelled || !show || !announcement) return;
+            setPendingAnnouncement(announcement);
+            timer = setTimeout(() => { if (!cancelled) setShowAnnouncement(true); }, 900);
+        })();
+        return () => { cancelled = true; if (timer) clearTimeout(timer); };
+    }, []);
+
+    // Show it immediately in THIS session the moment an admin publishes one
+    // (including for the admin's own device) — the mount-time check above
+    // already ran by then, so without this it would only appear after the
+    // app is relaunched.
+    useEffect(() => {
+        const sub = DeviceEventEmitter.addListener('announcementPublished', (announcement: Announcement) => {
+            setPendingAnnouncement(announcement);
+            setShowAnnouncement(true);
+        });
+        return () => sub.remove();
+    }, []);
+
+    // Tapping a "you crossed a leaderboard rank tier" notification (see
+    // utils/leaderboard.ts's checkRankMilestones) opens the Leaderboard modal
+    // directly instead of just landing on Home and leaving them to find the
+    // card themselves. HomeTab is always eagerly mounted, so no queued-
+    // request mechanism is needed here the way DuasTab's requestOpenWall is.
+    useEffect(() => {
+        const sub = DeviceEventEmitter.addListener('leaderboard:open', () => setShowLeaderboard(true));
+        return () => sub.remove();
+    }, []);
+
+    // "What's New" after a version update — shown once per version. Skips
+    // itself if an announcement is about to show, so they never stack.
+    useEffect(() => {
+        let cancelled = false;
+        let timer: ReturnType<typeof setTimeout> | undefined;
+        (async () => {
+            if (pendingAnnouncement) return;
             const wn = await shouldShowWhatsNew(WHATS_NEW_VERSION).catch(() => false);
             if (cancelled) return;
             if (wn) timer = setTimeout(() => { if (!cancelled) setShowWhatsNew(true); }, 1200);
         })();
         return () => { cancelled = true; if (timer) clearTimeout(timer); };
-    }, []);
+    }, [pendingAnnouncement]);
 
     // Route a discovery-card tap to the right place, then mark it discovered
     const handleDiscoverNavigate = (id: FeatureId) => {
@@ -104,8 +153,9 @@ export function HomeTab() {
         switch (id) {
             case 'dua_wall':
                 switchToTab('Duas');
-                // Give the tab a moment to mount its listener before opening the wall
-                setTimeout(() => DeviceEventEmitter.emit('duas:openWall'), 350);
+                // requestOpenWall queues until the tab's listener is actually
+                // registered — no more guessing a fixed mount-grace delay.
+                require('./DuasTab').requestOpenWall();
                 break;
             case 'night_journal':
                 switchToTab('Duas'); break;
@@ -123,6 +173,10 @@ export function HomeTab() {
                 setIsSettingsVisible(true); break;
             case 'global_map':
                 setShowMap(true); break;
+            case 'leaderboard':
+                setShowLeaderboard(true); break;
+            case 'widget':
+                setShowWidgetGuideFromDiscover(true); break;
             case 'accountability_partner':
             case 'tasbeeh_stats':
             case 'challenges': {
@@ -204,6 +258,8 @@ export function HomeTab() {
     // last third — only on a fresh app open during that window.
     const [openedDuringLastThird, setOpenedDuringLastThird] = useState(false);
     const [showMap, setShowMap] = useState(false);
+    const [showLeaderboard, setShowLeaderboard] = useState(false);
+    const [showWidgetGuideFromDiscover, setShowWidgetGuideFromDiscover] = useState(false);
     const [mapDailyTotal, setMapDailyTotal] = useState(0);
     // Beginner discovery: surface the how-to Guide to users who haven't logged
     // any Tahajjud yet. Discovery of existing content, not new content.
@@ -215,6 +271,7 @@ export function HomeTab() {
         }).catch(() => {});
     }, []);
     const [showWhatsNew, setShowWhatsNew] = useState(false);
+    const [showJoinLeaderboard, setShowJoinLeaderboard] = useState(false);
     const [showSupportModal, setShowSupportModal] = useState(false);
     const [showNotifReAsk, setShowNotifReAsk] = useState(false);
     const [notifReAskCount, setNotifReAskCount] = useState(0);
@@ -732,8 +789,12 @@ export function HomeTab() {
                         <AccountabilityPartnerCard />
                     </Animated.View>
 
-                    {/* Hidden until 50+ daily logs — map needs critical mass to look alive */}
-                    {mapDailyTotal >= 50 && <Animated.View entering={fadeIn(370)}>
+                    {/* Hidden only at a hard 0 — "0 Muslims prayed" would read as broken.
+                        Previously gated at >= 50 for "critical mass"; removed because a
+                        transient fetch failure (see subscribeDailyTotal) and a genuinely
+                        low count were indistinguishable to users, causing false "map is
+                        broken" reports. */}
+                    {mapDailyTotal > 0 && <Animated.View entering={fadeIn(370)}>
                         <TouchableOpacity
                             style={[styles.mapCard, { borderColor: colors.accent + '33' }]}
                             onPress={() => { setShowMap(true); markFeatureUsed('global_map').catch(() => {}); }}
@@ -750,18 +811,51 @@ export function HomeTab() {
                             </View>
                             <View style={{ flex: 1 }}>
                                 <Text style={[styles.mapTitle, { color: colors.primaryText }]}>
-                                    {mapDailyTotal.toLocaleString()} Muslims prayed in the last 24h
+                                    {tcVars('home.mapCard.title', `${mapDailyTotal.toLocaleString()} Muslims prayed in the last 24h`, { n: mapDailyTotal.toLocaleString() })}
                                 </Text>
                                 <Text style={[styles.mapSub, { color: colors.secondaryText }]}>
-                                    See the ummah standing together worldwide
+                                    {tc('home.mapCard.subtitle', 'See the ummah standing together worldwide')}
                                 </Text>
                             </View>
                             <View style={[styles.mapLive, { backgroundColor: '#22c55e18', borderColor: '#22c55e44' }]}>
                                 <View style={[styles.mapLiveDot, { backgroundColor: '#22c55e' }]} />
-                                <Text style={[styles.mapLiveText, { color: '#22c55e' }]}>LIVE</Text>
+                                <Text style={[styles.mapLiveText, { color: '#22c55e' }]}>{t('globalMap.live')}</Text>
                             </View>
                         </TouchableOpacity>
                     </Animated.View>}
+
+                    {/* Leaderboard — opt-in dhikr/Quran/Tahajjud ranking, same
+                        card convention as the map above. Free to view/join.
+                        Subtitle is a generic "See where you rank" rather than
+                        listing each metric — three names side by side reads
+                        as cramped in this single small-text line, and stays
+                        wrong-forever if a future metric is added. */}
+                    <Animated.View entering={fadeIn(380)}>
+                        <TouchableOpacity
+                            style={[styles.mapCard, { borderColor: colors.accent + '33' }]}
+                            onPress={() => { setShowLeaderboard(true); markFeatureUsed('leaderboard').catch(() => {}); }}
+                            activeOpacity={0.8}
+                        >
+                            <BlurView intensity={Math.round(20 * blurIntensity)} tint="dark" style={StyleSheet.absoluteFill} />
+                            <LinearGradient
+                                colors={[colors.accent + '12', 'transparent']}
+                                style={StyleSheet.absoluteFill}
+                                start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}
+                            />
+                            <View style={[styles.mapGlobe, { backgroundColor: colors.accent + '22' }]}>
+                                <Trophy size={22} color={colors.accent} />
+                            </View>
+                            <View style={{ flex: 1 }}>
+                                <Text style={[styles.mapTitle, { color: colors.primaryText }]}>
+                                    {t('leaderboard.title')}
+                                </Text>
+                                <Text style={[styles.mapSub, { color: colors.secondaryText }]}>
+                                    {t('leaderboard.homeSubtitle')}
+                                </Text>
+                            </View>
+                            <ChevronRight size={20} color={colors.secondaryText} />
+                        </TouchableOpacity>
+                    </Animated.View>
 
                     {/* Tasbeeh — full width */}
                     <Animated.View
@@ -822,7 +916,7 @@ export function HomeTab() {
                     {/* Horizontal: Hadith Carousel / Cards */}
                     <Animated.View entering={fadeIn(800)} style={styles.hadithCarousel}>
                         <HadithCard
-                            text="The Lord descends every night to the lowest heaven when one-third of the night remains..."
+                            text={tc('home.hadith.text', "The Lord descends every night to the lowest heaven when one-third of the night remains...")}
                             source="Bukhari 1145"
                         />
                     </Animated.View>
@@ -843,13 +937,57 @@ export function HomeTab() {
                 serverTotal={mapDailyTotal}
             />
 
+            {/* Leaderboard Modal */}
+            <LeaderboardModal
+                visible={showLeaderboard}
+                onClose={() => setShowLeaderboard(false)}
+            />
+
+            {/* Widget setup guide — invoked from the Discover card ("Home Screen
+                Widget" entry). Same WidgetPromo card shown after logging your
+                first Tahajjud / reachable from Settings, just a third entry point. */}
+            {showWidgetGuideFromDiscover && (
+                <Modal visible transparent animationType="fade" onRequestClose={() => setShowWidgetGuideFromDiscover(false)}>
+                    <View style={styles.widgetModalBackdrop}>
+                        <WidgetPromo onDismiss={() => setShowWidgetGuideFromDiscover(false)} />
+                    </View>
+                </Modal>
+            )}
+
+            {/* Admin-published announcement — checked before What's New */}
+            <AnnouncementModal
+                visible={showAnnouncement}
+                announcement={pendingAnnouncement}
+                onDismiss={() => {
+                    setShowAnnouncement(false);
+                    if (pendingAnnouncement) {
+                        import('../utils/announcements').then(m => m.Announcements.markSeen(pendingAnnouncement.id)).catch(() => {});
+                    }
+                }}
+            />
+
             {/* What's New (after an update) */}
             <WhatsNewModal
                 visible={showWhatsNew}
                 onClose={() => {
                     setShowWhatsNew(false);
                     markWhatsNewSeen(WHATS_NEW_VERSION).catch(() => {});
+                    // Leaderboard is one of the features that modal just
+                    // introduced — a natural next beat, but only if they
+                    // haven't already joined (no point promoting something
+                    // they're already part of).
+                    setTimeout(() => {
+                        import('../utils/leaderboard').then(m => m.Leaderboard.getStatus()).then(status => {
+                            if (!status.optedIn) setShowJoinLeaderboard(true);
+                        }).catch(() => {});
+                    }, 500);
                 }}
+            />
+
+            <JoinLeaderboardPrompt
+                visible={showJoinLeaderboard}
+                onJoin={() => { setShowJoinLeaderboard(false); setShowLeaderboard(true); }}
+                onDismiss={() => setShowJoinLeaderboard(false)}
             />
 
             <SupportModal
@@ -891,6 +1029,11 @@ const styles = StyleSheet.create({
     safeArea: {
         flex: 1,
         backgroundColor: 'transparent',
+    },
+    widgetModalBackdrop: {
+        flex: 1,
+        backgroundColor: 'rgba(0,0,0,0.55)',
+        justifyContent: 'flex-end',
     },
     container: {
         flex: 1,

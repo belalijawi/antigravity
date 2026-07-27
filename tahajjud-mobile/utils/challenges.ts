@@ -15,6 +15,7 @@ import {
     subWeeks, getDaysInMonth,
 } from 'date-fns';
 import { localDateStr } from './localDate';
+import { tc, tcVars } from '../data/contentTranslations';
 
 export type ChallengeKind = 'weekly' | 'monthly';
 export type ChallengeMetric = 'tahajjud' | 'fajr' | 'all-five' | 'istighfar';
@@ -164,8 +165,8 @@ function roundTo100(n: number): number {
 
 interface AdaptiveMeta {
     metric: ChallengeMetric;
-    title: string;
-    reward: string;
+    title: () => string;
+    reward: () => string;
     floor: number; // smallest weekly target we'll ever show (keeps it achievable)
     cap: number;   // largest weekly target (7 days max for day-based)
     body: (target: number, avg: number) => string;
@@ -173,36 +174,39 @@ interface AdaptiveMeta {
 
 // Day-based weekly metrics rotated for variety. Istighfar is handled on its
 // own track below because it's count-based, not day-based.
+// title/reward are functions (not plain strings) so they re-read the current
+// locale on every call, instead of freezing to whatever locale was active
+// when this module first loaded.
 const ADAPTIVE_WEEKLY: AdaptiveMeta[] = [
     {
-        metric: 'tahajjud', title: 'Night Stand', floor: 2, cap: 7,
-        reward: 'You stood when most of the world slept. Barakah upon barakah.',
+        metric: 'tahajjud', title: () => tc('ch.title.nightStand', 'Night Stand'), floor: 2, cap: 7,
+        reward: () => tc('ch.reward.nightStand', 'You stood when most of the world slept. Barakah upon barakah.'),
         body: (t, avg) => avg <= 0
-            ? `Start strong: pray Tahajjud on ${t} nights this week.`
-            : `You've averaged ${Math.round(avg)} night${Math.round(avg) === 1 ? '' : 's'}/week lately — reach for ${t} this week.`,
+            ? tcVars('ch.body.tahajjudStart', `Start strong: pray Tahajjud on ${t} nights this week.`, { t })
+            : tcVars('ch.body.tahajjudAvg', `You've averaged ${Math.round(avg)} night${Math.round(avg) === 1 ? '' : 's'}/week lately — reach for ${t} this week.`, { t, avg: Math.round(avg) }),
     },
     {
-        metric: 'fajr', title: 'Dawn Catcher', floor: 3, cap: 7,
-        reward: 'Fajr in congregation with the dawn. Allah loves the consistent.',
+        metric: 'fajr', title: () => tc('ch.title.dawnCatcher', 'Dawn Catcher'), floor: 3, cap: 7,
+        reward: () => tc('ch.reward.dawnCatcher', 'Fajr in congregation with the dawn. Allah loves the consistent.'),
         body: (t, avg) => avg <= 0
-            ? `Catch Fajr on ${t} days this week.`
-            : `Lately ${Math.round(avg)} Fajr${Math.round(avg) === 1 ? '' : 's'}/week — push to ${t} this week.`,
+            ? tcVars('ch.body.fajrStart', `Catch Fajr on ${t} days this week.`, { t })
+            : tcVars('ch.body.fajrAvg', `Lately ${Math.round(avg)} Fajr${Math.round(avg) === 1 ? '' : 's'}/week — push to ${t} this week.`, { t, avg: Math.round(avg) }),
     },
     {
-        metric: 'all-five', title: 'Full Days', floor: 2, cap: 7,
-        reward: 'Complete days of the five pillars. Mā shāʾ Allāh.',
+        metric: 'all-five', title: () => tc('ch.title.fullDays', 'Full Days'), floor: 2, cap: 7,
+        reward: () => tc('ch.reward.fullDays', 'Complete days of the five pillars. Mā shāʾ Allāh.'),
         body: (t, avg) => avg <= 0
-            ? `Pray all five daily prayers on ${t} days this week.`
-            : `You complete ~${Math.round(avg)} full day${Math.round(avg) === 1 ? '' : 's'}/week — aim for ${t}.`,
+            ? tcVars('ch.body.allFiveStart', `Pray all five daily prayers on ${t} days this week.`, { t })
+            : tcVars('ch.body.allFiveAvg', `You complete ~${Math.round(avg)} full day${Math.round(avg) === 1 ? '' : 's'}/week — aim for ${t}.`, { t, avg: Math.round(avg) }),
     },
 ];
 
 const ADAPTIVE_ISTIGHFAR_WEEKLY: AdaptiveMeta = {
-    metric: 'istighfar', title: 'Tongue of Repentance', floor: 300, cap: 1400,
-    reward: 'Your tongue stayed busy with repentance. It shows.',
+    metric: 'istighfar', title: () => tc('ch.title.tongueOfRepentance', 'Tongue of Repentance'), floor: 300, cap: 1400,
+    reward: () => tc('ch.reward.tongueOfRepentance', 'Your tongue stayed busy with repentance. It shows.'),
     body: (t, avg) => avg <= 0
-        ? `Say Astaghfirullah ${t}× this week — about ${Math.round(t / 7)} a day.`
-        : `You've been saying ~${roundTo100(avg)}/week — reach ${t} this week.`,
+        ? tcVars('ch.body.istighfarWeekStart', `Say Astaghfirullah ${t}× this week — about ${Math.round(t / 7)} a day.`, { t, perDay: Math.round(t / 7) })
+        : tcVars('ch.body.istighfarWeekAvg', `You've been saying ~${roundTo100(avg)}/week — reach ${t} this week.`, { t, avg: roundTo100(avg) }),
 };
 
 /**
@@ -220,13 +224,13 @@ export async function currentWeeklyAdaptive(now: Date = new Date()): Promise<Cha
         const avg = await trailingAvgIstighfarPerWeek(now);
         const target = avg <= 0 ? 700 : clamp(roundTo100(avg * 1.15), ADAPTIVE_ISTIGHFAR_WEEKLY.floor, ADAPTIVE_ISTIGHFAR_WEEKLY.cap);
         const m = ADAPTIVE_ISTIGHFAR_WEEKLY;
-        return { id: `w-adaptive-istighfar-${wk}-${target}`, kind: 'weekly', metric: m.metric, target, title: m.title, body: m.body(target, avg), reward: m.reward };
+        return { id: `w-adaptive-istighfar-${wk}-${target}`, kind: 'weekly', metric: m.metric, target, title: m.title(), body: m.body(target, avg), reward: m.reward() };
     }
 
     const m = pickFromPool(ADAPTIVE_WEEKLY, wk);
     const avg = await trailingAvgDaysPerWeek(m.metric, now);
     const target = clamp(Math.round(avg) + 1, m.floor, m.cap);
-    return { id: `w-adaptive-${m.metric}-${wk}-${target}`, kind: 'weekly', metric: m.metric, target, title: m.title, body: m.body(target, avg), reward: m.reward };
+    return { id: `w-adaptive-${m.metric}-${wk}-${target}`, kind: 'weekly', metric: m.metric, target, title: m.title(), body: m.body(target, avg), reward: m.reward() };
 }
 
 /**
@@ -246,11 +250,11 @@ export async function currentMonthlyAdaptive(now: Date = new Date()): Promise<Ch
         const target = avgWeek <= 0 ? 3000 : clamp(roundTo100(avgWeek * weeksInMonth * 1.1), 1500, 9000);
         return {
             id: `m-adaptive-istighfar-${monthsSinceEpoch}-${target}`, kind: 'monthly', metric: 'istighfar', target,
-            title: 'A Month of Repentance',
+            title: tc('ch.title.monthOfRepentance', 'A Month of Repentance'),
             body: avgWeek <= 0
-                ? `Say Astaghfirullah ${target}× this month — about ${Math.round(target / daysInMonth)} a day.`
-                : `Build on your pace — reach ${target} Astaghfirullah this month.`,
-            reward: 'A month soaked in repentance. May Allah accept and forgive.',
+                ? tcVars('ch.body.istighfarMonthStart', `Say Astaghfirullah ${target}× this month — about ${Math.round(target / daysInMonth)} a day.`, { t: target, perDay: Math.round(target / daysInMonth) })
+                : tcVars('ch.body.istighfarMonthAvg', `Build on your pace — reach ${target} Astaghfirullah this month.`, { t: target }),
+            reward: tc('ch.reward.monthOfRepentance', 'A month soaked in repentance. May Allah accept and forgive.'),
         };
     }
 
@@ -259,15 +263,20 @@ export async function currentMonthlyAdaptive(now: Date = new Date()): Promise<Ch
     const projected = Math.round(avgWeek * weeksInMonth);
     const floorMonthly = Math.max(m.floor * 3, 6);
     const target = clamp(projected + 2, floorMonthly, daysInMonth - 1);
-    const metricNoun = m.metric === 'tahajjud' ? 'nights of Tahajjud'
+    const metricNounFallback = m.metric === 'tahajjud' ? 'nights of Tahajjud'
         : m.metric === 'fajr' ? 'days catching Fajr'
         : 'full five-prayer days';
+    const metricNoun = m.metric === 'tahajjud' ? tc('ch.metric.tahajjud', metricNounFallback)
+        : m.metric === 'fajr' ? tc('ch.metric.fajr', metricNounFallback)
+        : tc('ch.metric.allFive', metricNounFallback);
+    const titleFallback = m.metric === 'tahajjud' ? 'The Long Haul' : m.metric === 'fajr' ? 'A Month of Dawns' : 'A Month Complete';
+    const titleKey = m.metric === 'tahajjud' ? 'ch.title.longHaul' : m.metric === 'fajr' ? 'ch.title.monthOfDawns' : 'ch.title.monthComplete';
     return {
         id: `m-adaptive-${m.metric}-${monthsSinceEpoch}-${target}`, kind: 'monthly', metric: m.metric, target,
-        title: m.metric === 'tahajjud' ? 'The Long Haul' : m.metric === 'fajr' ? 'A Month of Dawns' : 'A Month Complete',
+        title: tc(titleKey, titleFallback),
         body: avgWeek <= 0
-            ? `Aim for ${target} ${metricNoun} this month.`
-            : `At your pace that's ~${projected} this month — stretch for ${target} ${metricNoun}.`,
-        reward: m.reward,
+            ? tcVars('ch.body.monthlyStart', `Aim for ${target} ${metricNounFallback} this month.`, { target, metric: metricNoun })
+            : tcVars('ch.body.monthlyAvg', `At your pace that's ~${projected} this month — stretch for ${target} ${metricNounFallback}.`, { target, projected, metric: metricNoun }),
+        reward: m.reward(),
     };
 }

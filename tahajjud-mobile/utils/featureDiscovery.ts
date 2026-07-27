@@ -16,6 +16,7 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Platform } from 'react-native';
 import { track } from './analytics';
+import { t } from './i18n';
 
 export type FeatureId =
     | 'mosque_timetable'
@@ -28,13 +29,25 @@ export type FeatureId =
     | 'qibla'
     | 'challenges'
     | 'testimonies'
-    | 'night_journal';
+    | 'night_journal'
+    | 'widget'
+    | 'dua_replies'
+    | 'dua_map_pin'
+    | 'leaderboard';
 
 export interface FeatureMeta {
     id: FeatureId;
     label: string;
     blurb: string;       // one-line "why you'd care"
     premium: boolean;
+    /** Shown instead of label/blurb for non-premium users on a premium
+     * feature whose default copy describes what you get AFTER upgrading
+     * (e.g. "Unlimited Replies") — without this, a free user reads that as
+     * a claim about their current state rather than a premium perk they
+     * don't have yet, since the lock icon alone is easy to miss. Only set
+     * where the default text would actually be misleading like that. */
+    freeLabel?: string;
+    freeBlurb?: string;
 }
 
 export const FEATURES: Record<FeatureId, FeatureMeta> = {
@@ -103,6 +116,32 @@ export const FEATURES: Record<FeatureId, FeatureMeta> = {
         label: 'Night Journal',
         blurb: 'Reflect after every Tahajjud — a private record of your nights with Allah.',
         premium: true,
+    },
+    widget: {
+        id: 'widget',
+        label: 'Home Screen Widget',
+        blurb: 'See your next prayer and Tahajjud time at a glance — no need to open the app.',
+        premium: false,
+    },
+    dua_replies: {
+        id: 'dua_replies',
+        label: 'Unlimited Replies',
+        blurb: 'Keep showing up for others — reply to as many duas and stories as you want.',
+        premium: true,
+        freeLabel: 'Reply Limit',
+        freeBlurb: "You get 1 free reply a day — go Premium for unlimited replies to duas and stories.",
+    },
+    dua_map_pin: {
+        id: 'dua_map_pin',
+        label: 'Pin to the Map',
+        blurb: 'Show your dua on tonight\'s global map so more hearts across the world can find and pray for you.',
+        premium: true,
+    },
+    leaderboard: {
+        id: 'leaderboard',
+        label: 'Leaderboard',
+        blurb: 'See how your dhikr and Quran reading compare with others — free and opt-in.',
+        premium: false,
     },
 };
 
@@ -195,6 +234,10 @@ export async function maybeScheduleFeatureNudge(): Promise<void> {
 
         // Pick one at random for variety
         const pick = unused[Math.floor(Math.random() * unused.length)];
+        // Same translated strings DiscoverCard renders — not the hardcoded
+        // English fallback text on FEATURES[pick.id].
+        const label = t(`discover.${pick.id}.label`);
+        const blurb = t(`discover.${pick.id}.blurb`);
 
         const fireDate = new Date();
         fireDate.setDate(fireDate.getDate() + 2);
@@ -202,8 +245,8 @@ export async function maybeScheduleFeatureNudge(): Promise<void> {
 
         await Notifications.scheduleNotificationAsync({
             content: {
-                title: `Have you tried ${pick.label}?`,
-                body: pick.blurb,
+                title: t('featureNudge.title', { label }),
+                body: blurb,
                 sound: 'default',
                 data: { type: 'feature_nudge', featureId: pick.id },
             },

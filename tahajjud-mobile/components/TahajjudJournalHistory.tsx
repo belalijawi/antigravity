@@ -10,7 +10,7 @@ import { useTheme } from '../context/ThemeContext';
 import { TahajjudJournal, JournalEntry, STATE_OPTIONS } from '../utils/tahajjudJournal';
 import { TahajjudJournalModal } from './TahajjudJournalModal';
 import { haptic } from '../utils/haptic';
-import { format, parseISO, subDays } from 'date-fns';
+import { format, parseISO, subDays, isValid } from 'date-fns';
 import { localDateStr } from '../utils/localDate';
 import { t } from '../utils/i18n';
 
@@ -56,7 +56,7 @@ function EntryCard({ entry, colors, onDelete, onToggleAnswered }: {
                         <Text style={styles.entryEmoji}>{stateOption?.emoji ?? '🌙'}</Text>
                         <View>
                             <Text style={styles.entryDate}>
-                                {format(parseISO(entry.date), 'EEE, MMM d')}
+                                {isValid(parseISO(entry.date)) ? format(parseISO(entry.date), 'EEE, MMM d') : '—'}
                             </Text>
                             <Text style={styles.entrySub}>
                                 {t('journalHist.rakatsCount', { n: entry.rakats })} · {stateOption ? stateLabel(stateOption.key) : ''}

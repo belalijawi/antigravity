@@ -23,10 +23,20 @@ export function TahajjudChallengeCard() {
     const { colors, blurIntensity, cardBg } = useTheme();
     const [state, setState] = useState<ChallengeState | null>(null);
     const [showStart, setShowStart] = useState(false);
+    // What the NEXT challenge's target will be — shown before starting one
+    // (either first-ever, or after finishing the last) so the escalation
+    // (40 → 50 → 60...) is visible up front, not just once already in it.
+    const [nextTarget, setNextTarget] = useState(TahajjudChallenge.BASE_TARGET);
 
     useEffect(() => {
         TahajjudChallenge.getState().then(setState).catch(() => {});
-        const unsub = TahajjudChallenge.subscribe(setState);
+        TahajjudChallenge.getNextTarget().then(setNextTarget).catch(() => {});
+        const unsub = TahajjudChallenge.subscribe(s => {
+            setState(s);
+            // A challenge just completed (or was reset) — refresh the preview
+            // so it reflects the new escalated target immediately.
+            TahajjudChallenge.getNextTarget().then(setNextTarget).catch(() => {});
+        });
         return () => unsub();
     }, []);
 
@@ -67,7 +77,7 @@ export function TahajjudChallengeCard() {
                     <View style={[styles.iconWrap, { backgroundColor: colors.accent + '22', borderColor: colors.accent + '44' }]}>
                         <Trophy size={14} color={colors.accent} />
                     </View>
-                    <Text style={[styles.kicker, { color: colors.accent }]}>{t('challenge40.kicker')}</Text>
+                    <Text style={[styles.kicker, { color: colors.accent }]}>{t('challenge40.kicker', { n: state.target })}</Text>
                     <TouchableOpacity onPress={handleAbandon} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
                         <X size={14} color="#475569" />
                     </TouchableOpacity>
@@ -75,7 +85,7 @@ export function TahajjudChallengeCard() {
 
                 <Text style={styles.bigCount}>
                     <Text style={{ color: '#f1f5f9' }}>{state.progressDays.length}</Text>
-                    <Text style={{ color: '#475569' }}> / 40</Text>
+                    <Text style={{ color: '#475569' }}> / {state.target}</Text>
                 </Text>
                 <Text style={styles.subText}>{t('challenge40.nightsToGo', { n: remaining })}</Text>
 
@@ -103,7 +113,7 @@ export function TahajjudChallengeCard() {
                     <View style={[styles.iconWrap, { backgroundColor: 'rgba(34,197,94,0.18)', borderColor: 'rgba(34,197,94,0.4)' }]}>
                         <Check size={14} color="#22c55e" strokeWidth={3} />
                     </View>
-                    <Text style={[styles.kicker, { color: '#22c55e' }]}>{t('challenge40.completeKicker')}</Text>
+                    <Text style={[styles.kicker, { color: '#22c55e' }]}>{t('challenge40.completeKicker', { n: state.target })}</Text>
                 </View>
 
                 <Text style={[styles.bigCount, { color: '#22c55e' }]}>{t('challenge40.mashaAllah')}</Text>
@@ -113,7 +123,7 @@ export function TahajjudChallengeCard() {
                     onPress={() => TahajjudChallenge.reset()}
                     style={[styles.startBtn, { backgroundColor: colors.accent + '22', borderColor: colors.accent + '44' }]}
                 >
-                    <Text style={[styles.startBtnText, { color: colors.accent }]}>{t('challenge40.startNewBtn')}</Text>
+                    <Text style={[styles.startBtnText, { color: colors.accent }]}>{t('challenge40.startNewBtn', { n: nextTarget })}</Text>
                 </TouchableOpacity>
             </Animated.View>
         );
@@ -129,11 +139,11 @@ export function TahajjudChallengeCard() {
                     <View style={[styles.iconWrap, { backgroundColor: colors.accent + '15', borderColor: colors.accent + '33' }]}>
                         <Sparkles size={14} color={colors.accent} />
                     </View>
-                    <Text style={[styles.kicker, { color: colors.accent }]}>{t('challenge40.kicker')}</Text>
+                    <Text style={[styles.kicker, { color: colors.accent }]}>{t('challenge40.kicker', { n: nextTarget })}</Text>
                 </View>
 
                 <Text style={styles.ctaText} maxFontSizeMultiplier={1.2}>
-                    {t('challenge40.ctaText')}
+                    {t('challenge40.ctaText', { n: nextTarget })}
                 </Text>
 
                 <TouchableOpacity
@@ -152,9 +162,9 @@ export function TahajjudChallengeCard() {
                         <View style={[styles.iconWrapLarge, { backgroundColor: colors.accent + '22', borderColor: colors.accent + '44' }]}>
                             <Trophy size={28} color={colors.accent} />
                         </View>
-                        <Text style={styles.modalTitle}>{t('challenge40.modalTitle')}</Text>
+                        <Text style={styles.modalTitle}>{t('challenge40.modalTitle', { n: nextTarget })}</Text>
                         <Text style={styles.modalBody}>
-                            {t('challenge40.modalBody')}
+                            {t('challenge40.modalBody', { n: nextTarget })}
                         </Text>
                         <View style={styles.modalActions}>
                             <TouchableOpacity onPress={() => setShowStart(false)} style={styles.modalCancelBtn}>

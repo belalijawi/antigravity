@@ -14,6 +14,7 @@
 import * as Notifications from 'expo-notifications';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Platform } from 'react-native';
+import { t } from './i18n';
 
 const STORED_ID_KEY = 'streak-risk-notif-id-v1';
 const MIN_STREAK = 2;
@@ -41,8 +42,8 @@ export async function scheduleStreakAtRisk(streak: number): Promise<void> {
 
         const id = await Notifications.scheduleNotificationAsync({
             content: {
-                title: `Don't break your ${streak}-night streak 🌙`,
-                body: `You've prayed Tahajjud ${streak} nights in a row. The gate opens tonight — keep it alive.`,
+                title: t('streakRisk.title', { n: streak }),
+                body: t('streakRisk.body', { n: streak }),
                 sound: 'default',
                 data: { type: 'streak_at_risk' },
             },

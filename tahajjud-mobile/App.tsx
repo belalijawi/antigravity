@@ -2,7 +2,7 @@ import 'react-native-gesture-handler';
 // Platform must be imported BEFORE Sentry.init — it's used in tracesSampleRate
 // at module-evaluation time (line ~45). Importing after would leave Platform
 // undefined when Sentry.init runs, causing a crash at startup.
-import { Platform, View, Text, TouchableOpacity, StatusBar, LogBox, StyleSheet, Dimensions, Modal, DeviceEventEmitter, Animated as RNAnimated } from 'react-native';
+import { Platform, View, Text, TouchableOpacity, StatusBar, LogBox, StyleSheet, Dimensions, Modal, DeviceEventEmitter, Animated as RNAnimated, AppState } from 'react-native';
 import * as Sentry from '@sentry/react-native';
 import React, { useEffect, useState } from 'react';
 import Constants from 'expo-constants';
@@ -101,6 +101,27 @@ export function switchToTab(tabName: 'Home' | 'Guide' | 'Duas' | 'Quran' | 'Pray
 }
 
 /**
+ * Handles a notification tap/action. The "Log" action button (see
+ * utils/notifications.ts's PRAYER_LOG category) logs the prayer in the
+ * background instead of just routing to a tab — this is what makes the
+ * one-tap flow actually one tap instead of "open app, find tracker, tap".
+ */
+function handleNotificationResponse(response: { actionIdentifier: string; notification: { request: { content: { data: any } } } }): void {
+  const data = response.notification.request.content.data;
+  if (response.actionIdentifier === 'LOG' && data?.prayer) {
+    import('./utils/quickLogPrayer').then(m => m.quickLogPrayer(data.prayer, 'notification')).then(logged => {
+      // Only buzz on an actual new log — re-tapping Log on a prayer already
+      // logged (e.g. from the app) should stay silent, not falsely confirm.
+      if (logged) haptic.success();
+    }).catch(() => {});
+    // Tahajjud is still worth landing on Home for (streak/gate state visible);
+    // the daily prayers don't need to pull the user into the app at all.
+    if (data.prayer !== 'tahajjud') return;
+  }
+  routeFromNotification(data);
+}
+
+/**
  * Route the user to the right tab based on what notification they tapped.
  * For Tahajjud reminders + partner wake-ups: Home tab (where partner card +
  * Tahajjud zone live). For prayer reminders: Home tab too (prayer countdown).
@@ -117,11 +138,14 @@ function routeFromNotification(data: any): void {
     target = 'Home';
   } else if (type === 'prayer_reminder' || type === 'fajr' || type === 'dhuhr' || type === 'asr' || type === 'maghrib' || type === 'isha') {
     target = 'Home';
-  } else if (type === 'dua_milestone') {
+  } else if (type === 'dua_milestone' || type === 'dua_reply' || type === 'dua_answered') {
     target = 'Duas';   // Dua Wall lives in the Duas tab
-  } else if (type === 'testimony_milestone') {
+  } else if (type === 'testimony_milestone' || type === 'testimony_reply') {
     target = 'Guide';  // Testimonies live in the Guide tab
-  } else if (type === 'winback_1' || type === 'winback_2') {
+  } else if (type === 'reply_liked' || type === 'thread_reply') {
+    // The liked/replied-to thread lives wherever its parent does.
+    target = data?.parentType === 'testimony' ? 'Guide' : 'Duas';
+  } else if (type === 'winback_1' || type === 'winback_2' || type === 'trial_winback') {
     target = 'Home';
   }
   const navigate = () => {
@@ -140,6 +164,37 @@ function routeFromNotification(data: any): void {
     if (type === 'winback_1' || type === 'winback_2') {
       setTimeout(() => {
         DeviceEventEmitter.emit('openPaywall', { source: 'winback' });
+      }, 1500);
+    }
+    // Trial-cancel win-back tap: separate source so the paywall only spends
+    // a StoreKit round-trip checking the Promotional Offer for users who
+    // actually arrived this way (see utils/trialWinback.ts).
+    if (type === 'trial_winback') {
+      setTimeout(() => {
+        DeviceEventEmitter.emit('openPaywall', { source: 'trial_winback' });
+      }, 1500);
+    }
+    // Reply notification tap: open the Dua Wall scrolled to the replied-to
+    // dua with its thread expanded. Same 1500ms mount-grace as streak_paywall.
+    // reply_liked and thread_reply can ALSO be for a testimony thread (shared
+    // type across both surfaces) — testimonies have no scroll-to-story deep
+    // link yet, so those are excluded here same as reply_liked already was.
+    if ((type === 'dua_reply' || type === 'dua_answered'
+        || ((type === 'reply_liked' || type === 'thread_reply') && data?.parentType !== 'testimony'))
+        && data?.parentId) {
+      // requestOpenWall queues the request until DuasTab's listener is
+      // actually registered, so there's no need to guess a mount-grace delay
+      // (previously a fixed 1500ms regardless of how fast the tab was ready).
+      require('./components/DuasTab').requestOpenWall({ focusDuaId: String(data.parentId) });
+    }
+    // Rank-tier notification tap: open the Leaderboard directly rather than
+    // just landing on Home and making them find the card themselves. Same
+    // 1500ms cold-start grace as the paywall deep-links above — HomeTab is
+    // always eagerly mounted (it's the first tab), but a slow Hermes JIT
+    // warm-up on cold start is the same risk regardless of which tab it is.
+    if (type === 'leaderboard_rank') {
+      setTimeout(() => {
+        DeviceEventEmitter.emit('leaderboard:open');
       }, 1500);
     }
   };
@@ -329,16 +384,32 @@ function MainApp() {
       // closed. The response is available synchronously via getLastNotificationResponseAsync.
       NotificationsModule.getLastNotificationResponseAsync().then(response => {
         if (response) {
-          routeFromNotification(response.notification.request.content.data);
+          handleNotificationResponse(response);
         }
       }).catch(() => {});
 
       // Handle the warm-tap case: user tapped a notification while app was
       // backgrounded but still in memory.
       responseSub = NotificationsModule.addNotificationResponseReceivedListener(response => {
-        routeFromNotification(response.notification.request.content.data);
+        handleNotificationResponse(response);
       });
     }).catch(() => {});
+
+    // Drain pending prayer logs (from a widget "Log" tap) whenever the app
+    // comes back to the foreground, not just at cold start — otherwise a log
+    // made while merely backgrounded wouldn't show up until a full relaunch.
+    const appStateSub = AppState.addEventListener('change', (state) => {
+      if (state === 'active') drainPendingPrayerLogs().catch(() => {});
+      // Dhikr/Quran leaderboard counters are debounced a few seconds so a
+      // burst of taps doesn't turn into one Firestore write each — but that
+      // means backgrounding the app mid-debounce would otherwise strand
+      // whatever hasn't flushed yet. Force it out now instead of waiting for
+      // a timer that may never get to fire.
+      if (state === 'background' || state === 'inactive') {
+        import('./utils/dhikrLeaderboardTracker').then(m => m.flushDhikrNow()).catch(() => {});
+        import('./utils/quranReadingTracker').then(m => m.flushQuranNow()).catch(() => {});
+      }
+    });
 
     return () => {
       clearTimeout(t1);
@@ -346,6 +417,7 @@ function MainApp() {
       clearTimeout(t3);
       clearTimeout(timer);
       responseSub?.remove();
+      appStateSub.remove();
     };
   }, []);
 
@@ -689,12 +761,12 @@ function AppNavigator() {
 }
 
 function MainAppWithPaywall() {
-  const { paywallVisible, closePaywall, paywallSource } = usePurchases();
+  const { paywallVisible, closePaywall, paywallSource, paywallFeatureId } = usePurchases();
   return (
     <>
       <MainApp />
       <Modal visible={paywallVisible} animationType="slide" presentationStyle="fullScreen">
-        <Paywall onClose={closePaywall} source={paywallSource} />
+        <Paywall onClose={closePaywall} source={paywallSource} featureId={paywallFeatureId} />
       </Modal>
     </>
   );

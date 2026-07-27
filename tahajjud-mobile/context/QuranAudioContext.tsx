@@ -10,6 +10,7 @@ import TrackPlayer, {
     usePlaybackState,
     AppKilledPlaybackBehavior,
 } from 'react-native-track-player';
+import { Alert } from 'react-native';
 import * as FileSystem from 'expo-file-system/legacy';
 import { QuranService } from '../services/QuranService';
 import OfflineQuranService from '../services/OfflineQuranService';
@@ -136,6 +137,25 @@ export function QuranAudioProvider({ children }: { children: ReactNode }) {
             setPlaylistName(null);
             setQueueTotal(0);
             setQueueIndex(0);
+        });
+        return () => sub.remove();
+    }, []);
+
+    // Without this, a failed stream (e.g. weak connection) left the UI
+    // either stuck on the loading spinner (isLoading derived from
+    // State.Buffering, which nothing ever transitions away from on error)
+    // or silently reverted to "not playing" with no explanation. Surface it
+    // and reset playback state so the play button becomes tappable again.
+    useEffect(() => {
+        const sub = TrackPlayer.addEventListener(Event.PlaybackError, async () => {
+            try { await TrackPlayer.reset(); } catch { /* ignore */ }
+            setPlaylistName(null);
+            setQueueTotal(0);
+            setQueueIndex(0);
+            Alert.alert(
+                'Playback failed',
+                "Couldn't stream this audio — check your connection and try again.",
+            );
         });
         return () => sub.remove();
     }, []);

@@ -11,6 +11,8 @@ export interface Testimony {
     isCommunity?: boolean;
     /** Epoch millis; only present on community stories. */
     createdAt?: number;
+    /** Denormalised count of visible replies (community stories only). */
+    replyCount?: number;
 }
 
 export const initialTestimonies: Testimony[] = [

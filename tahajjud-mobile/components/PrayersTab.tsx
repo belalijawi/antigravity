@@ -12,6 +12,7 @@ import { useTheme } from '../context/ThemeContext';
 import { usePurchases } from '../context/PurchasesContext';
 import { Lock } from 'lucide-react-native';
 import { t, getLocale } from '../utils/i18n';
+import { tc } from '../data/contentTranslations';
 
 type PrayerSubTab = 'tracker' | 'history' | 'qibla' | 'stats';
 
@@ -78,7 +79,7 @@ function PrayerQuotes() {
                             </Text>
                         )}
                         <Text style={[styles.quoteText, { color: colors.primaryText }]}>
-                            "{q.text}"
+                            "{tc(`prayers.quote${i + 1}.text`, q.text)}"
                         </Text>
                         <View style={[styles.quoteDivider, { backgroundColor: colors.accent + '30' }]} />
                         <Text style={[styles.quoteSource, { color: colors.accent }]}>
@@ -141,7 +142,7 @@ export function PrayersTab() {
                             <TouchableOpacity
                                 key={tab.key}
                                 onPress={() => {
-                                    if (locked) { openPaywall('feature_gate:prayer_stats'); return; }
+                                    if (locked) { openPaywall('feature_gate:prayer_stats', 'prayer_analytics'); return; }
                                     setActiveTab(tab.key);
                                     if (tab.key === 'stats') {
                                         setStatsIsNew(false); // clear the NEW dot instantly

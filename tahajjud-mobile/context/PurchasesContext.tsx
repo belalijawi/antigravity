@@ -1,10 +1,11 @@
-import React, { createContext, useContext, useEffect, useState } from 'react';
+import React, { createContext, useContext, useEffect, useState, useCallback, useMemo } from 'react';
 import { Platform } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import RevenueCatService, { ENTITLEMENT_ID } from '../services/revenueCat';
 import Purchases, { CustomerInfo } from 'react-native-purchases';
 import { enforceReciterAccess } from '../utils/reciters';
 import { setSuperProperties } from '../utils/analytics';
+import type { FeatureId } from '../utils/featureDiscovery';
 
 // Keyed by the expirationDate of the lapse we last surveyed, so a NEW
 // cancellation after a future resubscribe still triggers the survey again —
@@ -27,7 +28,11 @@ interface PurchasesContextType {
     trialEndsAt: string | null;
     paywallVisible: boolean;
     paywallSource: string;
-    openPaywall: (source?: string) => void;
+    /** The specific feature that triggered this paywall, if any — lets the
+     *  paywall highlight what the user actually tapped instead of showing
+     *  only the generic feature list. */
+    paywallFeatureId?: FeatureId;
+    openPaywall: (source?: string, featureId?: FeatureId) => void;
     closePaywall: () => void;
     checkPremiumStatus: () => Promise<void>;
     /** True when a subscription (trial or paid) has just been cancelled and
@@ -65,8 +70,23 @@ export const PurchasesProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     // pending lapse doesn't re-ask on every launch.
     const updateTrialState = async (info: CustomerInfo) => {
         const ent: any = info.entitlements.active[ENTITLEMENT_ID];
-        setTrialLapsing(!!ent && ent.periodType === 'TRIAL' && ent.willRenew === false);
+        const isLapsingTrial = !!ent && ent.periodType === 'TRIAL' && ent.willRenew === false;
+        setTrialLapsing(isLapsingTrial);
         setTrialEndsAt(ent?.expirationDate ?? null);
+
+        // Trial win-back nudge: only relevant while a cancelled trial is
+        // still pending its real expiration — reschedule against it every
+        // time (self-corrects if the date shifts or they re-enable
+        // auto-renew), cancel otherwise so a converted/renewing user never
+        // sees a "come back" push while they're already paying.
+        try {
+            const { scheduleTrialWinbackNudge, cancelTrialWinbackNudge } = await import('../utils/trialWinback');
+            if (isLapsingTrial && ent.expirationDate) {
+                await scheduleTrialWinbackNudge(new Date(ent.expirationDate));
+            } else {
+                await cancelTrialWinbackNudge();
+            }
+        } catch { /* never block on a notification-scheduling failure */ }
 
         const cancelled = !!ent && ent.willRenew === false && !!ent.expirationDate;
         if (!cancelled) return;
@@ -78,18 +98,22 @@ export const PurchasesProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         } catch { /* ignore — survey is a nice-to-have, never block on it */ }
     };
 
-    const dismissCancellationSurvey = () => setShowCancellationSurvey(false);
+    const dismissCancellationSurvey = useCallback(() => setShowCancellationSurvey(false), []);
     const [paywallVisible, setPaywallVisible] = useState<boolean>(false);
     const [paywallSource, setPaywallSource] = useState<string>('unknown');
+    const [paywallFeatureId, setPaywallFeatureId] = useState<FeatureId | undefined>(undefined);
 
-    // openPaywall(source) — `source` tags WHERE the paywall was triggered from
-    // (e.g. 'settings', 'streak_milestone', 'scheduled_5day', 'feature_gate:hifz')
-    // so PostHog can answer "which entry points actually convert?"
-    const openPaywall = (source: string = 'unknown') => {
+    // openPaywall(source, featureId) — `source` tags WHERE the paywall was
+    // triggered from (e.g. 'settings', 'streak_milestone', 'scheduled_5day',
+    // 'feature_gate:hifz') so PostHog can answer "which entry points actually
+    // convert?" `featureId`, when known, lets the paywall highlight the
+    // specific feature the user tapped instead of showing only the generic list.
+    const openPaywall = useCallback((source: string = 'unknown', featureId?: FeatureId) => {
         setPaywallSource(source);
+        setPaywallFeatureId(featureId);
         setPaywallVisible(true);
-    };
-    const closePaywall = () => setPaywallVisible(false);
+    }, []);
+    const closePaywall = useCallback(() => setPaywallVisible(false), []);
 
     // Keep `is_premium` current as a super property so every event
     // (not just purchase events) can be segmented by subscription status.
@@ -99,7 +123,7 @@ export const PurchasesProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         }
     }, [isPremium, isLoading]);
 
-    const checkPremiumStatus = async () => {
+    const checkPremiumStatus = useCallback(async () => {
         // Android test-unlock: skip all RevenueCat checks, always premium.
         if (IS_ANDROID_TEST_UNLOCK) {
             setIsPremium(true);
@@ -120,7 +144,8 @@ export const PurchasesProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         } finally {
             setIsLoading(false);
         }
-    };
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
 
     useEffect(() => {
         // Android test-unlock: skip RevenueCat initialization entirely.
@@ -146,15 +171,25 @@ export const PurchasesProvider: React.FC<{ children: React.ReactNode }> = ({ chi
             Purchases.addCustomerInfoUpdateListener(onCustomerInfoUpdate);
         };
 
-        init();
+        init().catch(() => {});
 
         return () => {
             Purchases.removeCustomerInfoUpdateListener(onCustomerInfoUpdate);
         };
     }, []);
 
+    // Without this, the provider value is a brand-new object every render —
+    // consumed by 16 components (Home, NightCalculator, Tracker, QuranTab,
+    // DuasTab, HistoryCalendar, etc.) — so every openPaywall()/closePaywall()
+    // call re-renders all of them even though most only read `isPremium`.
+    const value = useMemo(() => ({
+        isPremium, isLoading, trialLapsing, trialEndsAt, paywallVisible, paywallSource, paywallFeatureId,
+        openPaywall, closePaywall, checkPremiumStatus, showCancellationSurvey, dismissCancellationSurvey,
+    }), [isPremium, isLoading, trialLapsing, trialEndsAt, paywallVisible, paywallSource, paywallFeatureId,
+        openPaywall, closePaywall, checkPremiumStatus, showCancellationSurvey, dismissCancellationSurvey]);
+
     return (
-        <PurchasesContext.Provider value={{ isPremium, isLoading, trialLapsing, trialEndsAt, paywallVisible, paywallSource, openPaywall, closePaywall, checkPremiumStatus, showCancellationSurvey, dismissCancellationSurvey }}>
+        <PurchasesContext.Provider value={value}>
             {children}
         </PurchasesContext.Provider>
     );

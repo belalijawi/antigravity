@@ -1,4 +1,4 @@
-import { NativeModules, Platform } from 'react-native';
+import { NativeModules } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { localDateStr } from './localDate';
 
@@ -37,6 +37,28 @@ function parseToTodayDate(timeStr: string): Date {
 }
 
 /**
+ * The most recent of today's 5 daily prayers whose time has started but
+ * that hasn't been logged yet — the prayer the widget's "Log" button should
+ * target. null when nothing is currently loggable (e.g. it's the middle of
+ * the night, or everything so far today is already logged).
+ */
+function computeLoggablePrayer(times: PrayerTimes, history: Record<string, string[]>): string | null {
+    const now = new Date();
+    const today = localDateStr(now);
+    let best: { prayer: string; time: Date } | null = null;
+    for (const prayer of PRAYER_ORDER) {
+        const norm = normalizeTime((times as any)[prayer]);
+        if (!norm) continue;
+        const startTime = parseToTodayDate(norm);
+        if (startTime > now) continue; // hasn't started yet
+        const loggedToday = (history[prayer] ?? []).some(d => localDateStr(d) === today);
+        if (loggedToday) continue;
+        if (!best || startTime > best.time) best = { prayer, time: startTime };
+    }
+    return best?.prayer ?? null;
+}
+
+/**
  * Finds the next upcoming prayer from today's times.
  * If all have passed, returns Fajr of tomorrow.
  */
@@ -62,12 +84,17 @@ function findNextPrayer(times: PrayerTimes): { name: string; date: Date } | null
 export const WIDGET_DUA_ID_KEY = 'widget_dua_id';
 
 /**
- * Pins a dua to the home-screen Dua widget (iOS only). Returns false when
- * the native method isn't available (Android, or a binary older than the
- * widget) so callers can hide/no-op the affordance.
+ * Pins a dua to the home-screen Dua widget. Returns false when the native
+ * method isn't available (a binary older than the widget) so callers can
+ * hide/no-op the affordance.
  */
 export function setWidgetDua(dua: { title: string; arabic?: string; translation?: string }): boolean {
-    if (Platform.OS !== 'ios' || !WidgetDataBridge?.writeDuaWidgetData) return false;
+    if (!WidgetDataBridge) return false;
+    // Call directly instead of feature-detecting the method as a property —
+    // under the new-architecture interop layer, method presence checks can
+    // report undefined for methods that are in fact callable, which made
+    // current builds wrongly show the "update the app" alert. A genuinely
+    // old binary throws here and still lands in the catch.
     try {
         WidgetDataBridge.writeDuaWidgetData(dua.title, dua.arabic ?? '', dua.translation ?? '');
         return true;
@@ -81,31 +108,45 @@ export function setWidgetDua(dua: { title: string; arabic?: string; translation?
  * Writes data to the shared App Group for the home screen widget.
  * @param tahajjudStart  Optional Date of tonight's last-third start (from NightCalculation)
  */
+/** Coerce either format to a Unix-seconds timestamp anchored to today. */
+function toUnixSeconds(v: TimeValue): number {
+    const norm = normalizeTime(v);
+    if (!norm) return 0; // 0 = not available, matches tahajjudStart's convention
+    return parseToTodayDate(norm).getTime() / 1000;
+}
+
 export async function updateWidget(prayerTimes: PrayerTimes, tahajjudStart?: Date): Promise<void> {
-    if (Platform.OS !== 'ios' || !WidgetDataBridge) return;
+    if (!WidgetDataBridge) return;
 
     const next = findNextPrayer(prayerTimes);
     if (!next) return;
 
     let streak = 0;
+    let loggablePrayer = '';
+    const loggedToday: string[] = [];
+    const today = localDateStr(new Date());
     try {
         const raw = await AsyncStorage.getItem('prayer-tracker-v2');
-        if (raw) {
-            const history = JSON.parse(raw) as Record<string, string[]>;
-            const tahajjud: string[] = history.tahajjud ?? [];
-            const today = localDateStr(new Date());
-            const hasDay = (dateStr: string) => tahajjud.some(d => localDateStr(d) === dateStr);
-            const hasToday = hasDay(today);
-            const yday = new Date();
-            yday.setDate(yday.getDate() - 1);
-            const hasYesterday = hasDay(localDateStr(yday));
-            if (hasToday || hasYesterday) {
-                let check = hasToday ? new Date() : yday;
-                while (hasDay(localDateStr(check))) {
-                    streak++;
-                    check.setDate(check.getDate() - 1);
-                }
+        // A brand-new user has no tracker entry yet — that must NOT skip the
+        // loggable-prayer computation below, or the exact users this button
+        // is meant to help (nobody's logged anything yet) would never see it.
+        const history = raw ? (JSON.parse(raw) as Record<string, string[]>) : {};
+        const tahajjud: string[] = history.tahajjud ?? [];
+        const hasDay = (dateStr: string) => tahajjud.some(d => localDateStr(d) === dateStr);
+        const hasToday = hasDay(today);
+        const yday = new Date();
+        yday.setDate(yday.getDate() - 1);
+        const hasYesterday = hasDay(localDateStr(yday));
+        if (hasToday || hasYesterday) {
+            let check = hasToday ? new Date() : yday;
+            while (hasDay(localDateStr(check))) {
+                streak++;
+                check.setDate(check.getDate() - 1);
             }
+        }
+        loggablePrayer = computeLoggablePrayer(prayerTimes, history) ?? '';
+        for (const prayer of PRAYER_ORDER) {
+            if ((history[prayer] ?? []).some(d => localDateStr(d) === today)) loggedToday.push(prayer);
         }
     } catch (_) {}
 
@@ -115,6 +156,21 @@ export async function updateWidget(prayerTimes: PrayerTimes, tahajjudStart?: Dat
             next.date.getTime() / 1000,          // Unix seconds
             streak,
             tahajjudStart ? tahajjudStart.getTime() / 1000 : 0,  // 0 = not available
+            loggablePrayer,                      // '' = nothing currently loggable
+            // Raw ingredients so the widget can recompute "next prayer" and
+            // "loggable prayer" live as real time passes, instead of only at
+            // push time. Without these, both went stale the moment a prayer
+            // transition happened while the app stayed closed — e.g. "Log
+            // Dhuhr" stuck on screen well after Asr had also started.
+            JSON.stringify({
+                fajr: toUnixSeconds(prayerTimes.fajr),
+                dhuhr: toUnixSeconds(prayerTimes.dhuhr),
+                asr: toUnixSeconds(prayerTimes.asr),
+                maghrib: toUnixSeconds(prayerTimes.maghrib),
+                isha: toUnixSeconds(prayerTimes.isha),
+            }),
+            today,
+            loggedToday,
         );
     } catch (e) {
         console.log('WidgetDataBridge error:', e);

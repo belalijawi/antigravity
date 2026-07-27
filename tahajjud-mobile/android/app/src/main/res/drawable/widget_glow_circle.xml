@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Soft-edged accent circle approximating the blurred "nebula glow" from the
+     iOS widget. Glance/RemoteViews cannot blur, so a radial fade is the closest
+     stand-in — flatter than the real iOS effect, by design limitation. -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android"
+    android:shape="oval">
+    <gradient
+        android:type="radial"
+        android:gradientRadius="120dp"
+        android:startColor="#4D4F46E5"
+        android:endColor="#004F46E5" />
+</shape>

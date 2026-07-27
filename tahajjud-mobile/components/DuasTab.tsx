@@ -27,6 +27,27 @@ import { useTheme } from '../context/ThemeContext';
 import { usePurchases } from '../context/PurchasesContext';
 import { tabletContentStyle } from '../utils/layout';
 import { t, getLocale } from '../utils/i18n';
+import { getLocalizedDua } from '../data/duasTranslations';
+
+// Cross-tab "open the Dua Wall" request. React Navigation's bottom tabs are
+// lazy-mounted, so this tab's `duas:openWall` listener (below) may not exist
+// yet the instant a caller (map pin card, Home discovery card, reply push)
+// asks for it. Callers used to paper over that with a guessed fixed delay
+// (350ms) before emitting — slow on the common case where this tab is
+// ALREADY mounted (the delay still runs every time), and still fundamentally
+// a race on the rarer first-ever-visit case (a slow/loaded device could
+// legitimately take longer than the guess). Queuing the request instead and
+// having the mount effect drain it immediately fixes both: zero artificial
+// delay once mounted, and no race regardless of how long mounting takes.
+let duasTabMounted = false;
+let pendingOpenWall: { focusDuaId?: string } | undefined;
+export function requestOpenWall(payload?: { focusDuaId?: string }) {
+    if (duasTabMounted) {
+        DeviceEventEmitter.emit('duas:openWall', payload);
+    } else {
+        pendingOpenWall = payload ?? {};
+    }
+}
 
 interface DuaCardProps {
     dua: Dua;
@@ -43,10 +64,11 @@ interface DuaCardProps {
 // Memoized DuaCard to prevent unnecessary re-renders
 const DuaCard = React.memo(({ dua, isBookmarked, onToggleBookmark, isOnWidget, onPinToWidget, isPlaying, activeArabicWord = -1, onPlay, onDelete }: DuaCardProps) => {
     const { colors, cardBg, blurIntensity } = useTheme();
+    const localized = getLocalizedDua(dua, getLocale());
 
     // Derive translation word index proportionally from arabic word position
     const arabicWords = dua.arabic ? dua.arabic.split(' ') : [];
-    const translationWords = dua.translation ? dua.translation.split(' ') : [];
+    const translationWords = localized.translation ? localized.translation.split(' ') : [];
     const activeTranslationWord = activeArabicWord >= 0 && arabicWords.length > 0
         ? Math.min(
             Math.floor((activeArabicWord / arabicWords.length) * translationWords.length),
@@ -123,12 +145,12 @@ const DuaCard = React.memo(({ dua, isBookmarked, onToggleBookmark, isOnWidget, o
                     </View>
                 </View>
 
-                <Text style={styles.duaTitle}>{dua.title}</Text>
+                <Text style={styles.duaTitle}>{localized.title}</Text>
 
                 {dua.category === 'Personal' ? (
                     <View style={styles.letterContentContainer}>
                         {dua.translation ? (
-                            <Text style={styles.letterText} numberOfLines={4}>{dua.translation}</Text>
+                            <Text style={styles.letterText} numberOfLines={4}>{localized.translation}</Text>
                         ) : (
                             <Text style={[styles.letterText, { color: '#475569', fontStyle: 'italic' }]}>{t('duasTab.noContent')}</Text>
                         )}
@@ -178,7 +200,7 @@ const DuaCard = React.memo(({ dua, isBookmarked, onToggleBookmark, isOnWidget, o
                                         ))}
                                     </Text>
                                 ) : (
-                                    <Text style={[styles.translationText, { color: '#f8fafc' }]}>{dua.translation}</Text>
+                                    <Text style={[styles.translationText, { color: '#f8fafc' }]}>{localized.translation}</Text>
                                 )}
                             </View>
                         ) : null}
@@ -261,14 +283,15 @@ export function DuasTab() {
     }, []);
 
     // Personal Dua State
-    const [activeTab, setActiveTab] = useState<'library' | 'personal'>('library');
+    const [activeTab, setActiveTab] = useState<'library' | 'personal' | 'wall'>('library');
     const [isLocked, setIsLocked] = useState(false);
     const [personalDuas, setPersonalDuas] = useState<PersonalDua[]>([]);
     const [isModalVisible, setIsModalVisible] = useState(false);
     const [journalEntries, setJournalEntries] = useState<JournalEntry[]>([]);
     const [showJournalHistory, setShowJournalHistory] = useState(false);
     const [showJournalWrite, setShowJournalWrite] = useState(false);
-    const [showDuaWall, setShowDuaWall] = useState(false);
+    // Set when a reply-notification tap deep-links to a specific dua's thread.
+    const [wallFocusDuaId, setWallFocusDuaId] = useState<string | null>(null);
 
     // Form State
     const [newDuaTitle, setNewDuaTitle] = useState('');
@@ -285,11 +308,22 @@ export function DuasTab() {
         loadPersonalDuasData();
         checkLockStatus();
         // Deep-link from feature discovery → open the Dua Wall directly
-        const wallSub = DeviceEventEmitter.addListener('duas:openWall', () => setShowDuaWall(true));
+        const openWall = (p?: { focusDuaId?: string }) => {
+            setWallFocusDuaId(p?.focusDuaId ?? null);
+            setActiveTab('wall');
+        };
+        const wallSub = DeviceEventEmitter.addListener('duas:openWall', openWall);
+        duasTabMounted = true;
+        if (pendingOpenWall !== undefined) {
+            const p = pendingOpenWall;
+            pendingOpenWall = undefined;
+            openWall(p);
+        }
         return () => {
             Speech.stop();
             clearWordTimer();
             wallSub.remove();
+            duasTabMounted = false;
         };
     }, []);
 
@@ -313,7 +347,7 @@ export function DuasTab() {
         setIsLocked(locked === 'true');
     };
 
-    const handleTabChange = async (tab: 'library' | 'personal') => {
+    const handleTabChange = async (tab: 'library' | 'personal' | 'wall') => {
         if (tab === 'personal') {
             const locked = await AsyncStorage.getItem('biometric-lock-enabled');
             if (locked === 'true') {
@@ -329,6 +363,15 @@ export function DuasTab() {
                 setJournalEntries(entries);
             }
         }
+        // A plain tap on the Wall tab must always show the normal feed — but
+        // wallFocusDuaId only ever gets CLEARED by the wall's own close
+        // button, never by switching tabs any other way. If a duas:openWall
+        // deep-link (a reply/answered notification) had set it earlier this
+        // session, every later normal tap into Wall would silently re-apply
+        // that old scroll-to-and-highlight behavior — which, if that old
+        // notification happened to be a "dua answered" one, looks exactly
+        // like "it jumps to an answered dua for a second, then the real wall."
+        if (tab === 'wall') setWallFocusDuaId(null);
         setActiveTab(tab);
     };
 
@@ -496,7 +539,25 @@ export function DuasTab() {
 
     const handlePinToWidget = useCallback((dua: Dua) => {
         haptic.light(); // acknowledge the tap immediately, whatever happens next
-        const ok = setWidgetDua({ title: dua.title, arabic: dua.arabic, translation: dua.translation });
+
+        // Tapping the pin on the already-pinned dua un-pins it instead of
+        // just re-pinning the same one — otherwise there's no way to clear
+        // the widget short of pinning a different dua over it.
+        if (widgetDuaId === dua.id) {
+            const cleared = setWidgetDua({ title: '', arabic: '', translation: '' });
+            if (!cleared) {
+                Alert.alert(t('duaWidget.updateNeededTitle'), t('duaWidget.updateNeededBody'));
+                return;
+            }
+            setWidgetDuaId(null);
+            AsyncStorage.removeItem(WIDGET_DUA_ID_KEY).catch(() => {});
+            import('../utils/analytics').then(m => m.track('dua_unpinned_from_widget')).catch(() => {});
+            haptic.success();
+            return;
+        }
+
+        const localized = getLocalizedDua(dua, getLocale());
+        const ok = setWidgetDua({ title: localized.title, arabic: dua.arabic, translation: localized.translation });
         if (!ok) {
             // Binary predates the Dua widget (or the bridge failed) — a silent
             // no-op here read as "the button is broken", so say what's needed.
@@ -508,7 +569,7 @@ export function DuasTab() {
         import('../utils/analytics').then(m => m.track('dua_pinned_to_widget')).catch(() => {});
         haptic.success();
         Alert.alert(t('duaWidget.pinnedTitle'), t('duaWidget.pinnedBody'));
-    }, []);
+    }, [widgetDuaId]);
 
     const handlePlayDua = useCallback(async (dua: Dua) => {
         try {
@@ -619,8 +680,9 @@ export function DuasTab() {
             if (searchQuery) {
                 const q = searchQuery.toLowerCase().trim();
                 const terms = getSearchTerms(q);
+                const localized = getLocalizedDua(dua, getLocale());
                 return terms.some(term =>
-                    fuzzyMatch(term, dua.title, dua.category, dua.transliteration, dua.translation)
+                    fuzzyMatch(term, dua.title, dua.category, dua.transliteration, dua.translation, localized.title, localized.translation)
                 );
             }
             return true;
@@ -630,12 +692,17 @@ export function DuasTab() {
 
         // Sort by relevance using the shared scoring function.
         return results.sort((a, b) => {
-            const score = (dua: typeof a) => Math.min(
-                matchScore(searchQuery, dua.title),
-                matchScore(searchQuery, dua.transliteration) + 1,
-                matchScore(searchQuery, dua.translation) + 2,
-                matchScore(searchQuery, dua.category) + 3,
-            );
+            const score = (dua: typeof a) => {
+                const localized = getLocalizedDua(dua, getLocale());
+                return Math.min(
+                    matchScore(searchQuery, dua.title),
+                    matchScore(searchQuery, localized.title),
+                    matchScore(searchQuery, dua.transliteration) + 1,
+                    matchScore(searchQuery, dua.translation) + 2,
+                    matchScore(searchQuery, localized.translation) + 2,
+                    matchScore(searchQuery, dua.category) + 3,
+                );
+            };
             return score(a) - score(b);
         });
     }, [selectedCategory, searchQuery, bookmarkedIds]);
@@ -649,7 +716,7 @@ export function DuasTab() {
             isBookmarked={bookmarkedIds.includes(item.id)}
             onToggleBookmark={handleToggleBookmark}
             isOnWidget={widgetDuaId === item.id}
-            onPinToWidget={Platform.OS === 'ios' ? handlePinToWidget : undefined}
+            onPinToWidget={handlePinToWidget}
             isPlaying={playingDuaId === item.id}
             activeArabicWord={playingDuaId === item.id ? activeArabicWord : -1}
             onPlay={() => handlePlayDua(item)}
@@ -688,9 +755,15 @@ export function DuasTab() {
     );
 
     return (
-        <SafeAreaView style={styles.safeArea} edges={['top', 'left', 'right']}>
+        <SafeAreaView
+            style={[styles.safeArea, activeTab === 'wall' && { backgroundColor: '#040714' }]}
+            edges={['top', 'left', 'right']}
+        >
             <View style={[styles.container, tabletContentStyle()]}>
-                {/* Header */}
+                {/* Header — hidden on the Wall segment so the night-sky wall
+                    is full-bleed and immersive, exactly like the old modal.
+                    The wall's own X returns to the Library segment. */}
+                {activeTab !== 'wall' && (
                 <View style={styles.header}>
                     <Text style={[styles.headerTitle, { color: colors.accent }]}>{t('duasTab.title')}</Text>
                     <View style={styles.tabsContainer}>
@@ -701,6 +774,14 @@ export function DuasTab() {
                             <Text style={[styles.tabText, activeTab === 'library' && styles.activeTabText]}>{t('duasTab.tabLibrary')}</Text>
                         </TouchableOpacity>
                         <TouchableOpacity
+                            style={styles.tab}
+                            onPress={() => handleTabChange('wall')}
+                        >
+                            {/* Never shows active styling — the header (and this
+                                button) is hidden while the wall is displayed. */}
+                            <Text style={styles.tabText}>{t('duasTab.tabWall')}</Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity
                             style={[styles.tab, activeTab === 'personal' && styles.activeTab]}
                             onPress={() => handleTabChange('personal')}
                         >
@@ -708,6 +789,7 @@ export function DuasTab() {
                         </TouchableOpacity>
                     </View>
                 </View>
+                )}
 
                 {activeTab === 'library' ? (
                     <FlatList
@@ -717,8 +799,11 @@ export function DuasTab() {
                         renderItem={renderDuaItem}
                         keyExtractor={item => item.id}
                         contentContainerStyle={[styles.duasContent, { flexGrow: 1 }]}
-                        // Frees off-screen rows from memory on long dua list
-                        removeClippedSubviews={Platform.OS === 'android'}
+                        // removeClippedSubviews is disabled on Android: RN's clipped-view
+                        // detach/reattach races with the render thread and crashes with
+                        // "NullPointerException: mViewFlags on a null object reference"
+                        // (confirmed in Play Console crash reports across 1.8.5-1.8.9).
+                        removeClippedSubviews={false}
                         initialNumToRender={8}
                         maxToRenderPerBatch={6}
                         windowSize={5}
@@ -782,6 +867,15 @@ export function DuasTab() {
                         ListEmptyComponent={renderEmptyState}
                         showsVerticalScrollIndicator={false}
                     />
+                ) : activeTab === 'wall' ? (
+                    /* Dua Wall — full-bleed inline segment (header hidden above).
+                       X returns to the Library segment. */
+                    <DuaWallModal
+                        inline
+                        visible
+                        onClose={() => { setWallFocusDuaId(null); setActiveTab('library'); }}
+                        focusDuaId={wallFocusDuaId}
+                    />
                 ) : (
                     <View style={{ flex: 1 }}>
                         {/* Night Journal banner */}
@@ -789,7 +883,7 @@ export function DuasTab() {
                             {/* Left: tap to open history */}
                             <TouchableOpacity
                                 onPress={async () => {
-                                    if (!isPremium) { openPaywall('feature_gate:journal'); return; }
+                                    if (!isPremium) { openPaywall('feature_gate:journal', 'night_journal'); return; }
                                     import('../utils/featureDiscovery').then(m => m.markFeatureUsed('night_journal')).catch(() => {});
                                     const ok = await requireBiometric({ prompt: t('duasTab.unlockJournalPrompt') });
                                     if (ok) setShowJournalHistory(true);
@@ -818,7 +912,7 @@ export function DuasTab() {
                             {/* Right: Write button */}
                             <TouchableOpacity
                                 onPress={async () => {
-                                    if (!isPremium) { openPaywall('feature_gate:journal'); return; }
+                                    if (!isPremium) { openPaywall('feature_gate:journal', 'night_journal'); return; }
                                     const ok = await requireBiometric({ prompt: t('duasTab.unlockJournalPrompt') });
                                     if (ok) setShowJournalWrite(true);
                                 }}
@@ -830,22 +924,6 @@ export function DuasTab() {
                             </TouchableOpacity>
                         </View>
 
-                        {/* Dua Wall — anonymous community wall (TEMP free for testing) */}
-                        <TouchableOpacity
-                            onPress={() => setShowDuaWall(true)}
-                            style={[styles.journalBanner, { borderColor: colors.accent + '33' }]}
-                            activeOpacity={0.7}
-                        >
-                            <View style={[styles.journalBannerIcon, { backgroundColor: colors.accent + '18', borderColor: colors.accent + '33' }]}>
-                                <Text style={{ fontSize: 16 }}>🤲</Text>
-                            </View>
-                            <View style={{ flex: 1 }}>
-                                <Text style={styles.journalBannerTitle}>{t('duasTab.duaWallTitle')}</Text>
-                                <Text style={styles.journalBannerSub}>
-                                    {t('duasTab.duaWallSub')}
-                                </Text>
-                            </View>
-                        </TouchableOpacity>
                         <FlatList
                             style={{ flex: 1 }}
                             data={personalDuas}
@@ -874,10 +952,6 @@ export function DuasTab() {
                 <TahajjudJournalHistory
                     visible={showJournalHistory}
                     onClose={() => setShowJournalHistory(false)}
-                />
-                <DuaWallModal
-                    visible={showDuaWall}
-                    onClose={() => setShowDuaWall(false)}
                 />
                 <TahajjudJournalModal
                     visible={showJournalWrite}
@@ -1085,7 +1159,7 @@ const styles = StyleSheet.create({
         borderWidth: 1, alignItems: 'center', justifyContent: 'center',
     },
     journalBannerTitle: { color: '#f1f5f9', fontSize: 14, fontWeight: '700' },
-    journalBannerSub: { color: '#475569', fontSize: 12, marginTop: 1 },
+    journalBannerSub: { color: '#94a3b8', fontSize: 12, marginTop: 1 },
     journalWriteBtn: {
         flexDirection: 'row', alignItems: 'center', gap: 5,
         paddingHorizontal: 14, paddingVertical: 8,
@@ -1104,7 +1178,7 @@ const styles = StyleSheet.create({
         textAlign: 'center',
     },
     emptySubtext: {
-        color: '#64748b',
+        color: '#94a3b8',
         fontSize: 14,
         marginTop: 12,
         textAlign: 'center',

@@ -262,18 +262,26 @@ export const TestimonySubmission = {
         const markerRef = doc(db, 'testimony-reactions', `${user.uid}_${testimonyId}`);
         const docRef = doc(db, 'community', testimonyId);
         try {
-            const existing = await getDoc(markerRef);
+            const [existing, storySnap] = await Promise.all([
+                getDoc(markerRef),
+                getDoc(docRef),
+            ]);
+            // Own story: marker only — a self-like must never touch the
+            // reactions counter, or it burns the count-1 milestone silently
+            // (self-pushes are suppressed) and the author never gets their
+            // real "someone was moved by your story" first notification.
+            const isOwn = storySnap.exists() && (storySnap.data() as any).authorId === user.uid;
             const liked = !existing.exists();
             if (liked) {
                 await Promise.all([
                     setDoc(markerRef, { userId: user.uid, testimonyId, createdAt: serverTimestamp() }),
-                    updateDoc(docRef, { reactions: increment(1) }),
+                    ...(isOwn ? [] : [updateDoc(docRef, { reactions: increment(1) })]),
                 ]);
-                this.maybeNotifyTestimonyMilestone(testimonyId).catch(() => {});
+                if (!isOwn) this.maybeNotifyTestimonyMilestone(testimonyId).catch(() => {});
             } else {
                 await Promise.all([
                     deleteDoc(markerRef),
-                    updateDoc(docRef, { reactions: increment(-1) }),
+                    ...(isOwn ? [] : [updateDoc(docRef, { reactions: increment(-1) })]),
                 ]);
             }
             // Read back the authoritative count so the UI never drifts from the server

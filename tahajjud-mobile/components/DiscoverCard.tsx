@@ -4,7 +4,7 @@
  * it never fights the gesture. Tapping a locked feature opens the paywall.
  */
 
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
     View, Text, StyleSheet, TouchableOpacity,
     FlatList, NativeSyntheticEvent, NativeScrollEvent,
@@ -24,6 +24,50 @@ interface Props {
     onNavigate: (id: FeatureId) => void;
 }
 
+// Memoized so the 4s auto-advance timer (which re-renders DiscoverCard on
+// every tick) doesn't also re-render every card row — FEATURE_LIST's data
+// reference never changes, so this actually lets FlatList skip re-invoking
+// renderItem for rows whose own props are unchanged.
+const DiscoverRow = React.memo(function DiscoverRow({
+    item, cardWidth, colors, isPremium, onPress,
+}: {
+    item: FeatureMeta;
+    cardWidth: number;
+    colors: any;
+    isPremium: boolean;
+    onPress: (feature: FeatureMeta) => void;
+}) {
+    const locked = item.premium && !isPremium;
+    // A premium feature whose default copy describes the post-upgrade state
+    // (e.g. "Unlimited Replies") would otherwise read as a claim about what
+    // a free user already has — see FeatureMeta.freeLabel's own comment.
+    const labelKey = locked && item.freeLabel ? `discover.${item.id}.label_free` : `discover.${item.id}.label`;
+    const blurbKey = locked && item.freeBlurb ? `discover.${item.id}.blurb_free` : `discover.${item.id}.blurb`;
+    return (
+        <TouchableOpacity
+            style={[styles.page, { width: cardWidth }]}
+            onPress={() => onPress(item)}
+            activeOpacity={0.85}
+        >
+            <View style={styles.inner}>
+                <View style={[styles.iconWrap, { backgroundColor: colors.accent + '1a' }]}>
+                    <Sparkles size={20} color={colors.accent} />
+                </View>
+                <View style={{ flex: 1 }}>
+                    <View style={styles.titleRow}>
+                        <Text style={[styles.label, { color: colors.accent }]}>{t('discover.label')}</Text>
+                        {locked && <Lock size={10} color="#f59e0b" />}
+                    </View>
+                    <Text style={[styles.title, { color: colors.primaryText }]} numberOfLines={1}>{t(labelKey)}</Text>
+                    <Text style={[styles.blurb, { color: colors.secondaryText }]} numberOfLines={2}>
+                        {t(blurbKey)}
+                    </Text>
+                </View>
+            </View>
+        </TouchableOpacity>
+    );
+});
+
 export function DiscoverCard({ onNavigate }: Props) {
     const { colors, cardBg, blurIntensity } = useTheme();
     const { isPremium, openPaywall } = usePurchases();
@@ -41,6 +85,20 @@ export function DiscoverCard({ onNavigate }: Props) {
                 const next = (prev + 1) % FEATURE_LIST.length;
                 try {
                     scrollRef.current?.scrollToOffset({ offset: next * cardWidth, animated: true });
+                    // A JS-driven animated scrollToOffset isn't guaranteed to
+                    // finish cleanly or fire onMomentumScrollEnd the way a real
+                    // swipe does (worse on Android) — a dropped frame can leave
+                    // the list stopped mid-transition, straddling two cards.
+                    // Self-heal with a non-animated snap to the exact target
+                    // shortly after the animation should have settled; a no-op
+                    // if it already landed correctly. Skipped if the user has
+                    // since grabbed the list themselves.
+                    setTimeout(() => {
+                        if (Date.now() < userInteractionUntilRef.current) return;
+                        try {
+                            scrollRef.current?.scrollToOffset({ offset: next * cardWidth, animated: false });
+                        } catch {}
+                    }, 400);
                 } catch {}
                 return next;
             });
@@ -58,14 +116,14 @@ export function DiscoverCard({ onNavigate }: Props) {
         userInteractionUntilRef.current = Date.now() + 8000;
     };
 
-    const handlePress = (feature: FeatureMeta) => {
+    const handlePress = useCallback((feature: FeatureMeta) => {
         haptic.light();
         if (feature.premium && !isPremium) {
-            openPaywall('feature_gate:discover');
+            openPaywall('feature_gate:discover', feature.id);
         } else {
             onNavigate(feature.id);
         }
-    };
+    }, [isPremium, openPaywall, onNavigate]);
 
     return (
         <View
@@ -94,33 +152,9 @@ export function DiscoverCard({ onNavigate }: Props) {
                     getItemLayout={(_, index) => ({
                         length: cardWidth, offset: cardWidth * index, index,
                     })}
-                    renderItem={({ item }) => {
-                        const locked = item.premium && !isPremium;
-                        return (
-                            <TouchableOpacity
-                                style={[styles.page, { width: cardWidth }]}
-                                onPress={() => handlePress(item)}
-                                activeOpacity={0.85}
-                            >
-                                <View style={styles.inner}>
-                                    <View style={[styles.iconWrap, { backgroundColor: colors.accent + '1a' }]}>
-                                        <Sparkles size={20} color={colors.accent} />
-                                    </View>
-                                    <View style={{ flex: 1 }}>
-                                        <View style={styles.titleRow}>
-                                            <Text style={[styles.label, { color: colors.accent }]}>{t('discover.label')}</Text>
-                                            {locked && <Lock size={10} color="#f59e0b" />}
-                                        </View>
-                                        <Text style={[styles.title, { color: colors.primaryText }]} numberOfLines={1}>{t(`discover.${item.id}.label`)}</Text>
-                                        <Text style={[styles.blurb, { color: colors.secondaryText }]} numberOfLines={2}>
-                                            {t(`discover.${item.id}.blurb`)}
-                                        </Text>
-                                    </View>
-    
-                                </View>
-                            </TouchableOpacity>
-                        );
-                    }}
+                    renderItem={({ item }) => (
+                        <DiscoverRow item={item} cardWidth={cardWidth} colors={colors} isPremium={isPremium} onPress={handlePress} />
+                    )}
                 />
             )}
 

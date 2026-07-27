@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useRef } from "react";
-import { View, Text, TouchableOpacity, StyleSheet, Alert, DeviceEventEmitter, Modal } from "react-native";
+import { View, Text, TouchableOpacity, StyleSheet, Alert, DeviceEventEmitter, Modal, Platform } from "react-native";
 import { WidgetPromo, shouldShowWidgetPromo } from './WidgetPromo';
 import { TahajjudJournalModal } from './TahajjudJournalModal';
 import { TahajjudLetterModal } from './TahajjudLetterModal';
@@ -191,6 +191,18 @@ export function Tracker() {
         return () => sub.remove();
     }, []);
 
+    // A prayer can be logged from OUTSIDE this screen entirely — the
+    // notification "Log" action (quickLogPrayer) or a widget tap
+    // (drainPendingPrayerLogs) both write straight to AsyncStorage and emit
+    // 'prayerLogged'. Without re-reading here, historyRef.current stays
+    // stale, and the next in-app logPrayer()/unlogPrayer() call would build
+    // its update from that stale snapshot and silently overwrite (drop) the
+    // background-logged prayer on save().
+    useEffect(() => {
+        const sub = DeviceEventEmitter.addListener('prayerLogged', () => { load(); });
+        return () => sub.remove();
+    }, []);
+
     const load = async () => {
         try {
             const [raw, rawBest, oldRaw] = await Promise.all([
@@ -364,6 +376,7 @@ export function Tracker() {
                 trigger: {
                     type: Notifications.SchedulableTriggerInputTypes.DATE,
                     date: tomorrow9am,
+                    ...(Platform.OS === 'android' && { channelId: 'prayers' }),
                 },
             });
             track('streak_notif_scheduled', { streak: 5 });
@@ -477,6 +490,9 @@ export function Tracker() {
             import('../utils/streakReminder').then(m => m.cancelStreakAtRisk()).catch(() => {});
             // Add anonymous dot to global map
             logTahajjudToMap().catch(() => {});
+            // Leaderboard: one Tahajjud night = +1 (isLoggedToday above
+            // already guards this to at most once per day).
+            import('../utils/leaderboard').then(m => m.Leaderboard.syncDelta('tahajjud', 1)).catch(() => {});
             // Refresh the Friday digest so it reflects this week's count
             refreshWeeklyDigest().catch(() => {});
             // Tell HistoryCalendar + PrayerAnalytics to reload

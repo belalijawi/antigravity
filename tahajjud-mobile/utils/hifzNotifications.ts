@@ -3,6 +3,7 @@ import { Platform } from 'react-native';
 import { HifzAyah } from './hifzStorage';
 import { requestNotificationPermissions } from './notifications';
 import { localDateStr } from './localDate';
+import { t } from './i18n';
 
 const HIFZ_NOTIF_TAG = 'hifz_review';
 
@@ -54,8 +55,8 @@ export async function scheduleHifzNotifications(
         try {
             await Notifications.scheduleNotificationAsync({
                 content: {
-                    title: '📿 Hifz review due',
-                    body: `${count} ayah${count !== 1 ? 's' : ''} ready for review`,
+                    title: t('hifzReview.title'),
+                    body: t('hifz.ayahsReadyForReview', { n: count }),
                     data: { type: HIFZ_NOTIF_TAG },
                     sound: true,
                 },

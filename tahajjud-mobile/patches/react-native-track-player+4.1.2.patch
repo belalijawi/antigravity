@@ -436,3 +436,35 @@ index b2409a0..a354f93 100644
      }
 +    }
  }
+diff --git a/node_modules/react-native-track-player/android/src/main/java/com/doublesymmetry/trackplayer/service/MusicService.kt b/node_modules/react-native-track-player/android/src/main/java/com/doublesymmetry/trackplayer/service/MusicService.kt
+index afa6b0f..c188ec7 100644
+--- a/node_modules/react-native-track-player/android/src/main/java/com/doublesymmetry/trackplayer/service/MusicService.kt
++++ b/node_modules/react-native-track-player/android/src/main/java/com/doublesymmetry/trackplayer/service/MusicService.kt
+@@ -120,9 +120,24 @@ class MusicService : HeadlessJsTaskService() {
+             notificationBuilder.foregroundServiceBehavior = NotificationCompat.FOREGROUND_SERVICE_IMMEDIATE
+         }
+         val notification = notificationBuilder.build()
+-        startForeground(EMPTY_NOTIFICATION_ID, notification)
+-        @Suppress("DEPRECATION")
+-        stopForeground(true)
++        try {
++            startForeground(EMPTY_NOTIFICATION_ID, notification)
++            @Suppress("DEPRECATION")
++            stopForeground(true)
++        } catch (e: Exception) {
++            // Android 12+ throws ForegroundServiceStartNotAllowedException when
++            // the OS restarts this service (it returns START_STICKY) after the
++            // app process was killed in the background — that restart isn't a
++            // user-visible trigger, so the platform refuses the foreground
++            // start. Uncaught, this crashes the whole app on every such
++            // restart (see doublesymmetry/react-native-track-player#2184,
++            // #2231, #2244, #2309 — long-standing upstream issue, no fix in
++            // any stable 4.x release as of this patch). There's nothing
++            // legitimate to resume in this scenario (no foreground UI, no
++            // user action), so just stop the service cleanly instead of
++            // crashing.
++            stopSelf()
++        }
+     }
+ 
+     @MainThread

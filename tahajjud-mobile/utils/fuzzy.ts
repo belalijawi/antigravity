@@ -11,12 +11,23 @@
  *   fuzzyMatch("Al-Fatiha", "fatihah") → true (subsequence tolerant of trailing h)
  */
 
-/** Lowercase, strip diacritics, strip everything non-alphanumeric. */
+/**
+ * Lowercase, strip diacritics, strip everything non-alphanumeric — but keep
+ * the Arabic script block (U+0600-U+06FF). Without that carve-out this
+ * stripped Arabic text down to an empty string entirely (it's outside
+ * a-z0-9), silently breaking search-by-Arabic-name everywhere this is used.
+ */
 export function normalize(s: string): string {
     return (s ?? '')
         .toLowerCase()
-        .normalize('NFD').replace(/[̀-ͯ]/g, '')
-        .replace(/[^a-z0-9]/g, '');
+        .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+        // Arabic diacritics (tashkeel/harakat, U+064B-U+065F and U+0670) and
+        // Quranic annotation marks (U+06D6-U+06ED) — a different Unicode
+        // block than the Latin combining marks above, so NFD doesn't
+        // decompose them; strip explicitly so "الفاتحة" and a fully-voweled
+        // Quranic "اَلْفَاتِحَة" normalize to the same string.
+        .replace(/[\u064b-\u065f\u0670\u06d6-\u06ed]/g, '')
+        .replace(/[^a-z0-9\u0600-\u06ff]/g, '');
 }
 
 /** Drop a leading "al" article so "alfatiha" and "fatiha" both match. */

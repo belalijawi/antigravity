@@ -40,7 +40,7 @@ export function PlaylistManager({ visible, onClose, onPlay }: Props) {
             const m: Record<number, SurahMeta> = {};
             list.forEach(s => { m[s.number] = s; });
             setSurahMap(m);
-        });
+        }).catch(() => {});
     }, []);
 
     const loadPlaylists = useCallback(async () => {

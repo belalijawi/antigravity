@@ -2,7 +2,7 @@ import * as React from 'react';
 import { useEffect, useState, useRef } from 'react';
 import { HifzTab } from './HifzTab';
 import { Brain, BookOpen as BookOpenIcon, Radio, Lock } from 'lucide-react-native';
-import { View, Text, FlatList, StyleSheet, TouchableOpacity, ActivityIndicator, TextInput, Alert, DeviceEventEmitter, Platform } from 'react-native';
+import { View, Text, FlatList, StyleSheet, TouchableOpacity, ActivityIndicator, TextInput, Alert, DeviceEventEmitter } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { QuranService, SurahMeta } from '../services/QuranService';
 import { SurahReader } from './SurahReader';
@@ -31,6 +31,71 @@ function isSubsequence(needle: string, haystack: string): boolean {
     }
     return i === needle.length;
 }
+
+// Memoized so dlMap progress ticks (which fire frequently while a surah
+// downloads) don't re-render every visible row — only the row whose own
+// dlInfo actually changed. onSelect/onDownloadPress must stay referentially
+// stable for this to hold (see handleDownloadPress's useCallback + dlMapRef
+// pattern in QuranTab below).
+const SurahRow = React.memo(function SurahRow({
+    item, dlInfo, colors, cardBg, onSelect, onDownloadPress,
+}: {
+    item: SurahMeta;
+    dlInfo: DownloadInfo;
+    colors: any;
+    cardBg: string;
+    onSelect: (surahNumber: number) => void;
+    onDownloadPress: (surahNumber: number, surahName: string) => void;
+}) {
+    const isDownloaded = dlInfo.status === 'downloaded';
+    const isDownloading = dlInfo.status === 'downloading';
+    return (
+        <TouchableOpacity
+            style={styles.card}
+            onPress={() => onSelect(item.number)}
+        >
+            <View style={[StyleSheet.absoluteFill, { backgroundColor: cardBg }]} />
+            <LinearGradient
+                colors={['rgba(255, 255, 255, 0.05)', 'transparent']}
+                style={StyleSheet.absoluteFill}
+            />
+
+            <View style={styles.cardMain}>
+                <View style={styles.numberBadge}>
+                    <Text style={styles.numberText}>{item.number}</Text>
+                </View>
+                <View style={styles.cardTextGroup}>
+                    <Text style={styles.surahName}>{item.englishName}</Text>
+                    <Text style={styles.surahTranslation}>{item.englishNameTranslation}</Text>
+                </View>
+                <View style={styles.cardEndGroup}>
+                    <Text style={styles.ayahCount}>{item.numberOfAyahs} v.</Text>
+                    <Text style={styles.revelationType}>{item.revelationType}</Text>
+                </View>
+
+                {/* Download button */}
+                <TouchableOpacity
+                    style={styles.dlButton}
+                    onPress={() => onDownloadPress(item.number, item.englishName)}
+                    hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                >
+                    {isDownloading ? (
+                        <View style={styles.dlProgressWrap}>
+                            <ActivityIndicator size="small" color={colors.accent} />
+                            <Text style={[styles.dlPct, { color: colors.accent }]}>
+                                {Math.round(dlInfo.progress * 100)}%
+                            </Text>
+                        </View>
+                    ) : isDownloaded ? (
+                        <CheckCircle size={20} color={colors.accent} fill={colors.accent + '33'} />
+                    ) : (
+                        <Download size={18} color="#475569" />
+                    )}
+                </TouchableOpacity>
+            </View>
+        </TouchableOpacity>
+    );
+});
 
 export function QuranTab() {
     const { colors, cardBg, blurIntensity } = useTheme();
@@ -63,6 +128,14 @@ export function QuranTab() {
         }).catch(() => {});
     }, []);
     const [dlMap, setDlMap] = useState<Record<number, DownloadInfo>>({});
+    // Mirrors dlMap so handleDownloadPress can read the latest value without
+    // needing dlMap in its own dependency array — download progress ticks
+    // update dlMap frequently, and putting it in useCallback's deps would
+    // give every row a new onPress reference on every tick, defeating
+    // SurahRow's React.memo for the whole visible list, not just the row
+    // that's actually downloading.
+    const dlMapRef = useRef<Record<number, DownloadInfo>>({});
+    useEffect(() => { dlMapRef.current = dlMap; }, [dlMap]);
     const [reciterId, setReciterId] = useState<string>(getCurrentReciterId());
     const unsubscribeRefs = useRef<Array<() => void>>([]);
     const flatListRef = useRef<FlatList>(null);
@@ -156,12 +229,12 @@ export function QuranTab() {
         // Subscriptions + dlMap seeding handled by the [surahs, reciterId] effect
     };
 
-    const handleDownloadPress = (surahNumber: number, surahName: string) => {
+    const handleDownloadPress = React.useCallback((surahNumber: number, surahName: string) => {
         if (!isPremium) {
             openPaywall('feature_gate:offline_download');
             return;
         }
-        const info = dlMap[surahNumber] ?? OfflineQuranService.getInfo(surahNumber);
+        const info = dlMapRef.current[surahNumber] ?? OfflineQuranService.getInfo(surahNumber);
         if (info.status === 'downloaded') {
             Alert.alert(
                 t('quranTab.deleteOfflineTitle'),
@@ -178,7 +251,7 @@ export function QuranTab() {
             return;
         }
         OfflineQuranService.download(surahNumber);
-    };
+    }, [isPremium, openPaywall]);
 
     const VERSE_REF_REGEX = /^\s*(\d{1,3})\s*:\s*(\d{1,3})\s*$/;
 
@@ -216,12 +289,19 @@ export function QuranTab() {
         // ("al-fatiha", "al fatiha", "fatihah", "AlFatiha" all match).
         const normalize = (s: string) =>
             s.toLowerCase()
-                // Strip diacritics / accents
+                // Strip Latin diacritics / accents
                 .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+                // Strip Arabic diacritics/tashkeel \u2014 this used to be
+                // implicitly (and totally) stripped along with the Arabic
+                // letters themselves by the final non-alphanumeric collapse
+                // below, which silently broke arabicN matching against
+                // s.name entirely (it always normalized to an empty string).
+                .replace(/[\u064b-\u065f\u0670\u06d6-\u06ed]/g, '')
                 // Drop the "al " / "al-" prefix Arabic articles often carry
                 .replace(/\bal[- ]/g, '')
-                // Collapse all non-alphanumerics (dashes, spaces, punctuation)
-                .replace(/[^a-z0-9]/g, '');
+                // Collapse all non-alphanumerics (dashes, spaces, punctuation),
+                // keeping the Arabic script block so arabicN isn't wiped out.
+                .replace(/[^a-z0-9\u0600-\u06ff]/g, '');
 
         const q = normalize(text);
         if (!q) {
@@ -409,8 +489,11 @@ export function QuranTab() {
                         keyExtractor={(item) => item.number.toString()}
                         contentContainerStyle={styles.listContent}
                         showsVerticalScrollIndicator={false}
-                        // Frees off-screen rows from memory on the 114-surah list
-                        removeClippedSubviews={Platform.OS === 'android'}
+                        // removeClippedSubviews is disabled on Android: RN's clipped-view
+                        // detach/reattach races with the render thread and crashes with
+                        // "NullPointerException: mViewFlags on a null object reference"
+                        // (confirmed in Play Console crash reports across 1.8.5-1.8.9).
+                        removeClippedSubviews={false}
                         initialNumToRender={12}
                         maxToRenderPerBatch={8}
                         windowSize={5}
@@ -418,57 +501,16 @@ export function QuranTab() {
                         // Taps on row content still register (handled vs always).
                         keyboardShouldPersistTaps="handled"
                         keyboardDismissMode="on-drag"
-                        renderItem={({ item }) => {
-                            const dlInfo = dlMap[item.number] ?? { surahNumber: item.number, status: 'none', progress: 0 };
-                            const isDownloaded = dlInfo.status === 'downloaded';
-                            const isDownloading = dlInfo.status === 'downloading';
-                            return (
-                            <TouchableOpacity
-                                style={styles.card}
-                                onPress={() => setSelectedSurah(item.number)}
-                            >
-                                <View style={[StyleSheet.absoluteFill, { backgroundColor: cardBg }]} />
-                                <LinearGradient
-                                    colors={['rgba(255, 255, 255, 0.05)', 'transparent']}
-                                    style={StyleSheet.absoluteFill}
-                                />
-
-                                <View style={styles.cardMain}>
-                                    <View style={styles.numberBadge}>
-                                        <Text style={styles.numberText}>{item.number}</Text>
-                                    </View>
-                                    <View style={styles.cardTextGroup}>
-                                        <Text style={styles.surahName}>{item.englishName}</Text>
-                                        <Text style={styles.surahTranslation}>{item.englishNameTranslation}</Text>
-                                    </View>
-                                    <View style={styles.cardEndGroup}>
-                                        <Text style={styles.ayahCount}>{item.numberOfAyahs} v.</Text>
-                                        <Text style={styles.revelationType}>{item.revelationType}</Text>
-                                    </View>
-
-                                    {/* Download button */}
-                                    <TouchableOpacity
-                                        style={styles.dlButton}
-                                        onPress={() => handleDownloadPress(item.number, item.englishName)}
-                                        hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-                                    >
-                                        {isDownloading ? (
-                                            <View style={styles.dlProgressWrap}>
-                                                <ActivityIndicator size="small" color={colors.accent} />
-                                                <Text style={[styles.dlPct, { color: colors.accent }]}>
-                                                    {Math.round(dlInfo.progress * 100)}%
-                                                </Text>
-                                            </View>
-                                        ) : isDownloaded ? (
-                                            <CheckCircle size={20} color={colors.accent} fill={colors.accent + '33'} />
-                                        ) : (
-                                            <Download size={18} color="#475569" />
-                                        )}
-                                    </TouchableOpacity>
-                                </View>
-                            </TouchableOpacity>
-                            );
-                        }}
+                        renderItem={({ item }) => (
+                            <SurahRow
+                                item={item}
+                                dlInfo={dlMap[item.number] ?? { surahNumber: item.number, status: 'none', progress: 0 }}
+                                colors={colors}
+                                cardBg={cardBg}
+                                onSelect={setSelectedSurah}
+                                onDownloadPress={handleDownloadPress}
+                            />
+                        )}
                     />
                 ))}
             </View>

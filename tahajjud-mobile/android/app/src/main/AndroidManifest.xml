@@ -10,6 +10,18 @@
   <uses-permission android:name="android.permission.USE_FINGERPRINT"/>
   <uses-permission android:name="android.permission.VIBRATE"/>
   <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE"/>
+  <!-- Without these, Android auto-infers android.hardware.camera and
+       android.hardware.location.gps as REQUIRED=true purely from the
+       CAMERA and ACCESS_FINE_LOCATION permissions above, silently excluding
+       every camera-less and GPS-less device from the Play Store listing —
+       this is what caused the "no longer supports N devices" warning.
+       Neither is actually required: the app degrades gracefully without a
+       camera (gallery-only photo picking still works) and without GPS
+       (falls back to network-based/coarse location for prayer times). -->
+  <uses-feature android:name="android.hardware.camera" android:required="false"/>
+  <uses-feature android:name="android.hardware.camera.any" android:required="false"/>
+  <uses-feature android:name="android.hardware.location" android:required="false"/>
+  <uses-feature android:name="android.hardware.location.gps" android:required="false"/>
   <queries>
     <intent>
       <action android:name="android.intent.action.VIEW"/>
@@ -39,5 +51,24 @@
         <data android:scheme="exp+tahajjud-plus"/>
       </intent-filter>
     </activity>
+    <!-- exported="true" is required here, not a security relaxation: the
+         launcher (home screen) is a separate app from ours, and the system
+         delivers APPWIDGET_UPDATE broadcasts to widget receivers from that
+         separate process. A non-exported receiver can't receive cross-app
+         broadcasts at all, so exported="false" would silently break these
+         widgets on any real device — no permission is needed to send
+         APPWIDGET_UPDATE, so this doesn't open the receiver up to abuse. -->
+    <receiver android:name=".widget.TahajjudGlanceWidgetReceiver" android:exported="true">
+      <intent-filter>
+        <action android:name="android.appwidget.action.APPWIDGET_UPDATE"/>
+      </intent-filter>
+      <meta-data android:name="android.appwidget.provider" android:resource="@xml/tahajjud_widget_info"/>
+    </receiver>
+    <receiver android:name=".widget.TahajjudDuaGlanceWidgetReceiver" android:exported="true">
+      <intent-filter>
+        <action android:name="android.appwidget.action.APPWIDGET_UPDATE"/>
+      </intent-filter>
+      <meta-data android:name="android.appwidget.provider" android:resource="@xml/tahajjud_dua_widget_info"/>
+    </receiver>
   </application>
 </manifest>

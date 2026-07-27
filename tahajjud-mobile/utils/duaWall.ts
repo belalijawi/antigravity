@@ -1,11 +1,14 @@
 import {
     collection, doc, addDoc, getDoc, getDocFromServer, setDoc, getDocs, updateDoc, deleteDoc,
-    query, orderBy, limit, where, serverTimestamp, increment,
-    onSnapshot, QuerySnapshot, DocumentData,
+    query, orderBy, limit, where, serverTimestamp, increment, writeBatch, startAfter,
+    onSnapshot, QuerySnapshot, QueryDocumentSnapshot, DocumentData,
 } from 'firebase/firestore';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { DeviceEventEmitter } from 'react-native';
 import { getFirebaseAuth, getFirebaseDb, ensureSignedIn } from './firebase';
 import { format } from 'date-fns';
+import { isValidCountryCode, countryName } from './countries';
+import { isCurrentUserAdmin } from './admins';
 
 /**
  * Anonymous dua wall — community feature where users can opt-in to publish
@@ -32,10 +35,45 @@ import { format } from 'date-fns';
  */
 
 const RATE_LIMIT_KEY = 'dua-wall-last-publish-v1';
-const RATE_LIMIT_MS = 24 * 60 * 60 * 1000; // 24h
+// Duas THIS device pinned to the map. authorId is server-only and never sent
+// to the client (that's what keeps the map anonymous) — so "is this my pin?"
+// can't be answered from the doc itself. Instead we just remember locally,
+// right after a successful publish, which ids were ours. Capped small since
+// pins expire off the map within 24h anyway.
+const OWN_MAP_DUAS_KEY = 'dua-wall-own-map-duas-v1';
+const OWN_MAP_DUAS_CAP = 20;
+// EVERY dua this device has ever published (pinned or not) — powers "My
+// Duas", so an author can find and mark answered a dua that has long since
+// scrolled off the wall's most-recent-50 feed. Same client-only trust model:
+// no account system exists, so this is device-local, same as everything else
+// here (Ameen history, map-pin tracking). A cap generous enough that it
+// won't matter in practice — even at premium's 3/day ceiling, 200 entries
+// is over two months of daily posting at the max rate.
+const OWN_DUAS_KEY = 'dua-wall-own-duas-v1';
+const OWN_DUAS_CAP = 200;
+const RATE_LIMIT_MS = 24 * 60 * 60 * 1000; // 24h rolling window
+const FREE_DAILY_LIMIT = 1;
+const PREMIUM_DAILY_LIMIT = 3;
 const MAX_LENGTH = 280;
 const MIN_WORDS = 5;
+const MAX_NAME_LENGTH = 30;
 const REPORT_THRESHOLD = 5;
+
+/** RATE_LIMIT_KEY holds a JSON array of recent publish timestamps (client-only
+ * count, same trust model as every other premium gate here — the server
+ * backstop in firestore.rules only bounds spacing, not a per-tier count).
+ * Pre-existing installs have a single plain-number string from before this
+ * was a rolling count — JSON.parse of "1732650000000" already returns that
+ * number correctly, so it's handled as a one-entry legacy history for free. */
+function parseRateLimitTimestamps(raw: string | null): number[] {
+    if (!raw) return [];
+    try {
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed)) return parsed.filter((n): n is number => typeof n === 'number');
+        if (typeof parsed === 'number') return [parsed];
+    } catch { /* ignore malformed value */ }
+    return [];
+}
 
 // Basic profanity / abuse word list. Conservative — we'd rather false-flag
 // than let through harmful content. Includes common English/transliterated.
@@ -49,11 +87,24 @@ const FORBIDDEN_WORDS = [
 export interface PublicDua {
     id: string;
     text: string;
+    displayName?: string;   // optional first name; 'Anonymous' if not given
+    country?: string;       // optional ISO country code, shown as "Name, Country"
+    answered?: boolean;     // author marked this dua answered (one-way)
+    answeredAt?: Date;
     ameenCount: number;
     prayCount?: number;     // "I'm praying for you" reaction count
+    replyCount?: number;    // denormalised count of visible comments
     reportCount: number;
     createdAt: Date;
     hidden: boolean;
+}
+
+/** "Name" or "Name, Country" — one shared formatter so every surface that
+ * shows a dua's author (the Wall, the Answered Duas list, the map) renders
+ * it identically. */
+export function formatDuaAuthor(dua: Pick<PublicDua, 'displayName' | 'country'>): string {
+    const name = dua.displayName ?? 'Anonymous';
+    return dua.country ? `${name}, ${countryName(dua.country)}` : name;
 }
 
 export interface PublishResult {
@@ -63,14 +114,185 @@ export interface PublishResult {
 }
 
 export const DuaWall = {
-    /** Local-only check — has the user published in the last 24h? */
-    async canPublishNow(): Promise<{ ok: boolean; nextAt?: Date }> {
-        const v = await AsyncStorage.getItem(RATE_LIMIT_KEY);
-        if (!v) return { ok: true };
-        const last = parseInt(v, 10);
-        const next = last + RATE_LIMIT_MS;
-        if (Date.now() >= next) return { ok: true };
-        return { ok: false, nextAt: new Date(next) };
+    /** Record that this device published `duaId` with a map pin — lets the
+     * map highlight "this is your dua" without ever exposing authorId. */
+    async recordOwnMapDua(duaId: string): Promise<void> {
+        try {
+            const raw = await AsyncStorage.getItem(OWN_MAP_DUAS_KEY);
+            const ids: string[] = raw ? JSON.parse(raw) : [];
+            ids.push(duaId);
+            // Keep only the most recent — pins expire off the map within 24h
+            // anyway, so this never needs to grow large.
+            await AsyncStorage.setItem(OWN_MAP_DUAS_KEY, JSON.stringify(ids.slice(-OWN_MAP_DUAS_CAP)));
+        } catch {}
+    },
+
+    /** Ids of this device's own map-pinned duas (client-side only). */
+    async getOwnMapDuaIds(): Promise<Set<string>> {
+        try {
+            const raw = await AsyncStorage.getItem(OWN_MAP_DUAS_KEY);
+            return raw ? new Set(JSON.parse(raw) as string[]) : new Set();
+        } catch { return new Set(); }
+    },
+
+    /** Record that this device published `duaId` — powers "My Duas". Called
+     * on every successful publish, pinned or not. */
+    async recordOwnDua(duaId: string): Promise<void> {
+        try {
+            const raw = await AsyncStorage.getItem(OWN_DUAS_KEY);
+            const ids: string[] = raw ? JSON.parse(raw) : [];
+            ids.push(duaId);
+            await AsyncStorage.setItem(OWN_DUAS_KEY, JSON.stringify(ids.slice(-OWN_DUAS_CAP)));
+        } catch {}
+    },
+
+    /** This device's own dua ids, most recently published first. */
+    async getOwnDuaIds(): Promise<string[]> {
+        try {
+            const raw = await AsyncStorage.getItem(OWN_DUAS_KEY);
+            const ids: string[] = raw ? JSON.parse(raw) : [];
+            return ids.slice().reverse();
+        } catch { return []; }
+    },
+
+    /** Drop `duaId` from both local "mine" caches — called after a
+     * successful self-delete so it stops showing up in "My Duas" or as
+     * "your pin" on the map, without waiting for anything server-side. */
+    async forgetOwnDua(duaId: string): Promise<void> {
+        try {
+            const raw = await AsyncStorage.getItem(OWN_DUAS_KEY);
+            const ids: string[] = raw ? JSON.parse(raw) : [];
+            await AsyncStorage.setItem(OWN_DUAS_KEY, JSON.stringify(ids.filter(id => id !== duaId)));
+        } catch {}
+        try {
+            const raw = await AsyncStorage.getItem(OWN_MAP_DUAS_KEY);
+            const ids: string[] = raw ? JSON.parse(raw) : [];
+            await AsyncStorage.setItem(OWN_MAP_DUAS_KEY, JSON.stringify(ids.filter(id => id !== duaId)));
+        } catch {}
+    },
+
+    /**
+     * Author deletes their own dua — pulls it off the wall AND the map (a
+     * map pin is the same public-duas doc with onMap:true, so a plain
+     * deleteDoc removes it from both at once; every screen showing the map
+     * or wall is on a live onSnapshot listener, so it disappears there
+     * immediately with no extra wiring — see subscribeWall/subscribeMapDuas).
+     * Server enforces authorId == the caller (see firestore.rules) so this
+     * can't be used to delete someone else's dua by guessing an id.
+     */
+    async deleteMine(duaId: string): Promise<boolean> {
+        try {
+            const db = getFirebaseDb();
+            await deleteDoc(doc(db, 'public-duas', duaId));
+            this.forgetOwnDua(duaId).catch(() => {});
+            DeviceEventEmitter.emit('duaDeleted', { duaId });
+            return true;
+        } catch (e) {
+            console.error('[DuaWall] deleteMine error', e);
+            return false;
+        }
+    },
+
+    /** Fetch several duas by id (for "My Duas"). Silently drops any that no
+     * longer exist (e.g. admin-deleted) rather than failing the whole list. */
+    async getMany(ids: string[]): Promise<PublicDua[]> {
+        const results = await Promise.all(ids.map(id => this.getById(id)));
+        return results.filter((d): d is PublicDua => d !== null);
+    },
+
+    /**
+     * Author marks their own dua as answered — one-way (rules reject
+     * un-marking). Shows on the wall card, the map pin, and "My Duas" as a
+     * ✨ badge. Also notifies everyone who said Ameen — closing the loop so
+     * "I tapped a button once" becomes "I found out my prayer mattered."
+     *
+     * Marking answered can happen from three different, independently-
+     * mounted UIs (the Dua Wall list, the map pin detail, "My Duas") that
+     * each keep their OWN local copy of the dua rather than sharing one
+     * state tree — patching just the caller's local state (as "My Duas" and
+     * the map pin already did) left the OTHER two screens showing stale
+     * "not answered" until their own Firestore listener happened to re-fire
+     * for an unrelated reason (e.g. someone tapping Ameen). Emitting this
+     * event lets every currently-mounted screen patch its own copy
+     * immediately, the same DeviceEventEmitter cross-screen-sync pattern
+     * already used for `prayerLogged` elsewhere in this app — not dependent
+     * on a listener round-trip at all.
+     */
+    async markAnswered(duaId: string): Promise<boolean> {
+        try {
+            const db = getFirebaseDb();
+            await updateDoc(doc(db, 'public-duas', duaId), {
+                answered: true,
+                answeredAt: serverTimestamp(),
+            });
+            DeviceEventEmitter.emit('duaAnswered', { duaId });
+            this.notifyAmeenSayers(duaId).catch(() => {});
+            return true;
+        } catch (e) {
+            console.error('[DuaWall] markAnswered error', e);
+            return false;
+        }
+    },
+
+    /**
+     * Tell everyone who said Ameen that this dua was answered. Only the
+     * dua's own author can enumerate its Ameen markers (see the ameens read
+     * rule) — nobody else can browse "who said Ameen to what" for a dua they
+     * don't own, so this stays a one-time, author-triggered fan-out, not a
+     * general capability. Capped well above anything this app will
+     * realistically hit, same spirit as every other generous-but-bounded
+     * cap in this codebase (MAP_DUA_LIMIT, comment thread limit, etc.) —
+     * bounds worst-case push volume for a viral dua without affecting the
+     * vast majority of real ones.
+     */
+    async notifyAmeenSayers(duaId: string): Promise<void> {
+        const FANOUT_LIMIT = 100;
+        try {
+            await ensureSignedIn();
+            const user = getFirebaseAuth()?.currentUser;
+            if (!user) return;
+            const db = getFirebaseDb();
+            const snap = await getDocs(query(
+                collection(db, 'ameens'),
+                where('duaId', '==', duaId),
+                limit(FANOUT_LIMIT),
+            ));
+            const targets = new Set<string>();
+            snap.forEach(d => {
+                const uid = (d.data() as any).userId;
+                if (uid && uid !== user.uid) targets.add(uid);
+            });
+            if (targets.size === 0) return;
+
+            const { sendMilestonePush } = await import('./communityNotify');
+            await Promise.all([...targets].map(uid =>
+                sendMilestonePush(
+                    uid,
+                    'A dua you prayed for was answered',
+                    'Alhamdulillah — someone you said Ameen for saw their prayer answered 🤲',
+                    'dua_answered',
+                    { parentId: duaId },
+                )
+            ));
+        } catch (e) {
+            console.error('[DuaWall] notifyAmeenSayers error', e);
+        }
+    },
+
+    /** Local-only check — free: 1 post per rolling 24h. Premium: up to 3.
+     * Admin: no cap at all (rules also bypass the 6h server spacing for
+     * admin — see firestore.rules — so this is genuinely unlimited, not
+     * just a looser client-side count). */
+    async canPublishNow(isPremium: boolean = false): Promise<{ ok: boolean; nextAt?: Date }> {
+        if (__DEV__ || isCurrentUserAdmin()) return { ok: true };
+        const limit = isPremium ? PREMIUM_DAILY_LIMIT : FREE_DAILY_LIMIT;
+        const timestamps = parseRateLimitTimestamps(await AsyncStorage.getItem(RATE_LIMIT_KEY));
+        const cutoff = Date.now() - RATE_LIMIT_MS;
+        const recent = timestamps.filter(t => t > cutoff);
+        if (recent.length < limit) return { ok: true };
+        // Next slot opens 24h after the oldest post still inside the window.
+        const oldest = Math.min(...recent);
+        return { ok: false, nextAt: new Date(oldest + RATE_LIMIT_MS) };
     },
 
     /**
@@ -96,11 +318,19 @@ export const DuaWall = {
         return { ok: true };
     },
 
-    async publish(text: string): Promise<PublishResult> {
+    async publish(
+        text: string,
+        opts?: {
+            location?: { lat: number; lng: number } | null;
+            displayName?: string;
+            country?: string;
+            isPremium?: boolean;
+        },
+    ): Promise<PublishResult> {
         const v = this.validate(text);
         if (!v.ok) return v;
 
-        const rate = await this.canPublishNow();
+        const rate = await this.canPublishNow(opts?.isPremium ?? false);
         if (!rate.ok) return { ok: false, error: 'rate-limited' };
 
         await ensureSignedIn();
@@ -109,17 +339,57 @@ export const DuaWall = {
 
         try {
             const db = getFirebaseDb();
-            const ref = await addDoc(collection(db, 'public-duas'), {
+            // Batched with the rate-limit stamp: rules REQUIRE the stamp (via
+            // getAfter) and enforce 6h spacing server-side — a backstop under
+            // the client's real per-tier count (free 1/day, premium 3/day),
+            // never bites a normal posting cadence.
+            const ref = doc(collection(db, 'public-duas'));
+            const batch = writeBatch(db);
+            batch.set(ref, {
                 text: text.trim(),
+                // Same optional-name pattern as comments: always a non-empty
+                // string, defaulting to 'Anonymous' — never left unset.
+                displayName: (opts?.displayName ?? '').trim().slice(0, MAX_NAME_LENGTH) || 'Anonymous',
                 ameenCount: 0,
                 reportCount: 0,
                 authorId: user.uid, // server-only field
                 createdAt: serverTimestamp(),
                 hidden: false,
+                // Optional country, shown as "Name, Country" — a snapshot at
+                // publish time, same as displayName, not a live join against
+                // CommunityProfileStore (which can change independently later).
+                ...(opts?.country && isValidCountryCode(opts.country) ? { country: opts.country } : {}),
+                // Opt-in map pin: city-level coords (~11km grid, same privacy
+                // rounding as tahajjud_map dots). Author chose this in compose.
+                ...(opts?.location ? {
+                    onMap: true,
+                    lat: opts.location.lat,
+                    lng: opts.location.lng,
+                } : {}),
             });
-            await AsyncStorage.setItem(RATE_LIMIT_KEY, String(Date.now()));
+            // Dev builds skip the cooldown stamp so repeat test publishes
+            // aren't rejected by the 6h server spacing. Production always
+            // stamps — that's what lets the rules re-enable the getAfter
+            // requirement once pre-stamp builds age out.
+            if (!__DEV__) {
+                batch.set(doc(db, 'rate-limits', user.uid),
+                    { lastDuaAt: serverTimestamp() }, { merge: true });
+            }
+            await batch.commit();
+            const priorTimestamps = parseRateLimitTimestamps(await AsyncStorage.getItem(RATE_LIMIT_KEY));
+            const cutoff = Date.now() - RATE_LIMIT_MS;
+            const updatedTimestamps = [...priorTimestamps.filter(t => t > cutoff), Date.now()]
+                .slice(-PREMIUM_DAILY_LIMIT); // bounded even if premium later lapses
+            await AsyncStorage.setItem(RATE_LIMIT_KEY, JSON.stringify(updatedTimestamps));
+            this.recordOwnDua(ref.id).catch(() => {});
+            if (opts?.location) this.recordOwnMapDua(ref.id).catch(() => {});
             return { ok: true, duaId: ref.id };
-        } catch (e) {
+        } catch (e: any) {
+            // permission-denied = the server-side 6h stamp was rejected
+            // (local limit was wiped by a reinstall) — same daily-limit message.
+            if (e?.code === 'permission-denied') {
+                return { ok: false, error: 'rate-limited' };
+            }
             console.error('[DuaWall] publish error', e);
             return { ok: false, error: 'firestore-error' };
         }
@@ -154,15 +424,24 @@ export const DuaWall = {
                 orderBy('createdAt', 'desc'),
                 limit(maxItems),
             );
-            unsubSnap = onSnapshot(q, (snap: QuerySnapshot<DocumentData>) => {
+            // includeMetadataChanges: when the cache already matches the server
+            // (typical warm reopen), the server-sync event is metadata-only and
+            // suppressed by default — fromCache would never flip to false, so
+            // the "Loading tonight's duas…" state lingered until a real write.
+            unsubSnap = onSnapshot(q, { includeMetadataChanges: true }, (snap: QuerySnapshot<DocumentData>) => {
                 const list: PublicDua[] = [];
                 snap.forEach(d => {
                     const data = d.data() as any;
                     list.push({
                         id: d.id,
                         text: data.text ?? '',
+                        displayName: data.displayName ?? 'Anonymous',
+                        country: data.country ?? undefined,
+                        answered: data.answered ?? false,
+                        answeredAt: data.answeredAt?.toDate?.() ?? undefined,
                         ameenCount: data.ameenCount ?? 0,
                         prayCount: data.prayCount ?? 0,
+                        replyCount: data.replyCount ?? 0,
                         reportCount: data.reportCount ?? 0,
                         createdAt: data.createdAt?.toDate?.() ?? new Date(),
                         hidden: data.hidden ?? false,
@@ -204,8 +483,13 @@ export const DuaWall = {
             return {
                 id: snap.id,
                 text: data.text ?? '',
+                displayName: data.displayName ?? 'Anonymous',
+                country: data.country ?? undefined,
+                answered: data.answered ?? false,
+                answeredAt: data.answeredAt?.toDate?.() ?? undefined,
                 ameenCount: data.ameenCount ?? 0,
                 prayCount: data.prayCount ?? 0,
+                replyCount: data.replyCount ?? 0,
                 reportCount: data.reportCount ?? 0,
                 createdAt: data.createdAt?.toDate?.() ?? new Date(),
                 hidden: data.hidden ?? false,
@@ -217,10 +501,69 @@ export const DuaWall = {
     },
 
     /**
+     * Paginated feed of every answered dua, most recently answered first —
+     * powers the standalone "Answered Duas" screen. Separate from the main
+     * wall (most-recent-50 by createdAt) and the map (rolling 24h window):
+     * without this, an answered prayer just quietly ages out of both before
+     * anyone but the original Ameen-sayers (who get a push) ever sees it.
+     * Pass the previous call's `nextCursor` to fetch the next page.
+     */
+    async getAnsweredDuas(
+        pageSize: number = 20,
+        cursor?: QueryDocumentSnapshot<DocumentData> | null,
+    ): Promise<{ items: PublicDua[]; nextCursor: QueryDocumentSnapshot<DocumentData> | null }> {
+        try {
+            const db = getFirebaseDb();
+            const snap = await getDocs(query(
+                collection(db, 'public-duas'),
+                where('hidden', '==', false),
+                where('answered', '==', true),
+                orderBy('answeredAt', 'desc'),
+                ...(cursor ? [startAfter(cursor)] : []),
+                limit(pageSize),
+            ));
+            const items: PublicDua[] = [];
+            snap.forEach(d => {
+                const data = d.data() as any;
+                items.push({
+                    id: d.id,
+                    text: data.text ?? '',
+                    displayName: data.displayName ?? 'Anonymous',
+                    country: data.country ?? undefined,
+                    answered: true,
+                    answeredAt: data.answeredAt?.toDate?.() ?? undefined,
+                    ameenCount: data.ameenCount ?? 0,
+                    prayCount: data.prayCount ?? 0,
+                    replyCount: data.replyCount ?? 0,
+                    reportCount: data.reportCount ?? 0,
+                    createdAt: data.createdAt?.toDate?.() ?? new Date(),
+                    hidden: data.hidden ?? false,
+                });
+            });
+            return { items, nextCursor: snap.docs.length > 0 ? snap.docs[snap.docs.length - 1] : null };
+        } catch (e) {
+            console.error('[DuaWall] getAnsweredDuas error', e);
+            return { items: [], nextCursor: null };
+        }
+    },
+
+    /**
      * Tap Ameen — idempotent per (user, dua). We store the marker doc with
      * a deterministic id `${uid}_${duaId}` so re-taps from the same user are
      * a no-op. A single getDoc check protects against duplicate increments.
      */
+    /** Is this dua the current user's own? Self-reactions must NOT touch the
+     * server counter: a self-Ameen at count 0 would land on milestone 1 with
+     * no push (never notify self), so the author's real "first Ameen" moment
+     * from another person (count 2) would silently never fire. */
+    async _isOwnDua(duaId: string, uid: string): Promise<boolean> {
+        try {
+            const db = getFirebaseDb();
+            const snap = await getDoc(doc(db, 'public-duas', duaId));
+            return snap.exists() && (snap.data() as any).authorId === uid;
+        } catch { return false; }
+    },
+
     async ameen(duaId: string): Promise<boolean> {
         await ensureSignedIn();
         const user = getFirebaseAuth()?.currentUser;
@@ -229,20 +572,25 @@ export const DuaWall = {
         const ameenId = `${user.uid}_${duaId}`;
         try {
             const ameenRef = doc(db, 'ameens', ameenId);
-            const existing = await getDoc(ameenRef);
+            const [existing, isOwn] = await Promise.all([
+                getDoc(ameenRef),
+                this._isOwnDua(duaId, user.uid),
+            ]);
             if (existing.exists()) return true; // already counted — idempotent
+            // Own dua: marker only (keeps the local heart consistent across
+            // devices) — no counter bump, no milestone check. See _isOwnDua.
             await Promise.all([
                 setDoc(ameenRef, {
                     userId: user.uid,
                     duaId,
                     createdAt: serverTimestamp(),
                 }),
-                updateDoc(doc(db, 'public-duas', duaId), {
+                ...(isOwn ? [] : [updateDoc(doc(db, 'public-duas', duaId), {
                     ameenCount: increment(1),
-                }),
+                })]),
             ]);
             // Milestone notification to the dua's author (client-side, free-plan)
-            this.maybeNotifyDuaMilestone(duaId, 'ameen').catch(() => {});
+            if (!isOwn) this.maybeNotifyDuaMilestone(duaId, 'ameen').catch(() => {});
             return true;
         } catch (e) {
             console.error('[DuaWall] ameen error', e);
@@ -302,20 +650,24 @@ export const DuaWall = {
         const prayId = `${user.uid}_${duaId}`;
         try {
             const prayRef = doc(db, 'prays', prayId);
-            const existing = await getDoc(prayRef);
+            const [existing, isOwn] = await Promise.all([
+                getDoc(prayRef),
+                this._isOwnDua(duaId, user.uid),
+            ]);
             if (existing.exists()) return true; // already counted — idempotent
+            // Own dua: marker only — no counter bump, no milestone (see _isOwnDua).
             await Promise.all([
                 setDoc(prayRef, {
                     userId: user.uid,
                     duaId,
                     createdAt: serverTimestamp(),
                 }),
-                updateDoc(doc(db, 'public-duas', duaId), {
+                ...(isOwn ? [] : [updateDoc(doc(db, 'public-duas', duaId), {
                     prayCount: increment(1),
-                }),
+                })]),
             ]);
             // Milestone notification to the dua's author (client-side, free-plan)
-            this.maybeNotifyDuaMilestone(duaId, 'pray').catch(() => {});
+            if (!isOwn) this.maybeNotifyDuaMilestone(duaId, 'pray').catch(() => {});
             return true;
         } catch (e) {
             console.error('[DuaWall] prayingFor error', e);
@@ -331,11 +683,15 @@ export const DuaWall = {
         const db = getFirebaseDb();
         const ameenRef = doc(db, 'ameens', `${user.uid}_${duaId}`);
         try {
-            const existing = await getDoc(ameenRef);
+            const [existing, isOwn] = await Promise.all([
+                getDoc(ameenRef),
+                this._isOwnDua(duaId, user.uid),
+            ]);
             if (!existing.exists()) return true; // nothing to undo — already idempotent
+            // Own dua never incremented the counter, so don't decrement either.
             await Promise.all([
                 deleteDoc(ameenRef),
-                updateDoc(doc(db, 'public-duas', duaId), { ameenCount: increment(-1) }),
+                ...(isOwn ? [] : [updateDoc(doc(db, 'public-duas', duaId), { ameenCount: increment(-1) })]),
             ]);
             return true;
         } catch (e) {
@@ -352,11 +708,15 @@ export const DuaWall = {
         const db = getFirebaseDb();
         const prayRef = doc(db, 'prays', `${user.uid}_${duaId}`);
         try {
-            const existing = await getDoc(prayRef);
+            const [existing, isOwn] = await Promise.all([
+                getDoc(prayRef),
+                this._isOwnDua(duaId, user.uid),
+            ]);
             if (!existing.exists()) return true;
+            // Own dua never incremented the counter, so don't decrement either.
             await Promise.all([
                 deleteDoc(prayRef),
-                updateDoc(doc(db, 'public-duas', duaId), { prayCount: increment(-1) }),
+                ...(isOwn ? [] : [updateDoc(doc(db, 'public-duas', duaId), { prayCount: increment(-1) })]),
             ]);
             return true;
         } catch (e) {
@@ -432,6 +792,10 @@ export const DuaWall = {
                 out.push({
                     id: d.id,
                     text: data.text ?? '',
+                    displayName: data.displayName ?? 'Anonymous',
+                    country: data.country ?? undefined,
+                    answered: data.answered ?? false,
+                    answeredAt: data.answeredAt?.toDate?.() ?? undefined,
                     ameenCount: data.ameenCount ?? 0,
                     reportCount: data.reportCount ?? 0,
                     createdAt: data.createdAt?.toDate?.() ?? new Date(),
@@ -481,4 +845,5 @@ export const DuaWall = {
     REPORT_THRESHOLD,
     MAX_LENGTH,
     MIN_WORDS,
+    MAX_NAME_LENGTH,
 };

@@ -21,6 +21,7 @@ const log = (...args: any[]) => { if (__DEV__) console.log(...args); };
 export function ensureNotificationHandler() {
     if (notificationHandlerConfigured) return;
     notificationHandlerConfigured = true;
+    ensureNotificationCategories();
     Notifications.setNotificationHandler({
         handleNotification: async (notification) => {
             const dataType = notification.request.content.data?.type;
@@ -34,9 +35,23 @@ export function ensureNotificationHandler() {
             // Includes the admin "you were chosen" picks: without these the
             // author with the app open never saw their Top Dua/Story moment.
             const isCommunity = dataType === 'dua_milestone' || dataType === 'testimony_milestone' ||
-                                dataType === 'top_dua' || dataType === 'top_story';
-            // Feature nudge / day-1 morning check-in — informational, fine in foreground
-            const isNudge = dataType === 'feature_nudge' || dataType === 'morning_after';
+                                dataType === 'top_dua' || dataType === 'top_story' ||
+                                dataType === 'dua_reply' || dataType === 'testimony_reply' ||
+                                dataType === 'reply_liked' || dataType === 'thread_reply' ||
+                                // Fires from a local sync/rank-check triggered by the user's
+                                // OWN action, so the app is essentially always in the
+                                // foreground the moment this notification is created —
+                                // without this it would never actually be seen.
+                                dataType === 'leaderboard_rank';
+            // Feature nudge / day-1 morning check-in / engagement nudges —
+            // informational, fine in foreground. Every other scheduled
+            // notification type in the app belongs in one bucket or another;
+            // these were the ones missing (silently swallowed in foreground
+            // if the app happened to be open when they fired).
+            const isNudge = dataType === 'feature_nudge' || dataType === 'morning_after' ||
+                             dataType === 'hifz_review' || dataType === 'trial_reminder' ||
+                             dataType === 'trial_winback' || dataType === 'winback_1' ||
+                             dataType === 'winback_2' || dataType === 'streak_paywall';
             const shouldShow = isPartner || isPrayer || isCommunity || isNudge;
             return {
                 shouldShowAlert: shouldShow,
@@ -47,6 +62,22 @@ export function ensureNotificationHandler() {
             };
         },
     });
+}
+
+const PRAYER_LOG_CATEGORY = 'PRAYER_LOG';
+let categoriesConfigured = false;
+
+/** One-tap "Log" action button on prayer/Tahajjud notifications. Idempotent. */
+function ensureNotificationCategories() {
+    if (categoriesConfigured) return;
+    categoriesConfigured = true;
+    Notifications.setNotificationCategoryAsync(PRAYER_LOG_CATEGORY, [
+        {
+            identifier: 'LOG',
+            buttonTitle: t('notifAction.log'),
+            options: { opensAppToForeground: true },
+        },
+    ]).catch(() => {});
 }
 
 export async function requestNotificationPermissions(): Promise<boolean> {
@@ -96,32 +127,24 @@ export async function requestNotificationPermissions(): Promise<boolean> {
 }
 
 /**
- * Fires a one-off notification 5 seconds after being called, using the exact
- * same sound/priority/interruption config as the real Tahajjud alert — lets a
- * user verify the alert sound actually plays without waiting for a real
- * scheduled reminder. Powers the "Send Test Notification" row in Settings.
+ * Fire a local notification right now (not scheduled for later) — for
+ * moments the APP ITSELF detects something worth telling the user about
+ * client-side (e.g. a leaderboard rank crossing a tier), as opposed to a
+ * remote push from another device or a time-based reminder. Silently no-ops
+ * if permission was never granted — this must never be the thing that
+ * PROMPTS for permission, since it fires from background sync work, not a
+ * direct user action.
  */
-export async function sendTestNotification(): Promise<boolean> {
-    const granted = await requestNotificationPermissions();
-    if (!granted) return false;
-
-    await Notifications.scheduleNotificationAsync({
-        content: {
-            title: '🌙 Test Notification',
-            body: 'If you heard a sound, your Tahajjud alert is working.',
-            sound: 'tahajjud_alert.caf',
-            priority: Notifications.AndroidNotificationPriority.MAX,
-            vibrate: [0, 1000, 500, 1000, 500, 1000],
-            interruptionLevel: 'timeSensitive',
-            data: { type: 'tahajjud' },
-        },
-        trigger: {
-            type: Notifications.SchedulableTriggerInputTypes.TIME_INTERVAL,
-            seconds: 5,
-            ...(Platform.OS === 'android' && { channelId: 'tahajjud' }),
-        },
-    });
-    return true;
+export async function notifyNow(title: string, body: string, data?: Record<string, string>): Promise<void> {
+    try {
+        const { status } = await Notifications.getPermissionsAsync();
+        if (status !== 'granted') return;
+        ensureNotificationHandler();
+        await Notifications.scheduleNotificationAsync({
+            content: { title, body, sound: 'default', data },
+            trigger: null, // fire immediately
+        });
+    } catch { /* never block the caller over a notification */ }
 }
 
 /**
@@ -262,12 +285,17 @@ export async function scheduleAllPrayerNotifications(
         // Previously used cancelAllScheduledNotificationsAsync() ("nuclear option")
         // which also wiped the weekly digest and Hifz review notifications — they
         // were never rescheduled, so users lost them on every app launch.
-        const prayers = ['fajr', 'dhuhr', 'asr', 'maghrib', 'isha'];
-
-        for (const prayer of prayers) {
-            const id = await AsyncStorage.getItem(`${NOTIFICATION_ID_KEY_PREFIX}${prayer}`).catch(() => null);
-            if (id) await Notifications.cancelScheduledNotificationAsync(id).catch(() => {});
-        }
+        // NOTE: today's 5 prayer notifications are deliberately NOT blanket-
+        // cancelled here (unlike Tahajjud/future below). This function reruns
+        // on every app foreground/launch/setting change, and a blind
+        // cancel-then-reschedule pass would cancel an already-valid,
+        // about-to-fire notification and then refuse to reschedule it if the
+        // 3-minute safety margin had since kicked in — permanently losing a
+        // notification just because the user opened the app shortly before
+        // it was due. internalSchedulePrayerNotification instead cancels a
+        // prayer's OLD id only at the moment it successfully schedules a
+        // replacement; see the scheduling loop below, which also explicitly
+        // cancels+clears any prayer that's no longer enabled.
 
         const tahajjudIdsJson = await AsyncStorage.getItem('tahajjud_notification_ids_array').catch(() => null);
         if (tahajjudIdsJson) {
@@ -281,23 +309,52 @@ export async function scheduleAllPrayerNotifications(
             for (const id of ids) await Notifications.cancelScheduledNotificationAsync(id).catch(() => {});
         }
 
+        // Same as tahajjud_future_ids above, but for the days-1-6-ahead daily
+        // prayer notifications scheduled by scheduleFuturePrayerNotifications.
+        // Without this, changing the reminder offset (or anything else that
+        // forces a reschedule) only updated TODAY's notifications — the
+        // already-prescheduled future days stayed locked at the old offset,
+        // and the next prefetch would stack a duplicate batch on top.
+        const prayerFutureIdsJson = await AsyncStorage.getItem('prayer_future_ids').catch(() => null);
+        if (prayerFutureIdsJson) {
+            const ids: string[] = JSON.parse(prayerFutureIdsJson);
+            for (const id of ids) await Notifications.cancelScheduledNotificationAsync(id).catch(() => {});
+        }
+
         const legacyId = await AsyncStorage.getItem('tahajjud_notification_id').catch(() => null);
         if (legacyId) await Notifications.cancelScheduledNotificationAsync(legacyId).catch(() => {});
 
-        // Clear all tracked prayer ID keys
+        // Clear tracked Tahajjud/future ID keys (today's 5 prayer keys are
+        // deliberately excluded — see note above).
         const keysToRemove = [
-            ...prayers.map(p => `${NOTIFICATION_ID_KEY_PREFIX}${p}`),
             `${NOTIFICATION_ID_KEY_PREFIX}tahajjud`,
             'tahajjud_notification_ids_array',
             'tahajjud_future_ids',
+            'prayer_future_ids',
             'tahajjud_notification_id',
         ];
         await AsyncStorage.multiRemove(keysToRemove).catch(() => {});
 
         const isOverallEnabled = typeof enabledPrayers === 'boolean' ? enabledPrayers : Object.values(enabledPrayers).some(v => v);
 
+        // Cancels+clears a specific prayer's tracked notification(s) — used
+        // when a prayer is (or becomes) disabled, as opposed to being
+        // rescheduled, which now cancels-then-replaces atomically inside
+        // internalSchedulePrayerNotification instead of here.
+        const cancelPrayerKey = async (prayer: string) => {
+            for (const suffix of ['', '_early']) {
+                const idKey = `${NOTIFICATION_ID_KEY_PREFIX}${prayer}${suffix}`;
+                const id = await AsyncStorage.getItem(idKey).catch(() => null);
+                if (id) await Notifications.cancelScheduledNotificationAsync(id).catch(() => {});
+                await AsyncStorage.removeItem(idKey).catch(() => {});
+            }
+        };
+
+        const allPrayerKeys = ['fajr', 'dhuhr', 'asr', 'maghrib', 'isha'];
+
         if (!isOverallEnabled && !tahajjudConfig?.enabled) {
             log('[DEBUG] All notifications are disabled globally. Slate cleared.');
+            for (const prayer of allPrayerKeys) await cancelPrayerKey(prayer);
             return;
         }
 
@@ -307,17 +364,37 @@ export async function scheduleAllPrayerNotifications(
 
         if (isOverallEnabled) {
             log('[DEBUG] Starting clean re-scheduling for daily prayers...');
-            const prayers = ['fajr', 'dhuhr', 'asr', 'maghrib', 'isha'];
 
-            for (const prayer of prayers) {
+            for (const prayer of allPrayerKeys) {
                 const isEnabled = typeof enabledPrayers === 'boolean'
                     ? enabledPrayers
                     : enabledPrayers[prayer.toLowerCase()];
 
                 if (isEnabled) {
-                    await internalSchedulePrayerNotification(prayer.charAt(0).toUpperCase() + prayer.slice(1), prayerTimes[prayer], prayerOffset);
+                    const name = prayer.charAt(0).toUpperCase() + prayer.slice(1);
+                    // On-time notification — the one that gets the "Log" button.
+                    await internalSchedulePrayerNotification(name, prayerTimes[prayer], 0);
+                    // Separately-tracked early reminder, only when the user has
+                    // actually chosen a lead time. Intentionally has no "Log"
+                    // button (the prayer hasn't started yet). Without this split,
+                    // there used to be only ONE notification per prayer driven
+                    // by the same offset — so anyone with a nonzero reminder
+                    // offset would never see a loggable notification at all,
+                    // since the on-time one above was never scheduled for them.
+                    if (prayerOffset !== 0) {
+                        await internalSchedulePrayerNotification(name, prayerTimes[prayer], prayerOffset, '_early');
+                    }
+                } else {
+                    // This specific prayer is turned off — actually cancel it
+                    // (nothing else will, now that the blanket upfront cancel
+                    // is gone).
+                    await cancelPrayerKey(prayer);
                 }
             }
+        } else {
+            // Prayers are off overall but Tahajjud is still enabled — cancel
+            // any prayer notifications left over from when they were on.
+            for (const prayer of allPrayerKeys) await cancelPrayerKey(prayer);
         }
 
         // Handle Tahajjud if config is provided
@@ -363,30 +440,41 @@ export async function scheduleFutureTahajjudNotifications(
 /**
  * Schedule daily prayer notifications for future days (days 1–6 ahead).
  * Each entry is a flat list of {name, time} pairs — one per prayer per day.
- * Does NOT cancel existing notifications.
+ * Does NOT cancel existing notifications — but DOES record the IDs it
+ * schedules to 'prayer_future_ids' so scheduleAllPrayerNotifications can
+ * cancel them on the next reschedule (e.g. reminder-offset change).
  */
 export async function scheduleFuturePrayerNotifications(
     prayers: Array<{ name: string; time: Date }>
 ): Promise<void> {
     ensureNotificationHandler();
-    const offsetRaw = await AsyncStorage.getItem('prayer_reminder_offset');
-    const prayerOffset = offsetRaw ? parseInt(offsetRaw, 10) : 0;
+    const ids: string[] = [];
 
-    for (const { name, time } of prayers) {
-        const scheduleTime = new Date(time.getTime() - prayerOffset * 60 * 1000);
+    // Schedules one future notification at `offset` minutes before `time`.
+    // Only offset===0 (the actual prayer time) gets the "Log" button.
+    const scheduleOne = async (name: string, time: Date, offset: number) => {
+        const scheduleTime = new Date(time.getTime() - offset * 60 * 1000);
         const now = new Date();
         const safetyMargin = 3 * 60 * 1000;
-        if (scheduleTime <= new Date(now.getTime() + safetyMargin)) continue;
+        if (scheduleTime <= new Date(now.getTime() + safetyMargin)) return;
         try {
             const key = name.toLowerCase();
             const content = PRAYER_CONTENT[key];
-            const { title, body } = buildPrayerNotificationContent(name, content, prayerOffset, time);
-            await Notifications.scheduleNotificationAsync({
+            const { title, body } = buildPrayerNotificationContent(name, content, offset, time);
+            const id = await Notifications.scheduleNotificationAsync({
                 content: {
                     title,
                     body,
                     priority: Notifications.AndroidNotificationPriority.HIGH,
                     sound: 'default',
+                    // Without this, iOS silently delivers the notification
+                    // with no sound whenever any Focus mode is active (Sleep
+                    // Focus overnight is extremely common — and directly
+                    // covers Fajr). Tahajjud alerts already set this; daily
+                    // prayer notifications never did.
+                    interruptionLevel: 'timeSensitive',
+                    data: { type: 'prayer', prayer: key },
+                    ...(offset === 0 && { categoryIdentifier: PRAYER_LOG_CATEGORY }),
                 },
                 trigger: {
                     type: Notifications.SchedulableTriggerInputTypes.DATE,
@@ -394,9 +482,29 @@ export async function scheduleFuturePrayerNotifications(
                     ...(Platform.OS === 'android' && { channelId: 'prayers' }),
                 },
             });
+            ids.push(id);
         } catch (err) {
             log(`[DEBUG] Failed to schedule future ${name}:`, err);
         }
+    };
+
+    // On-time only (no separate early-reminder duplicate) for future days.
+    // iOS hard-caps an app at 64 pending local notifications and silently
+    // evicts past that — doubling every prayer across all 6 prefetched days
+    // (5 prayers x 2 x 6 days = 60) blew straight through it alongside
+    // today's notifications and Tahajjud, so nothing beyond the cap ever
+    // fired. Today still gets both (see scheduleAllPrayerNotifications) —
+    // opening the app on any given day reschedules that day's early
+    // reminder too, so the only gap is a day the app is never opened at all.
+    for (const { name, time } of prayers) {
+        await scheduleOne(name, time, 0);
+    }
+
+    if (ids.length > 0) {
+        try {
+            const existing = JSON.parse(await AsyncStorage.getItem('prayer_future_ids') || '[]');
+            await AsyncStorage.setItem('prayer_future_ids', JSON.stringify([...existing, ...ids]));
+        } catch {}
     }
 }
 
@@ -435,6 +543,17 @@ async function internalScheduleTahajjudNotification(targetTime: Date, bufferMinu
             // pierces through Sleep / Do Not Disturb focus modes — exactly
             // what you want from a wake-up alarm.
             interruptionLevel: 'timeSensitive',
+            // Required so the foreground handler's `isPrayer` check forces
+            // this alarm to show/sound even when the app is open — without
+            // it, iOS silently swallows tonight's Tahajjud alert (see
+            // ensureNotificationHandler above). internalScheduleTahajjudNotificationRaw
+            // (used for future nights) already had this; this is the primary
+            // "tonight" path and was missing it.
+            data: { type: 'tahajjud', prayer: 'tahajjud' },
+            // Only the at-time alert (the gate is actually open) gets the
+            // "Log" action — logging from the earlier "get ready" reminder
+            // would be premature. Matches internalScheduleTahajjudNotificationRaw.
+            ...(bufferMinutes === 0 && { categoryIdentifier: PRAYER_LOG_CATEGORY }),
         },
         trigger: {
             type: Notifications.SchedulableTriggerInputTypes.DATE,
@@ -476,6 +595,11 @@ async function internalScheduleTahajjudNotificationRaw(targetTime: Date, bufferM
                 // Same time-sensitive escalation as tonight's reminder so
                 // future-night Tahajjud alerts also break through Do Not Disturb.
                 interruptionLevel: 'timeSensitive',
+                data: { type: 'tahajjud', prayer: 'tahajjud' },
+                // Only the at-time alert (the gate is actually open) gets the
+                // "Log" action — logging from the earlier "get ready" reminder
+                // would be premature.
+                ...(bufferMinutes === 0 && { categoryIdentifier: PRAYER_LOG_CATEGORY }),
             },
             trigger: {
                 type: Notifications.SchedulableTriggerInputTypes.DATE,
@@ -542,7 +666,7 @@ const PRAYER_CONTENT: Record<string, { emoji: string; title: string; body: strin
 /**
  * Internal helper that doesn't call cancelNotification to avoid redundant AsyncStorage hits
  */
-async function internalSchedulePrayerNotification(prayerName: string, targetTime: Date, offsetMinutes: number = 0) {
+async function internalSchedulePrayerNotification(prayerName: string, targetTime: Date, offsetMinutes: number = 0, idSuffix: string = '') {
     const now = new Date();
     const scheduleTime = new Date(targetTime.getTime() - offsetMinutes * 60 * 1000);
     const safetyMargin = 3 * 60 * 1000;
@@ -561,12 +685,32 @@ async function internalSchedulePrayerNotification(prayerName: string, targetTime
     // block, which would otherwise misreport a successful prayer-time load as
     // "Failed to load prayer times". Mirrors internalScheduleTahajjudNotificationRaw.
     try {
+        // Only cancel the previous notification for this exact key now that
+        // we know a valid replacement is actually about to be scheduled —
+        // cancelling any earlier (e.g. up front, before the safety-margin
+        // check above) risked wiping out a still-valid, about-to-fire
+        // notification on a rerun that then hit the safety margin and
+        // returned early, permanently losing it.
+        const idKey = `${NOTIFICATION_ID_KEY_PREFIX}${key}${idSuffix}`;
+        const previousId = await AsyncStorage.getItem(idKey).catch(() => null);
+        if (previousId) await Notifications.cancelScheduledNotificationAsync(previousId).catch(() => {});
+
         const notificationId = await Notifications.scheduleNotificationAsync({
             content: {
                 title,
                 body,
                 priority: Notifications.AndroidNotificationPriority.HIGH,
                 sound: 'default',
+                // Without this, iOS silently delivers the notification with
+                // no sound whenever any Focus mode is active (Sleep Focus
+                // overnight is extremely common — and directly covers Fajr).
+                // Tahajjud alerts already set this; daily prayer
+                // notifications never did.
+                interruptionLevel: 'timeSensitive',
+                data: { type: 'prayer', prayer: key },
+                // Only the at-time notification (offset 0) gets the "Log" action —
+                // an early reminder fires before the prayer window has opened.
+                ...(offsetMinutes === 0 && { categoryIdentifier: PRAYER_LOG_CATEGORY }),
             },
             trigger: {
                 type: Notifications.SchedulableTriggerInputTypes.DATE,
@@ -575,7 +719,12 @@ async function internalSchedulePrayerNotification(prayerName: string, targetTime
             },
         });
 
-        await AsyncStorage.setItem(`${NOTIFICATION_ID_KEY_PREFIX}${key}`, notificationId);
+        // idSuffix keeps the early-reminder notification's id in a separate
+        // storage key from the on-time one (see scheduleAllPrayerNotifications)
+        // — without it, scheduling both for the same prayer would have the
+        // second call's id silently overwrite the first's, permanently
+        // orphaning whichever was scheduled first (never cancellable again).
+        await AsyncStorage.setItem(idKey, notificationId);
         log(`[DEBUG] ${prayerName} scheduled for ${scheduleTime.toLocaleString()} (${offsetMinutes} min before)`);
     } catch (e) {
         log(`[DEBUG] Failed to schedule ${prayerName} notification:`, e);

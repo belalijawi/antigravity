@@ -2,4 +2,6 @@
   <string name="app_name">Tahajjud+</string>
   <string name="expo_splash_screen_resize_mode" translatable="false">cover</string>
   <string name="expo_splash_screen_status_bar_translucent" translatable="false">false</string>
+  <string name="widget_tahajjud_description">Next prayer time and Tahajjud streak.</string>
+  <string name="widget_dua_description">A dua you choose from your collection.</string>
 </resources>

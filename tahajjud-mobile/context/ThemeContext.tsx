@@ -1,5 +1,6 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useContext, useState, useEffect, useMemo, useCallback } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { CommunityProfileStore } from '../utils/communityProfile';
 
 export type ThemeType = 'silver' | 'teal' | 'emerald' | 'gold' | 'rose' | 'purple' | 'cosmic';
 
@@ -203,7 +204,19 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
             }
 
             const savedName = await AsyncStorage.getItem('user-name');
-            if (savedName) setUserNameState(savedName);
+            if (savedName) {
+                setUserNameState(savedName);
+                // One-time backfill for existing users: this name may predate
+                // CommunityProfileStore's propagation wiring (added after some
+                // users had already set a Spiritual Name in Settings), so it
+                // was never shared with the Dua Wall/Leaderboard/etc. Only
+                // fills a gap — never overwrites a name already set there.
+                if (savedName !== 'Servant') {
+                    CommunityProfileStore.get().then(profile => {
+                        if (!profile?.nickname) CommunityProfileStore.set(savedName).catch(() => {});
+                    });
+                }
+            }
 
             const savedDark = await AsyncStorage.getItem('dark-mode');
             if (savedDark === 'true') setDarkModeState(true);
@@ -212,28 +225,37 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
         }
     };
 
-    const setTheme = async (newTheme: ThemeType) => {
+    const setTheme = useCallback(async (newTheme: ThemeType) => {
         setThemeState(newTheme);
         await AsyncStorage.setItem('app-theme', newTheme);
-    };
+    }, []);
 
-    const setUserName = async (newName: string) => {
+    const setUserName = useCallback(async (newName: string) => {
         setUserNameState(newName);
         await AsyncStorage.setItem('user-name', newName);
-    };
+    }, []);
 
-    const setDarkMode = async (enabled: boolean) => {
+    const setDarkMode = useCallback(async (enabled: boolean) => {
         setDarkModeState(enabled);
         await AsyncStorage.setItem('dark-mode', enabled ? 'true' : 'false');
-    };
+    }, []);
 
     // Computed dark-mode-aware surface values
     const cardBg = darkMode ? 'rgba(3, 5, 15, 0.93)' : 'rgba(10, 15, 35, 0.45)';
     const cardBorder = darkMode ? 'rgba(255,255,255,0.05)' : 'rgba(255,255,255,0.10)';
     const blurIntensity = darkMode ? 0.25 : 1; // multiply base intensity by this
 
+    // Without this, the provider value is a brand-new object every render,
+    // and since React context has no field-level selectors, every one of the
+    // 55+ components calling useTheme() re-renders on ANY change here (e.g.
+    // setUserName during onboarding re-rendering screens that only read
+    // `colors`) — not just the ones that actually changed.
+    const value = useMemo(() => ({
+        theme, colors: themes[theme], setTheme, userName, setUserName, darkMode, setDarkMode, cardBg, cardBorder, blurIntensity,
+    }), [theme, setTheme, userName, setUserName, darkMode, setDarkMode, cardBg, cardBorder, blurIntensity]);
+
     return (
-        <ThemeContext.Provider value={{ theme, colors: themes[theme], setTheme, userName, setUserName, darkMode, setDarkMode, cardBg, cardBorder, blurIntensity }}>
+        <ThemeContext.Provider value={value}>
             {children}
         </ThemeContext.Provider>
     );
