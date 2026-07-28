@@ -29,7 +29,7 @@ import Paywall from './Paywall';
 import { GoogleAuthProvider, OAuthProvider } from 'firebase/auth';
 import { getFirebaseAuth, upgradeAnonymousAccount } from '../utils/firebase';
 import { friendlyAuthErrorMessage } from '../utils/authErrors';
-import { birthYearOptions, meetsCommunityAge, setBirthYear, MIN_COMMUNITY_AGE } from '../utils/ageGate';
+import { birthYearOptions, meetsCommunityAge, setAgeStatus } from '../utils/ageGate';
 
 // Safe requires for native modules not available in Expo Go
 let AppleAuthentication: typeof import('expo-apple-authentication') | null = null;
@@ -413,8 +413,11 @@ export function OnboardingFlow({ onComplete }: Props) {
                                 onPress={async () => {
                                     if (!birthYear) return;
                                     haptic.light();
-                                    await setBirthYear(birthYear);
-                                    if (!meetsCommunityAge(birthYear)) {
+                                    // Only the pass/fail result is persisted —
+                                    // the year itself never leaves this state.
+                                    const passed = meetsCommunityAge(birthYear);
+                                    await setAgeStatus(passed);
+                                    if (!passed) {
                                         track('onboarding_age_blocked');
                                         setAgeBlocked(true);
                                         return;

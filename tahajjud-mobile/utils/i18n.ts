@@ -47,7 +47,7 @@ type Dict = Record<string, string>;
 
 const en: Dict = {
     "onboard.age.title": "Which year were you born?",
-    "onboard.age.body": "This helps us keep the community safe. We only store the year, on this device — never with your duas or your name.",
+    "onboard.age.body": "We don't store or share your age — we only use it to check you're 13 or over.",
     "onboard.age.blocked": "Tahajjud+ includes a community where people share duas and stories with each other, so it's only available from age 13. You're welcome back when you're old enough, inshaAllah.",
     "onboard.age.change": "Change my answer",
     "paywall.f11t": "Your Country Ranking",
@@ -1333,7 +1333,7 @@ const en: Dict = {
 
 const ar: Dict = {
     "onboard.age.title": "في أي عام وُلدت؟",
-    "onboard.age.body": "يساعدنا هذا في الحفاظ على أمان المجتمع. نحفظ السنة فقط على هذا الجهاز — ولا نربطها بأدعيتك أو باسمك.",
+    "onboard.age.body": "لا نحفظ عمرك ولا نشاركه — نستخدمه فقط للتأكد من أنك 13 عامًا أو أكثر.",
     "onboard.age.blocked": "يتضمن Tahajjud+ مجتمعًا يتشارك فيه الناس الأدعية والقصص، لذا فهو متاح من سن 13 فقط. نرحب بعودتك عندما تبلغ السن المناسبة إن شاء الله.",
     "onboard.age.change": "تغيير إجابتي",
     "paywall.f11t": "ترتيبك في بلدك",
@@ -2610,7 +2610,7 @@ const ar: Dict = {
 
 const ur: Dict = {
     "onboard.age.title": "آپ کس سال پیدا ہوئے؟",
-    "onboard.age.body": "اس سے ہمیں کمیونٹی کو محفوظ رکھنے میں مدد ملتی ہے۔ ہم صرف سال اسی ڈیوائس پر محفوظ کرتے ہیں — کبھی آپ کی دعاؤں یا نام کے ساتھ نہیں۔",
+    "onboard.age.body": "ہم آپ کی عمر محفوظ نہیں کرتے اور نہ ہی کسی کے ساتھ شیئر کرتے ہیں — یہ صرف یہ دیکھنے کے لیے ہے کہ آپ 13 سال یا اس سے زیادہ کے ہیں۔",
     "onboard.age.blocked": "Tahajjud+ میں ایک کمیونٹی شامل ہے جہاں لوگ دعائیں اور کہانیاں بانٹتے ہیں، اس لیے یہ صرف 13 سال کی عمر سے دستیاب ہے۔ جب آپ کی عمر ہو جائے تو خوش آمدید، ان شاء اللہ۔",
     "onboard.age.change": "اپنا جواب تبدیل کریں",
     "paywall.f11t": "آپ کے ملک میں درجہ",
@@ -3888,7 +3888,7 @@ const ur: Dict = {
 // ── Turkish ────────────────────────────────────────────────────────────
 const tr: Dict = {
     "onboard.age.title": "Hangi yıl doğdun?",
-    "onboard.age.body": "Bu, topluluğu güvende tutmamıza yardımcı olur. Yalnızca yılı, bu cihazda saklarız — dualarınla ya da adınla birlikte asla.",
+    "onboard.age.body": "Yaşını saklamıyor ve paylaşmıyoruz — yalnızca 13 yaşında ya da daha büyük olduğunu doğrulamak için kullanıyoruz.",
     "onboard.age.blocked": "Tahajjud+ insanların birbiriyle dua ve hikâye paylaştığı bir topluluk içerir; bu yüzden yalnızca 13 yaşından itibaren kullanılabilir. Yaşın geldiğinde seni bekliyoruz inşallah.",
     "onboard.age.change": "Cevabımı değiştir",
     "paywall.f11t": "Ülkendeki Sıralaman",
@@ -5144,7 +5144,7 @@ const tr: Dict = {
 // ── Indonesian ─────────────────────────────────────────────────────────
 const id: Dict = {
     "onboard.age.title": "Tahun berapa kamu lahir?",
-    "onboard.age.body": "Ini membantu kami menjaga komunitas tetap aman. Kami hanya menyimpan tahunnya, di perangkat ini — tidak pernah bersama doa atau namamu.",
+    "onboard.age.body": "Kami tidak menyimpan atau membagikan usiamu — hanya untuk memastikan kamu berusia 13 tahun atau lebih.",
     "onboard.age.blocked": "Tahajjud+ memiliki komunitas tempat orang berbagi doa dan kisah, jadi hanya tersedia mulai usia 13 tahun. Kami tunggu kembali saat kamu cukup umur, insyaAllah.",
     "onboard.age.change": "Ubah jawabanku",
     "paywall.f11t": "Peringkat di Negaramu",
@@ -6400,7 +6400,7 @@ const id: Dict = {
 // ── Malay ──────────────────────────────────────────────────────────────
 const ms: Dict = {
     "onboard.age.title": "Tahun berapa anda dilahirkan?",
-    "onboard.age.body": "Ini membantu kami memastikan komuniti selamat. Kami hanya menyimpan tahun, pada peranti ini — tidak pernah bersama doa atau nama anda.",
+    "onboard.age.body": "Kami tidak menyimpan atau berkongsi umur anda — ia hanya untuk mengesahkan anda berumur 13 tahun ke atas.",
     "onboard.age.blocked": "Tahajjud+ mempunyai komuniti tempat orang berkongsi doa dan kisah, jadi ia hanya tersedia dari umur 13 tahun. Kami nantikan anda kembali apabila cukup umur, insyaAllah.",
     "onboard.age.change": "Tukar jawapan saya",
     "paywall.f11t": "Kedudukan di Negara Anda",
@@ -7656,7 +7656,7 @@ const ms: Dict = {
 // ── Bengali ────────────────────────────────────────────────────────────
 const bn: Dict = {
     "onboard.age.title": "আপনি কোন সালে জন্মগ্রহণ করেছেন?",
-    "onboard.age.body": "এটি আমাদের কমিউনিটি নিরাপদ রাখতে সাহায্য করে। আমরা শুধু সালটি এই ডিভাইসেই রাখি — কখনো আপনার দোয়া বা নামের সাথে নয়।",
+    "onboard.age.body": "আমরা আপনার বয়স সংরক্ষণ বা শেয়ার করি না — শুধু যাচাই করি আপনি ১৩ বছর বা তার বেশি কিনা।",
     "onboard.age.blocked": "Tahajjud+ এ একটি কমিউনিটি আছে যেখানে মানুষ দোয়া ও গল্প ভাগ করে, তাই এটি শুধু ১৩ বছর বয়স থেকে উপলব্ধ। বয়স হলে আবার স্বাগতম, ইনশাআল্লাহ।",
     "onboard.age.change": "আমার উত্তর পরিবর্তন করুন",
     "paywall.f11t": "আপনার দেশে অবস্থান",
@@ -8912,7 +8912,7 @@ const bn: Dict = {
 // ── French ─────────────────────────────────────────────────────────────
 const fr: Dict = {
     "onboard.age.title": "En quelle année êtes-vous né(e) ?",
-    "onboard.age.body": "Cela nous aide à protéger la communauté. Nous ne conservons que l'année, sur cet appareil — jamais avec vos duas ni votre nom.",
+    "onboard.age.body": "Nous ne conservons ni ne partageons votre âge — il sert uniquement à vérifier que vous avez 13 ans ou plus.",
     "onboard.age.blocked": "Tahajjud+ comprend une communauté où chacun partage duas et histoires ; l'app est donc réservée aux 13 ans et plus. Revenez quand vous aurez l'âge, inchaAllah.",
     "onboard.age.change": "Modifier ma réponse",
     "paywall.f11t": "Votre classement national",
@@ -10168,7 +10168,7 @@ const fr: Dict = {
 // ── Persian / Farsi (RTL) ──────────────────────────────────────────────
 const fa: Dict = {
     "onboard.age.title": "در چه سالی متولد شده‌اید؟",
-    "onboard.age.body": "این به ما کمک می‌کند جامعه را امن نگه داریم. ما فقط سال را روی همین دستگاه ذخیره می‌کنیم — هرگز همراه دعاها یا نام شما.",
+    "onboard.age.body": "ما سن شما را ذخیره یا با کسی به اشتراک نمی‌گذاریم — فقط برای بررسی اینکه ۱۳ سال یا بیشتر دارید.",
     "onboard.age.blocked": "Tahajjud+ شامل جامعه‌ای است که در آن مردم دعا و داستان به اشتراک می‌گذارند، بنابراین تنها از ۱۳ سالگی در دسترس است. وقتی به سن رسیدی خوش آمدی، ان‌شاءالله.",
     "onboard.age.change": "تغییر پاسخ من",
     "paywall.f11t": "رتبه شما در کشورتان",
@@ -11424,7 +11424,7 @@ const fa: Dict = {
 // ── Hindi ──────────────────────────────────────────────────────────────
 const hi: Dict = {
     "onboard.age.title": "आपका जन्म किस वर्ष हुआ?",
-    "onboard.age.body": "इससे हमें समुदाय को सुरक्षित रखने में मदद मिलती है। हम केवल वर्ष इसी डिवाइस पर रखते हैं — कभी आपकी दुआओं या नाम के साथ नहीं।",
+    "onboard.age.body": "हम आपकी उम्र न तो संग्रहित करते हैं न साझा — इसका उपयोग केवल यह जाँचने के लिए है कि आप 13 वर्ष या उससे अधिक के हैं।",
     "onboard.age.blocked": "Tahajjud+ में एक समुदाय है जहाँ लोग दुआएँ और कहानियाँ साझा करते हैं, इसलिए यह केवल 13 वर्ष की आयु से उपलब्ध है। उम्र होने पर आपका स्वागत है, इंशाअल्लाह।",
     "onboard.age.change": "मेरा उत्तर बदलें",
     "paywall.f11t": "आपके देश में रैंक",
@@ -12680,7 +12680,7 @@ const hi: Dict = {
 // ── Russian ────────────────────────────────────────────────────────────
 const ru: Dict = {
     "onboard.age.title": "В каком году вы родились?",
-    "onboard.age.body": "Это помогает нам защищать сообщество. Мы храним только год и только на этом устройстве — никогда рядом с вашими дуа или именем.",
+    "onboard.age.body": "Мы не храним и не передаём ваш возраст — он нужен только чтобы убедиться, что вам 13 или больше.",
     "onboard.age.blocked": "В Tahajjud+ есть сообщество, где люди делятся дуа и историями, поэтому приложение доступно с 13 лет. Ждём вас, когда подрастёте, иншаАллах.",
     "onboard.age.change": "Изменить ответ",
     "paywall.f11t": "Ваш рейтинг в стране",
@@ -13936,7 +13936,7 @@ const ru: Dict = {
 // ── Bosnian ────────────────────────────────────────────────────────────
 const bs: Dict = {
     "onboard.age.title": "Koje si godine rođen/a?",
-    "onboard.age.body": "Ovo nam pomaže da zajednica ostane sigurna. Čuvamo samo godinu, na ovom uređaju — nikad uz tvoje dove ili ime.",
+    "onboard.age.body": "Ne čuvamo niti dijelimo tvoje godine — koristimo ih samo da provjerimo imaš li 13 ili više.",
     "onboard.age.blocked": "Tahajjud+ ima zajednicu u kojoj ljudi dijele dove i priče, pa je dostupan tek od 13 godina. Dobro nam došao kad narasteš, inšaAllah.",
     "onboard.age.change": "Promijeni moj odgovor",
     "paywall.f11t": "Tvoj plasman u državi",
@@ -15192,7 +15192,7 @@ const bs: Dict = {
 // ── Spanish ────────────────────────────────────────────────────────────
 const es: Dict = {
     "onboard.age.title": "¿En qué año naciste?",
-    "onboard.age.body": "Esto nos ayuda a mantener segura la comunidad. Solo guardamos el año, en este dispositivo — nunca junto a tus duas ni a tu nombre.",
+    "onboard.age.body": "No guardamos ni compartimos tu edad — solo la usamos para comprobar que tienes 13 años o más.",
     "onboard.age.blocked": "Tahajjud+ incluye una comunidad donde la gente comparte duas e historias, así que solo está disponible a partir de los 13 años. Te esperamos cuando tengas la edad, inshaAllah.",
     "onboard.age.change": "Cambiar mi respuesta",
     "paywall.f11t": "Tu clasificación nacional",
@@ -16448,7 +16448,7 @@ const es: Dict = {
 // ── German ─────────────────────────────────────────────────────────────
 const de: Dict = {
     "onboard.age.title": "In welchem Jahr wurdest du geboren?",
-    "onboard.age.body": "Das hilft uns, die Gemeinschaft sicher zu halten. Wir speichern nur das Jahr, auf diesem Gerät — nie zusammen mit deinen Duas oder deinem Namen.",
+    "onboard.age.body": "Wir speichern dein Alter nicht und geben es nicht weiter — es dient nur der Prüfung, ob du 13 oder älter bist.",
     "onboard.age.blocked": "Tahajjud+ enthält eine Gemeinschaft, in der Duas und Geschichten geteilt werden, daher ist die App erst ab 13 Jahren verfügbar. Wir freuen uns auf dich, wenn du alt genug bist, inschaAllah.",
     "onboard.age.change": "Antwort ändern",
     "paywall.f11t": "Dein Ranking im Land",
@@ -17704,7 +17704,7 @@ const de: Dict = {
 // ── Albanian ───────────────────────────────────────────────────────────
 const sq: Dict = {
     "onboard.age.title": "Në cilin vit ke lindur?",
-    "onboard.age.body": "Kjo na ndihmon ta mbajmë komunitetin të sigurt. Ruajmë vetëm vitin, në këtë pajisje — kurrë bashkë me lutjet ose emrin tënd.",
+    "onboard.age.body": "Nuk e ruajmë dhe nuk e ndajmë moshën tënde — e përdorim vetëm për të verifikuar se je 13 vjeç ose më shumë.",
     "onboard.age.blocked": "Tahajjud+ ka një komunitet ku njerëzit ndajnë lutje dhe histori, prandaj është i disponueshëm vetëm nga mosha 13 vjeç. Të presim kur të rritesh, inshallah.",
     "onboard.age.change": "Ndrysho përgjigjen time",
     "paywall.f11t": "Renditja jote në vend",
