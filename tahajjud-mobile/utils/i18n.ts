@@ -46,6 +46,13 @@ const LOCALE_KEY = 'app_locale_v1';
 type Dict = Record<string, string>;
 
 const en: Dict = {
+    "moderation.blockUser": "Block this person",
+    "moderation.blockedTitle": "Blocked",
+    "moderation.blockedBody": "You won't see anything from this person again. Reported content is also reviewed by our team.",
+    "moderation.report": "Report",
+    "moderation.reportedTitle": "Reported",
+    "moderation.reportedBody": "JazakAllah Khair — we review reports within 24 hours.",
+    "onboard.age.terms": "By continuing you agree to our Terms of Use, and to a zero-tolerance policy for abusive or objectionable content.",
     "onboard.age.title": "Which year were you born?",
     "onboard.age.body": "We don't store or share your age — we only use it to check you're 13 or over.",
     "onboard.age.blocked": "Tahajjud+ includes a community where people share duas and stories with each other, so it's only available from age 13. You're welcome back when you're old enough, inshaAllah.",
@@ -1332,6 +1339,13 @@ const en: Dict = {
 };
 
 const ar: Dict = {
+    "moderation.blockUser": "حظر هذا الشخص",
+    "moderation.blockedTitle": "تم الحظر",
+    "moderation.blockedBody": "لن ترى أي شيء من هذا الشخص مرة أخرى. كما يراجع فريقنا المحتوى المُبلَّغ عنه.",
+    "moderation.report": "إبلاغ",
+    "moderation.reportedTitle": "تم الإبلاغ",
+    "moderation.reportedBody": "جزاك الله خيرًا — نراجع البلاغات خلال 24 ساعة.",
+    "onboard.age.terms": "بالمتابعة فإنك توافق على شروط الاستخدام وعلى سياسة عدم التسامح مطلقًا مع المحتوى المسيء أو المخالف.",
     "onboard.age.title": "في أي عام وُلدت؟",
     "onboard.age.body": "لا نحفظ عمرك ولا نشاركه — نستخدمه فقط للتأكد من أنك 13 عامًا أو أكثر.",
     "onboard.age.blocked": "يتضمن Tahajjud+ مجتمعًا يتشارك فيه الناس الأدعية والقصص، لذا فهو متاح من سن 13 فقط. نرحب بعودتك عندما تبلغ السن المناسبة إن شاء الله.",
@@ -2609,6 +2623,13 @@ const ar: Dict = {
 };
 
 const ur: Dict = {
+    "moderation.blockUser": "اس شخص کو بلاک کریں",
+    "moderation.blockedTitle": "بلاک کر دیا گیا",
+    "moderation.blockedBody": "اب آپ کو اس شخص کی کوئی چیز نظر نہیں آئے گی۔ رپورٹ کیے گئے مواد کا جائزہ ہماری ٹیم بھی لیتی ہے۔",
+    "moderation.report": "رپورٹ",
+    "moderation.reportedTitle": "رپورٹ ہو گئی",
+    "moderation.reportedBody": "جزاک اللہ خیر — ہم 24 گھنٹوں میں رپورٹس کا جائزہ لیتے ہیں۔",
+    "onboard.age.terms": "جاری رکھ کر آپ ہماری شرائطِ استعمال اور توہین آمیز یا نامناسب مواد کے خلاف زیرو ٹالرینس پالیسی سے اتفاق کرتے ہیں۔",
     "onboard.age.title": "آپ کس سال پیدا ہوئے؟",
     "onboard.age.body": "ہم آپ کی عمر محفوظ نہیں کرتے اور نہ ہی کسی کے ساتھ شیئر کرتے ہیں — یہ صرف یہ دیکھنے کے لیے ہے کہ آپ 13 سال یا اس سے زیادہ کے ہیں۔",
     "onboard.age.blocked": "Tahajjud+ میں ایک کمیونٹی شامل ہے جہاں لوگ دعائیں اور کہانیاں بانٹتے ہیں، اس لیے یہ صرف 13 سال کی عمر سے دستیاب ہے۔ جب آپ کی عمر ہو جائے تو خوش آمدید، ان شاء اللہ۔",
@@ -3887,6 +3908,13 @@ const ur: Dict = {
 
 // ── Turkish ────────────────────────────────────────────────────────────
 const tr: Dict = {
+    "moderation.blockUser": "Bu kişiyi engelle",
+    "moderation.blockedTitle": "Engellendi",
+    "moderation.blockedBody": "Bu kişiden hiçbir şey görmeyeceksin. Bildirilen içerik ayrıca ekibimizce incelenir.",
+    "moderation.report": "Bildir",
+    "moderation.reportedTitle": "Bildirildi",
+    "moderation.reportedBody": "JazakAllah Khair — bildirimleri 24 saat içinde inceliyoruz.",
+    "onboard.age.terms": "Devam ederek Kullanım Koşullarımızı ve saldırgan veya sakıncalı içeriğe sıfır tolerans politikasını kabul etmiş olursun.",
     "onboard.age.title": "Hangi yıl doğdun?",
     "onboard.age.body": "Yaşını saklamıyor ve paylaşmıyoruz — yalnızca 13 yaşında ya da daha büyük olduğunu doğrulamak için kullanıyoruz.",
     "onboard.age.blocked": "Tahajjud+ insanların birbiriyle dua ve hikâye paylaştığı bir topluluk içerir; bu yüzden yalnızca 13 yaşından itibaren kullanılabilir. Yaşın geldiğinde seni bekliyoruz inşallah.",
@@ -5143,6 +5171,13 @@ const tr: Dict = {
 
 // ── Indonesian ─────────────────────────────────────────────────────────
 const id: Dict = {
+    "moderation.blockUser": "Blokir orang ini",
+    "moderation.blockedTitle": "Diblokir",
+    "moderation.blockedBody": "Kamu tidak akan melihat apa pun dari orang ini lagi. Konten yang dilaporkan juga ditinjau tim kami.",
+    "moderation.report": "Laporkan",
+    "moderation.reportedTitle": "Dilaporkan",
+    "moderation.reportedBody": "JazakAllah Khair — kami meninjau laporan dalam 24 jam.",
+    "onboard.age.terms": "Dengan melanjutkan, kamu menyetujui Ketentuan Penggunaan kami dan kebijakan tanpa toleransi untuk konten kasar atau tidak pantas.",
     "onboard.age.title": "Tahun berapa kamu lahir?",
     "onboard.age.body": "Kami tidak menyimpan atau membagikan usiamu — hanya untuk memastikan kamu berusia 13 tahun atau lebih.",
     "onboard.age.blocked": "Tahajjud+ memiliki komunitas tempat orang berbagi doa dan kisah, jadi hanya tersedia mulai usia 13 tahun. Kami tunggu kembali saat kamu cukup umur, insyaAllah.",
@@ -6399,6 +6434,13 @@ const id: Dict = {
 
 // ── Malay ──────────────────────────────────────────────────────────────
 const ms: Dict = {
+    "moderation.blockUser": "Sekat orang ini",
+    "moderation.blockedTitle": "Disekat",
+    "moderation.blockedBody": "Anda tidak akan melihat apa-apa daripada orang ini lagi. Kandungan yang dilaporkan turut disemak pasukan kami.",
+    "moderation.report": "Lapor",
+    "moderation.reportedTitle": "Dilaporkan",
+    "moderation.reportedBody": "JazakAllah Khair — kami menyemak laporan dalam 24 jam.",
+    "onboard.age.terms": "Dengan meneruskan, anda bersetuju dengan Terma Penggunaan kami dan dasar tanpa toleransi terhadap kandungan kesat atau tidak wajar.",
     "onboard.age.title": "Tahun berapa anda dilahirkan?",
     "onboard.age.body": "Kami tidak menyimpan atau berkongsi umur anda — ia hanya untuk mengesahkan anda berumur 13 tahun ke atas.",
     "onboard.age.blocked": "Tahajjud+ mempunyai komuniti tempat orang berkongsi doa dan kisah, jadi ia hanya tersedia dari umur 13 tahun. Kami nantikan anda kembali apabila cukup umur, insyaAllah.",
@@ -7655,6 +7697,13 @@ const ms: Dict = {
 
 // ── Bengali ────────────────────────────────────────────────────────────
 const bn: Dict = {
+    "moderation.blockUser": "এই ব্যক্তিকে ব্লক করুন",
+    "moderation.blockedTitle": "ব্লক করা হয়েছে",
+    "moderation.blockedBody": "আপনি আর এই ব্যক্তির কিছু দেখবেন না। রিপোর্ট করা কনটেন্ট আমাদের টিমও পর্যালোচনা করে।",
+    "moderation.report": "রিপোর্ট",
+    "moderation.reportedTitle": "রিপোর্ট হয়েছে",
+    "moderation.reportedBody": "জাযাকাল্লাহ খায়ের — আমরা ২৪ ঘণ্টার মধ্যে রিপোর্ট পর্যালোচনা করি।",
+    "onboard.age.terms": "চালিয়ে গেলে আপনি আমাদের ব্যবহারের শর্তাবলী এবং আপত্তিকর বা অপমানজনক কনটেন্টের প্রতি জিরো-টলারেন্স নীতিতে সম্মত হচ্ছেন।",
     "onboard.age.title": "আপনি কোন সালে জন্মগ্রহণ করেছেন?",
     "onboard.age.body": "আমরা আপনার বয়স সংরক্ষণ বা শেয়ার করি না — শুধু যাচাই করি আপনি ১৩ বছর বা তার বেশি কিনা।",
     "onboard.age.blocked": "Tahajjud+ এ একটি কমিউনিটি আছে যেখানে মানুষ দোয়া ও গল্প ভাগ করে, তাই এটি শুধু ১৩ বছর বয়স থেকে উপলব্ধ। বয়স হলে আবার স্বাগতম, ইনশাআল্লাহ।",
@@ -8911,6 +8960,13 @@ const bn: Dict = {
 
 // ── French ─────────────────────────────────────────────────────────────
 const fr: Dict = {
+    "moderation.blockUser": "Bloquer cette personne",
+    "moderation.blockedTitle": "Bloqué",
+    "moderation.blockedBody": "Vous ne verrez plus rien de cette personne. Le contenu signalé est aussi examiné par notre équipe.",
+    "moderation.report": "Signaler",
+    "moderation.reportedTitle": "Signalé",
+    "moderation.reportedBody": "JazakAllah Khair — nous examinons les signalements sous 24 heures.",
+    "onboard.age.terms": "En continuant, vous acceptez nos Conditions d'utilisation et une politique de tolérance zéro envers tout contenu abusif ou répréhensible.",
     "onboard.age.title": "En quelle année êtes-vous né(e) ?",
     "onboard.age.body": "Nous ne conservons ni ne partageons votre âge — il sert uniquement à vérifier que vous avez 13 ans ou plus.",
     "onboard.age.blocked": "Tahajjud+ comprend une communauté où chacun partage duas et histoires ; l'app est donc réservée aux 13 ans et plus. Revenez quand vous aurez l'âge, inchaAllah.",
@@ -10167,6 +10223,13 @@ const fr: Dict = {
 
 // ── Persian / Farsi (RTL) ──────────────────────────────────────────────
 const fa: Dict = {
+    "moderation.blockUser": "مسدود کردن این شخص",
+    "moderation.blockedTitle": "مسدود شد",
+    "moderation.blockedBody": "دیگر چیزی از این شخص نخواهید دید. محتوای گزارش‌شده توسط تیم ما نیز بررسی می‌شود.",
+    "moderation.report": "گزارش",
+    "moderation.reportedTitle": "گزارش شد",
+    "moderation.reportedBody": "جزاک الله خیر — گزارش‌ها را ظرف ۲۴ ساعت بررسی می‌کنیم.",
+    "onboard.age.terms": "با ادامه دادن، شرایط استفاده ما و سیاست عدم تحمل مطلق در برابر محتوای توهین‌آمیز یا نامناسب را می‌پذیرید.",
     "onboard.age.title": "در چه سالی متولد شده‌اید؟",
     "onboard.age.body": "ما سن شما را ذخیره یا با کسی به اشتراک نمی‌گذاریم — فقط برای بررسی اینکه ۱۳ سال یا بیشتر دارید.",
     "onboard.age.blocked": "Tahajjud+ شامل جامعه‌ای است که در آن مردم دعا و داستان به اشتراک می‌گذارند، بنابراین تنها از ۱۳ سالگی در دسترس است. وقتی به سن رسیدی خوش آمدی، ان‌شاءالله.",
@@ -11423,6 +11486,13 @@ const fa: Dict = {
 
 // ── Hindi ──────────────────────────────────────────────────────────────
 const hi: Dict = {
+    "moderation.blockUser": "इस व्यक्ति को ब्लॉक करें",
+    "moderation.blockedTitle": "ब्लॉक किया गया",
+    "moderation.blockedBody": "अब आपको इस व्यक्ति की कोई चीज़ नहीं दिखेगी। रिपोर्ट की गई सामग्री की समीक्षा हमारी टीम भी करती है।",
+    "moderation.report": "रिपोर्ट करें",
+    "moderation.reportedTitle": "रिपोर्ट हो गई",
+    "moderation.reportedBody": "जज़ाकअल्लाह ख़ैर — हम 24 घंटे में रिपोर्ट की समीक्षा करते हैं।",
+    "onboard.age.terms": "जारी रखकर आप हमारी उपयोग शर्तों और अपमानजनक या आपत्तिजनक सामग्री के प्रति ज़ीरो-टॉलरेंस नीति से सहमत होते हैं।",
     "onboard.age.title": "आपका जन्म किस वर्ष हुआ?",
     "onboard.age.body": "हम आपकी उम्र न तो संग्रहित करते हैं न साझा — इसका उपयोग केवल यह जाँचने के लिए है कि आप 13 वर्ष या उससे अधिक के हैं।",
     "onboard.age.blocked": "Tahajjud+ में एक समुदाय है जहाँ लोग दुआएँ और कहानियाँ साझा करते हैं, इसलिए यह केवल 13 वर्ष की आयु से उपलब्ध है। उम्र होने पर आपका स्वागत है, इंशाअल्लाह।",
@@ -12679,6 +12749,13 @@ const hi: Dict = {
 
 // ── Russian ────────────────────────────────────────────────────────────
 const ru: Dict = {
+    "moderation.blockUser": "Заблокировать этого человека",
+    "moderation.blockedTitle": "Заблокировано",
+    "moderation.blockedBody": "Вы больше не увидите ничего от этого человека. Сообщённый контент также проверяет наша команда.",
+    "moderation.report": "Пожаловаться",
+    "moderation.reportedTitle": "Жалоба отправлена",
+    "moderation.reportedBody": "ДжазакАллаху хайран — мы рассматриваем жалобы в течение 24 часов.",
+    "onboard.age.terms": "Продолжая, вы соглашаетесь с нашими Условиями использования и политикой нулевой терпимости к оскорбительному или недопустимому контенту.",
     "onboard.age.title": "В каком году вы родились?",
     "onboard.age.body": "Мы не храним и не передаём ваш возраст — он нужен только чтобы убедиться, что вам 13 или больше.",
     "onboard.age.blocked": "В Tahajjud+ есть сообщество, где люди делятся дуа и историями, поэтому приложение доступно с 13 лет. Ждём вас, когда подрастёте, иншаАллах.",
@@ -13935,6 +14012,13 @@ const ru: Dict = {
 
 // ── Bosnian ────────────────────────────────────────────────────────────
 const bs: Dict = {
+    "moderation.blockUser": "Blokiraj ovu osobu",
+    "moderation.blockedTitle": "Blokirano",
+    "moderation.blockedBody": "Više nećeš vidjeti ništa od ove osobe. Prijavljeni sadržaj pregleda i naš tim.",
+    "moderation.report": "Prijavi",
+    "moderation.reportedTitle": "Prijavljeno",
+    "moderation.reportedBody": "DžazakAllahu hajren — prijave pregledamo u roku od 24 sata.",
+    "onboard.age.terms": "Nastavkom prihvataš naše Uslove korištenja i politiku nulte tolerancije prema uvredljivom ili neprimjerenom sadržaju.",
     "onboard.age.title": "Koje si godine rođen/a?",
     "onboard.age.body": "Ne čuvamo niti dijelimo tvoje godine — koristimo ih samo da provjerimo imaš li 13 ili više.",
     "onboard.age.blocked": "Tahajjud+ ima zajednicu u kojoj ljudi dijele dove i priče, pa je dostupan tek od 13 godina. Dobro nam došao kad narasteš, inšaAllah.",
@@ -15191,6 +15275,13 @@ const bs: Dict = {
 
 // ── Spanish ────────────────────────────────────────────────────────────
 const es: Dict = {
+    "moderation.blockUser": "Bloquear a esta persona",
+    "moderation.blockedTitle": "Bloqueado",
+    "moderation.blockedBody": "No volverás a ver nada de esta persona. El contenido denunciado también lo revisa nuestro equipo.",
+    "moderation.report": "Denunciar",
+    "moderation.reportedTitle": "Denunciado",
+    "moderation.reportedBody": "YazakAllah Jairan — revisamos las denuncias en 24 horas.",
+    "onboard.age.terms": "Al continuar aceptas nuestras Condiciones de uso y una política de tolerancia cero con el contenido abusivo u objetable.",
     "onboard.age.title": "¿En qué año naciste?",
     "onboard.age.body": "No guardamos ni compartimos tu edad — solo la usamos para comprobar que tienes 13 años o más.",
     "onboard.age.blocked": "Tahajjud+ incluye una comunidad donde la gente comparte duas e historias, así que solo está disponible a partir de los 13 años. Te esperamos cuando tengas la edad, inshaAllah.",
@@ -16447,6 +16538,13 @@ const es: Dict = {
 
 // ── German ─────────────────────────────────────────────────────────────
 const de: Dict = {
+    "moderation.blockUser": "Diese Person blockieren",
+    "moderation.blockedTitle": "Blockiert",
+    "moderation.blockedBody": "Du siehst nichts mehr von dieser Person. Gemeldete Inhalte prüft zusätzlich unser Team.",
+    "moderation.report": "Melden",
+    "moderation.reportedTitle": "Gemeldet",
+    "moderation.reportedBody": "JazakAllah Khair — wir prüfen Meldungen innerhalb von 24 Stunden.",
+    "onboard.age.terms": "Mit dem Fortfahren stimmst du unseren Nutzungsbedingungen und einer Null-Toleranz-Politik gegenüber missbräuchlichen oder anstößigen Inhalten zu.",
     "onboard.age.title": "In welchem Jahr wurdest du geboren?",
     "onboard.age.body": "Wir speichern dein Alter nicht und geben es nicht weiter — es dient nur der Prüfung, ob du 13 oder älter bist.",
     "onboard.age.blocked": "Tahajjud+ enthält eine Gemeinschaft, in der Duas und Geschichten geteilt werden, daher ist die App erst ab 13 Jahren verfügbar. Wir freuen uns auf dich, wenn du alt genug bist, inschaAllah.",
@@ -17703,6 +17801,13 @@ const de: Dict = {
 
 // ── Albanian ───────────────────────────────────────────────────────────
 const sq: Dict = {
+    "moderation.blockUser": "Blloko këtë person",
+    "moderation.blockedTitle": "Bllokuar",
+    "moderation.blockedBody": "Nuk do të shohësh më asgjë nga ky person. Përmbajtja e raportuar shqyrtohet edhe nga ekipi ynë.",
+    "moderation.report": "Raporto",
+    "moderation.reportedTitle": "U raportua",
+    "moderation.reportedBody": "XhazakAllahu hajren — raportet i shqyrtojmë brenda 24 orësh.",
+    "onboard.age.terms": "Duke vazhduar pranon Kushtet tona të Përdorimit dhe një politikë zero-tolerancë ndaj përmbajtjes abuzive ose të papërshtatshme.",
     "onboard.age.title": "Në cilin vit ke lindur?",
     "onboard.age.body": "Nuk e ruajmë dhe nuk e ndajmë moshën tënde — e përdorim vetëm për të verifikuar se je 13 vjeç ose më shumë.",
     "onboard.age.blocked": "Tahajjud+ ka një komunitet ku njerëzit ndajnë lutje dhe histori, prandaj është i disponueshëm vetëm nga mosha 13 vjeç. Të presim kur të rritesh, inshallah.",

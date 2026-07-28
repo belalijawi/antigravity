@@ -286,6 +286,8 @@ export function subscribeDailyTotal(onUpdate: (total: number) => void): () => vo
 // Dua Wall — a pin is just a second surface for the same document.
 
 export interface MapDua {
+    /** Anonymous author uid — never displayed, used only for local blocking. */
+    authorId?: string;
     id: string;
     lat: number;
     lng: number;

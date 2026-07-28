@@ -25,6 +25,7 @@ import { KnownNameField } from './KnownNameField';
 import { CountryPickerOverlay } from './CountryPickerOverlay';
 import Paywall from './Paywall';
 import { CommunityProfileStore } from '../utils/communityProfile';
+import { getBlocked, blockAuthor, blockedSnapshot, BLOCKED_CHANGED } from '../utils/blockedUsers';
 import { flagEmoji, countryName, isValidCountryCode } from '../utils/countries';
 
 const AMEEN_KEY = 'dua_wall_ameened';
@@ -128,6 +129,13 @@ export function DuaWallModal({ visible, onClose, focusDuaId, inline }: Props) {
     // Same client-only "own" tracking as ownMapDuaIds on the map — there's
     // no account system, so "is this mine" can only ever be answered
     // locally, never derived from the doc itself.
+    // Blocked authors — App Store 1.2 requires a way to block abusive users.
+    const [blocked, setBlocked] = useState<Set<string>>(blockedSnapshot());
+    useEffect(() => {
+        getBlocked().then(setBlocked);
+        const sub = DeviceEventEmitter.addListener(BLOCKED_CHANGED, () => { getBlocked().then(s => setBlocked(new Set(s))); });
+        return () => sub.remove();
+    }, []);
     const [ownDuaIds, setOwnDuaIds] = useState<Set<string>>(new Set());
     useEffect(() => {
         DuaWall.getOwnDuaIds().then(ids => setOwnDuaIds(new Set(ids)));
@@ -358,10 +366,13 @@ export function DuaWallModal({ visible, onClose, focusDuaId, inline }: Props) {
     // empty for new users. Live duas show first (chronological); seed
     // duas fill the rest. Each seed dua carries an isSeed flag so the UI
     // can show a "Universal" badge instead of pretending it's user-posted.
+    const notBlocked = (d: PublicDua) => !d.authorId || !blocked.has(d.authorId);
     const displayDuas = React.useMemo(() => {
         // Exclude the Top Dua of the Day — it's pinned separately above the
         // list, so leaving it in here too would show it twice.
-        const rest = topDua ? duas.filter(d => d.id !== topDua.id) : duas;
+        // Blocked authors' duas never enter the list (App Store 1.2).
+        const visible = duas.filter(notBlocked);
+        const rest = topDua ? visible.filter(d => d.id !== topDua.id) : visible;
         const merged: (PublicDua | (PublicDua & { isSeed?: true }))[] = [...rest];
         // Seeds join only AFTER the server confirms the live order. Merging
         // them during the cache window painted seeds/stale items first, then
@@ -374,7 +385,7 @@ export function DuaWallModal({ visible, onClose, focusDuaId, inline }: Props) {
             }
         }
         return merged;
-    }, [duas, topDua, loadingLive]);
+    }, [duas, topDua, loadingLive, blocked]);
 
     // Activity indicator: how recently was the live feed updated?
     // `duas` is the 50 most-recent non-hidden duas EVER, not scoped to any
@@ -461,14 +472,27 @@ export function DuaWallModal({ visible, onClose, focusDuaId, inline }: Props) {
             'Report this dua?',
             'Thank you for keeping the wall safe. We\'ll review this submission within 24 hours.',
             [
-                { text: 'Cancel', style: 'cancel' },
+                { text: t('btn.cancel'), style: 'cancel' },
                 {
-                    text: 'Report',
+                    text: t('moderation.report'),
                     style: 'destructive',
                     onPress: async () => {
                         await DuaWall.report(id);
                         haptic.success();
-                        Alert.alert('Reported', 'JazakAllah Khair.');
+                        Alert.alert(t('moderation.reportedTitle'), t('moderation.reportedBody'));
+                    },
+                },
+                {
+                    // Guideline 1.2 also requires blocking the PERSON, not just
+                    // flagging the post — this hides everything they author.
+                    text: t('moderation.blockUser'),
+                    style: 'destructive',
+                    onPress: async () => {
+                        const author = duas.find(d => d.id === id)?.authorId;
+                        if (!author) return;
+                        await blockAuthor(author);
+                        haptic.success();
+                        Alert.alert(t('moderation.blockedTitle'), t('moderation.blockedBody'));
                     },
                 },
             ],

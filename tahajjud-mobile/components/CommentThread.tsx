@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useRef } from 'react';
 import {
     View, Text, TouchableOpacity, StyleSheet, TextInput,
-    ActivityIndicator, Alert,
+    ActivityIndicator, Alert, DeviceEventEmitter,
 } from 'react-native';
 import { MessageCircle, Flag, Send, Heart, ChevronDown, ChevronUp, Crown } from 'lucide-react-native';
 import { formatDistanceToNowStrict } from 'date-fns';
@@ -10,6 +10,7 @@ import { CommunityProfileStore } from '../utils/communityProfile';
 import { usePurchases } from '../context/PurchasesContext';
 import { isCurrentUserAdmin } from '../utils/admins';
 import { flagEmoji } from '../utils/countries';
+import { getBlocked, blockAuthor, blockedSnapshot, BLOCKED_CHANGED } from '../utils/blockedUsers';
 import { useTheme } from '../context/ThemeContext';
 import { haptic } from '../utils/haptic';
 import { t } from '../utils/i18n';
@@ -94,6 +95,14 @@ export function CommentThread({ parentType, parentId, replyCount, accent, onRequ
     const [posting, setPosting] = useState(false);
     // Replies this user chose to hide locally (anonymous "block").
     const [locallyHidden, setLocallyHidden] = useState<Set<string>>(new Set());
+    // Blocked authors — required by App Store Review 1.2, and stronger than
+    // the per-reply local hide above: this removes everything they write.
+    const [blocked, setBlocked] = useState<Set<string>>(blockedSnapshot());
+    useEffect(() => {
+        getBlocked().then(setBlocked);
+        const sub = DeviceEventEmitter.addListener(BLOCKED_CHANGED, () => { getBlocked().then(s => setBlocked(new Set(s))); });
+        return () => sub.remove();
+    }, []);
     // Replies THIS device has liked (general-purpose, everyone can do this —
     // separate from authorLiked's parent-author-only "appreciated" heart).
     const [likedLocally, setLikedLocally] = useState<Set<string>>(new Set());
@@ -156,7 +165,7 @@ export function CommentThread({ parentType, parentId, replyCount, accent, onRequ
         return unsub;
     }, [expanded, parentType, parentId]);
 
-    const visibleComments = comments.filter(c => !locallyHidden.has(c.id));
+    const visibleComments = comments.filter(c => !locallyHidden.has(c.id) && (!c.authorId || !blocked.has(c.authorId)));
 
     const shownCount = Math.max(replyCount, comments.length);
     const countLabel = shownCount === 0
@@ -291,9 +300,23 @@ export function CommentThread({ parentType, parentId, replyCount, accent, onRequ
             t('comments.actionsTitle'),
             undefined,
             [
-                { text: 'Cancel', style: 'cancel' },
+                { text: t('btn.cancel'), style: 'cancel' },
                 {
-                    // Local-only hide — the anonymous equivalent of blocking.
+                    // Blocks the PERSON, not just this reply — App Store
+                    // Review 1.2 requires this for user-generated content.
+                    text: t('moderation.blockUser'),
+                    style: 'destructive',
+                    onPress: async () => {
+                        const author = comments.find(c => c.id === commentId)?.authorId;
+                        if (!author) return;
+                        await blockAuthor(author);
+                        haptic.success();
+                        Alert.alert(t('moderation.blockedTitle'), t('moderation.blockedBody'));
+                    },
+                },
+                {
+                    // Hides just this one reply, for people who want the
+                    // lighter option rather than blocking the author outright.
                     text: t('comments.hideForMe'),
                     onPress: async () => {
                         await Comments.hideLocally(commentId);
@@ -309,7 +332,7 @@ export function CommentThread({ parentType, parentId, replyCount, accent, onRequ
                         t('comments.reportTitle'),
                         t('comments.reportBody'),
                         [
-                            { text: 'Cancel', style: 'cancel' },
+                            { text: t('btn.cancel'), style: 'cancel' },
                             {
                                 text: t('comments.report'),
                                 style: 'destructive',

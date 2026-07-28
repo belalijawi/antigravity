@@ -20,6 +20,7 @@ import { subscribeTahajjudMap, subscribeMapDuas, MapDot, MapDua, MAP_DOT_LIMIT }
 import { DuaWall } from '../utils/duaWall';
 import { haptic } from '../utils/haptic';
 import { t } from '../utils/i18n';
+import { getBlocked, blockedSnapshot, BLOCKED_CHANGED } from '../utils/blockedUsers';
 // Pure dot/pin selection + grid geometry. Lives in its own react-native-free
 // module so it can be executed and asserted on directly against real
 // production data — this is the logic that decides whether a pin survives a
@@ -190,6 +191,13 @@ export function GlobalTahajjudMap({ visible, onClose, onLiveTotal, serverTotal }
     const ameenBusyRef = useRef<Set<string>>(new Set());
     // Ids of duas THIS device pinned to the map — highlighted distinctly.
     const [ownMapDuaIds, setOwnMapDuaIds] = useState<Set<string>>(new Set());
+    // Blocked authors' pins never reach the map (App Store 1.2).
+    const [blockedAuthors, setBlockedAuthors] = useState<Set<string>>(blockedSnapshot());
+    useEffect(() => {
+        getBlocked().then(setBlockedAuthors);
+        const sub = DeviceEventEmitter.addListener(BLOCKED_CHANGED, () => { getBlocked().then(s => setBlockedAuthors(new Set(s))); });
+        return () => sub.remove();
+    }, []);
     // (Marker repaint bookkeeping used to live here as a parent-level ref.
     // It now lives inside DuaPinMarker as component state — see that
     // component's comment for why keeping it here made pins render blank
@@ -233,7 +241,9 @@ export function GlobalTahajjudMap({ visible, onClose, onLiveTotal, serverTotal }
     // merging them first would leave Gaza/Iceland showing up only when they
     // happened to land on a sampled index, silently breaking "always-on."
     const spreadPermanent = React.useMemo(() => spreadStacked(PERMANENT_DOTS), []);
-    const spreadDuas = React.useMemo(() => spreadStacked(mapDuas), [mapDuas]);
+    const spreadDuas = React.useMemo(
+        () => spreadStacked(mapDuas.filter(d => !d.authorId || !blockedAuthors.has(d.authorId))),
+        [mapDuas, blockedAuthors]);
     // Single source of truth with the verification script — see
     // dotRadiusForZoom in utils/mapGeometry.ts for why the multiplier is what
     // keeps neighbouring cities distinct.

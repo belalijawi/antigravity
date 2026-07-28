@@ -70,6 +70,9 @@ export type CommentParentType = 'dua' | 'testimony';
 
 export interface Comment {
     id: string;
+    /** Anonymous author uid. NEVER displayed — carried only so the viewer can
+     *  block this person's content locally (see utils/blockedUsers.ts). */
+    authorId?: string;
     parentType: CommentParentType;
     parentId: string;
     text: string;
@@ -136,6 +139,7 @@ function docToComment(id: string, data: any, myUid?: string): Comment {
         authorPremium: data.authorPremium ?? false,
         likeCount: data.likeCount ?? 0,
         isMine: !!myUid && data.authorId === myUid,
+        authorId: data.authorId,
     };
 }
 

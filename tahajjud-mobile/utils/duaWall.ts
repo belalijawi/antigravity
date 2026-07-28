@@ -86,6 +86,9 @@ const FORBIDDEN_WORDS = [
 
 export interface PublicDua {
     id: string;
+    /** Anonymous author uid. NEVER displayed — carried only so the viewer can
+     *  block this person's content locally (see utils/blockedUsers.ts). */
+    authorId?: string;
     text: string;
     displayName?: string;   // optional first name; 'Anonymous' if not given
     country?: string;       // optional ISO country code, shown as "Name, Country"
@@ -445,6 +448,7 @@ export const DuaWall = {
                         reportCount: data.reportCount ?? 0,
                         createdAt: data.createdAt?.toDate?.() ?? new Date(),
                         hidden: data.hidden ?? false,
+                        authorId: data.authorId,
                     });
                 });
                 cb(list, snap.metadata.fromCache);
@@ -493,6 +497,7 @@ export const DuaWall = {
                 reportCount: data.reportCount ?? 0,
                 createdAt: data.createdAt?.toDate?.() ?? new Date(),
                 hidden: data.hidden ?? false,
+                authorId: data.authorId,
             };
         } catch (e) {
             console.error('[DuaWall] getById error', e);
@@ -538,6 +543,7 @@ export const DuaWall = {
                     reportCount: data.reportCount ?? 0,
                     createdAt: data.createdAt?.toDate?.() ?? new Date(),
                     hidden: data.hidden ?? false,
+                    authorId: data.authorId,
                 });
             });
             return { items, nextCursor: snap.docs.length > 0 ? snap.docs[snap.docs.length - 1] : null };
@@ -800,6 +806,7 @@ export const DuaWall = {
                     reportCount: data.reportCount ?? 0,
                     createdAt: data.createdAt?.toDate?.() ?? new Date(),
                     hidden: data.hidden ?? false,
+                    authorId: data.authorId,
                 });
             });
             // Sort: reported first (desc reportCount), then by recency

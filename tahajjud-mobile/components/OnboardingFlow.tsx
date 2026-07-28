@@ -29,6 +29,8 @@ import Paywall from './Paywall';
 import { GoogleAuthProvider, OAuthProvider } from 'firebase/auth';
 import { getFirebaseAuth, upgradeAnonymousAccount } from '../utils/firebase';
 import { friendlyAuthErrorMessage } from '../utils/authErrors';
+import { Linking } from 'react-native';
+import { APP_URLS } from '../utils/urls';
 import { birthYearOptions, meetsCommunityAge, setAgeStatus } from '../utils/ageGate';
 
 // Safe requires for native modules not available in Expo Go
@@ -429,6 +431,19 @@ export function OnboardingFlow({ onComplete }: Props) {
                             >
                                 <Text style={styles.ctaText}>{t('btn.continue')}</Text>
                             </TouchableOpacity>
+                            {/* Guideline 1.2 expects UGC apps to surface an
+                                agreement with a zero-tolerance policy for
+                                objectionable content before the user can post.
+                                Shown here because this is the last screen
+                                before the community becomes reachable. */}
+                            <TouchableOpacity
+                                onPress={() => Linking.openURL(APP_URLS.terms)}
+                                hitSlop={{ top: 8, bottom: 8, left: 12, right: 12 }}
+                            >
+                                <Text style={[styles.termsText, { color: colors.secondaryText }]}>
+                                    {t('onboard.age.terms')}
+                                </Text>
+                            </TouchableOpacity>
                         </>
                     )}
                 </View>
@@ -530,6 +545,7 @@ const styles = StyleSheet.create({
         backgroundColor: 'rgba(255,255,255,0.04)', alignItems: 'center',
     },
     yearText: { fontSize: 16, fontWeight: '700' },
+    termsText: { fontSize: 11.5, lineHeight: 16, textAlign: 'center', marginTop: 14, textDecorationLine: 'underline' },
     root: { flex: 1, alignItems: 'center' },
     dots: {
         flexDirection: 'row', gap: 8,
