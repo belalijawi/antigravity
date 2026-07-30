@@ -55,6 +55,8 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { t } from './utils/i18n';
 import { WelcomeScreen } from './components/WelcomeScreen';
 import { OnboardingFlow, hasCompletedOnboarding } from './components/OnboardingFlow';
+import { AgeAssuranceGate } from './components/AgeAssuranceGate';
+import { getAgeStatus } from './utils/ageGate';
 import { HomeTab } from './components/HomeTab';
 import { GuideTab } from './components/GuideTab';
 import { DuasTab } from './components/DuasTab';
@@ -608,6 +610,10 @@ function AppNavigator() {
   // Tracks whether the user has completed the multi-step onboarding flow
   // (separate from the legacy name-entry "onboarded" flag).
   const [needsOnboardingFlow, setNeedsOnboardingFlow] = useState<boolean | null>(null);
+  // Retroactive age check for users who installed before the age gate
+  // existed — they skip needsOnboardingFlow entirely (already onboarded),
+  // so without this they'd never be asked at all. See AgeAssuranceGate.tsx.
+  const [needsAgeGate, setNeedsAgeGate] = useState(false);
   const { setUserName } = useTheme();
 
   // Load Mushaf-quality Arabic font once at startup. If it fails (e.g.
@@ -713,6 +719,14 @@ function AppNavigator() {
       // need a feature walkthrough.
       const completed = await hasCompletedOnboarding();
       setNeedsOnboardingFlow(!completed && onboarded !== 'true');
+      // Users onboarded before the age gate existed skip needsOnboardingFlow
+      // entirely, so they'd never be asked at all without this — see
+      // AgeAssuranceGate.tsx. New installs answer it inside OnboardingFlow
+      // instead, so this only applies to the already-onboarded case.
+      if (onboarded === 'true') {
+        const ageStatus = await getAgeStatus();
+        setNeedsAgeGate(ageStatus === null);
+      }
     } catch (e) {
       setIsOnboarded(false);
       setNeedsOnboardingFlow(true);
@@ -755,6 +769,12 @@ function AppNavigator() {
   // After name-entry, show the multi-step feature walkthrough — once.
   if (needsOnboardingFlow) {
     return <OnboardingFlow onComplete={() => setNeedsOnboardingFlow(false)} />;
+  }
+
+  // Retroactive age check for pre-existing installs — see the comment on
+  // needsAgeGate above.
+  if (needsAgeGate) {
+    return <AgeAssuranceGate onComplete={() => setNeedsAgeGate(false)} />;
   }
 
   return <MainAppWithPaywall />;

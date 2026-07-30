@@ -21,7 +21,7 @@
 import {
     collection, doc, getDoc, setDoc, updateDoc, deleteDoc, getDocs,
     query, where, orderBy, limit, getCountFromServer, getAggregateFromServer, sum,
-    serverTimestamp, increment, writeBatch, Timestamp,
+    serverTimestamp, increment, writeBatch, runTransaction, Timestamp,
 } from 'firebase/firestore';
 import { getISOWeek, getISOWeekYear } from 'date-fns';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -37,6 +37,32 @@ export type LeaderboardWindow = 'week' | 'allTime';
 // while Top 10/Top 50 give newer/smaller boards a milestone to reach for
 // too, rather than only ever mattering once someone's already near the top.
 const RANK_TIERS = [1, 3, 10, 50];
+
+// Guards checkRankMilestones against overlapping calls for the same metric.
+// getMyRank always does a fresh, uncached Firestore round-trip (getDoc +
+// getCountFromServer) — if two syncDelta calls for the same metric land close
+// together (e.g. a debounced flush racing another sync trigger), each would
+// independently query mid-flight and could see different transient states,
+// producing flapping "climbed"/"dropped" notifications for the same
+// metric+window a few seconds apart even though nothing really changed.
+// Coalescing means the second call is a no-op — safe, because syncDelta
+// always writes its own Firestore update BEFORE calling this, so whichever
+// call actually runs already sees both increments.
+const rankCheckInFlight = new Set<LeaderboardMetric>();
+
+// Second layer of defense on top of rankCheckInFlight above. Keyed by METRIC
+// alone, not metric+window: checkRankMilestones checks 'week' then 'allTime'
+// back-to-back for the same metric, and a real, busy leaderboard can easily
+// have one window's rank climb while the other's drops in the same instant
+// (someone else's concurrent write landing between the two independent
+// getMyRank round-trips). That reads as flatly contradictory spam to the
+// user ("climbed all-time" + "dropped weekly" a second apart) even though
+// each individual number is technically accurate — so only the first
+// tier-change notification for a metric gets through per cooldown window,
+// regardless of which window it came from.
+const lastTierNotifyAt = new Map<LeaderboardMetric, number>();
+const TIER_NOTIFY_COOLDOWN_MS = 30_000;
+
 function tierFor(rank: number): number {
     for (const tier of RANK_TIERS) if (rank <= tier) return tier;
     return Infinity;
@@ -205,22 +231,40 @@ export const Leaderboard = {
             if (!user) return;
             const db = getFirebaseDb();
             const ref = doc(db, 'leaderboard', user.uid);
-            const snap = await getDoc(ref);
-            if (!snap.exists()) return; // not opted in — nothing to sync
 
-            const data = snap.data() as any;
-            const isNewWeek = data.weekKey !== currentWeekKey();
-            const batch = writeBatch(db);
-            batch.update(ref, {
-                weekKey: currentWeekKey(),
-                [`${metric}.allTime`]: increment(delta),
-                // A genuine rollover REPLACES the weekly figure (rules allow
-                // this specific case even though it's a "decrease"); a
-                // same-week sync just increments it like allTime.
-                [`${metric}.week`]: isNewWeek ? delta : increment(delta),
-                updatedAt: serverTimestamp(),
+            // A Firestore TRANSACTION, not a plain getDoc()+writeBatch(). This
+            // metric's write depends on a decision (has the week rolled over?)
+            // made from a value read a moment earlier — a plain read-then-write
+            // has a window where a second sync for a DIFFERENT metric on this
+            // same doc (dhikr/quranAyahs/tahajjud all share one `weekKey`) can
+            // land in between, based on the same stale "not yet rolled over"
+            // read. Whichever write commits second would then overwrite the
+            // week figure with just ITS OWN delta instead of adding to what the
+            // first write already contributed — the leaderboard equivalent of
+            // the local dhikr-count bug already fixed in TasbeehCard.tsx,
+            // just on the server side instead of in a React closure. A
+            // transaction retries automatically with a fresh read if the doc
+            // changed since it was read, so this can't happen regardless of
+            // how many syncs land close together.
+            await runTransaction(db, async (tx) => {
+                const snap = await tx.get(ref);
+                if (!snap.exists()) return; // not opted in — nothing to sync
+                const data = snap.data() as any;
+                const isNewWeek = data.weekKey !== currentWeekKey();
+                const priorWeek = (data[metric]?.week ?? 0) as number;
+                const priorAllTime = (data[metric]?.allTime ?? 0) as number;
+                tx.update(ref, {
+                    weekKey: currentWeekKey(),
+                    [`${metric}.allTime`]: priorAllTime + delta,
+                    // A genuine rollover REPLACES the weekly figure (rules
+                    // allow this specific case even though it's a
+                    // "decrease"); a same-week sync adds to it like allTime.
+                    // Both computed from THIS transaction's own read, so a
+                    // retry always adds on top of whatever is truly there.
+                    [`${metric}.week`]: isNewWeek ? delta : priorWeek + delta,
+                    updatedAt: serverTimestamp(),
+                });
             });
-            await batch.commit();
             // Fire-and-forget: did this sync move the rank across a
             // meaningful tier (Top 1/3/10/50) for either window? Every
             // periodic count sync goes through this one function regardless
@@ -241,9 +285,15 @@ export const Leaderboard = {
     /** Check both windows' rank for one metric and notify locally if either
      * crossed a meaningful tier boundary since the last check. */
     async checkRankMilestones(metric: LeaderboardMetric): Promise<void> {
-        for (const window of ['week', 'allTime'] as LeaderboardWindow[]) {
-            const rank = await this.getMyRank(metric, window);
-            if (rank) await this.trackRank(metric, window, rank.rank);
+        if (rankCheckInFlight.has(metric)) return;
+        rankCheckInFlight.add(metric);
+        try {
+            for (const window of ['week', 'allTime'] as LeaderboardWindow[]) {
+                const rank = await this.getMyRank(metric, window);
+                if (rank) await this.trackRank(metric, window, rank.rank);
+            }
+        } finally {
+            rankCheckInFlight.delete(metric);
         }
     },
 
@@ -286,6 +336,9 @@ export const Leaderboard = {
         const prevTier = tierFor(prevRank);
         const newTier = tierFor(newRank);
         if (newTier === prevTier) return;
+        const lastAt = lastTierNotifyAt.get(metric) ?? 0;
+        if (Date.now() - lastAt < TIER_NOTIFY_COOLDOWN_MS) return;
+        lastTierNotifyAt.set(metric, Date.now());
         const metricLabel = METRIC_LABELS[metric];
         const windowLabel = window === 'week' ? 'this week' : 'all-time';
         const { notifyNow } = await import('./notifications');

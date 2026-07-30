@@ -10,7 +10,7 @@
 import React, { useState } from 'react';
 import {
     View, Text, StyleSheet, TouchableOpacity,
-    Platform, ActivityIndicator, Alert, ScrollView,
+    Platform, ActivityIndicator, Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -31,7 +31,8 @@ import { getFirebaseAuth, upgradeAnonymousAccount } from '../utils/firebase';
 import { friendlyAuthErrorMessage } from '../utils/authErrors';
 import { Linking } from 'react-native';
 import { APP_URLS } from '../utils/urls';
-import { birthYearOptions, meetsCommunityAge, setAgeStatus } from '../utils/ageGate';
+import { MIN_COMMUNITY_AGE, MAX_AGE_SLIDER, meetsCommunityAge, setAgeStatus } from '../utils/ageGate';
+import Slider from '@react-native-community/slider';
 
 // Safe requires for native modules not available in Expo Go
 let AppleAuthentication: typeof import('expo-apple-authentication') | null = null;
@@ -67,7 +68,7 @@ const SLIDES: Slide[] = [
     {
         icon: CalendarDays,
         title: 'onboard.age.title',
-        body: 'onboard.age.body',
+        body: 'onboard.age.requirement',
         action: 'age',
     },
     {
@@ -131,8 +132,8 @@ interface Props {
 export function OnboardingFlow({ onComplete }: Props) {
     // Age assurance — see utils/ageGate.ts. `blocked` is a dead end on
     // purpose: an under-13 answer cannot be walked back by tapping Continue,
-    // only by correcting a genuinely mistyped year.
-    const [birthYear, setBirthYearState] = useState<number | null>(null);
+    // only by dragging the slider to a genuinely different age.
+    const [age, setAge] = useState(MIN_COMMUNITY_AGE);
     const [ageBlocked, setAgeBlocked] = useState(false);
     const { colors } = useTheme();
     const [step, setStep] = useState(0);
@@ -363,9 +364,9 @@ export function OnboardingFlow({ onComplete }: Props) {
                 <Text style={[styles.body, { color: colors.secondaryText }]}>{slide.body ? t(slide.body) : ''}</Text>
             </Animated.View>
 
-            {/* Age assurance — neutral birth-year question, never a
-                "are you over 13?" yes/no (which just tells a child which
-                answer unlocks the app). Year only, stored on-device. */}
+            {/* Age assurance — a slider rather than a stark "are you over 13?"
+                yes/no (which just tells a child which answer unlocks the
+                app). Age only, stored on-device, never persisted. */}
             {slide.action === 'age' ? (
                 <View style={styles.footer}>
                     {ageBlocked ? (
@@ -375,7 +376,7 @@ export function OnboardingFlow({ onComplete }: Props) {
                             </Text>
                             <TouchableOpacity
                                 style={[styles.socialBtn, { backgroundColor: 'rgba(255,255,255,0.08)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.15)' }]}
-                                onPress={() => { haptic.light(); setAgeBlocked(false); setBirthYearState(null); }}
+                                onPress={() => { haptic.light(); setAgeBlocked(false); setAge(MIN_COMMUNITY_AGE); }}
                                 activeOpacity={0.85}
                             >
                                 <Text style={[styles.socialBtnText, { color: colors.primaryText }]}>{t('onboard.age.change')}</Text>
@@ -383,41 +384,40 @@ export function OnboardingFlow({ onComplete }: Props) {
                         </>
                     ) : (
                         <>
-                            <ScrollView
-                                style={styles.yearList}
-                                showsVerticalScrollIndicator={false}
-                                contentContainerStyle={{ paddingVertical: 4 }}
-                            >
-                                {birthYearOptions().map(y => {
-                                    const active = y === birthYear;
-                                    return (
-                                        <TouchableOpacity
-                                            key={y}
-                                            onPress={() => { haptic.light(); setBirthYearState(y); }}
-                                            style={[
-                                                styles.yearRow,
-                                                active && { backgroundColor: colors.accent + '22', borderColor: colors.accent + '66' },
-                                            ]}
-                                            accessibilityRole="button"
-                                            accessibilityState={{ selected: active }}
-                                        >
-                                            <Text style={[styles.yearText, { color: active ? colors.accent : colors.primaryText }]}>{y}</Text>
-                                        </TouchableOpacity>
-                                    );
-                                })}
-                            </ScrollView>
+                            <View style={styles.ageDisplay}>
+                                <Text style={[styles.ageNumber, { color: colors.primaryText }]}>{age}</Text>
+                            </View>
+                            <Slider
+                                style={styles.ageSlider}
+                                minimumValue={MIN_COMMUNITY_AGE}
+                                maximumValue={MAX_AGE_SLIDER}
+                                step={1}
+                                value={age}
+                                onValueChange={(v: number) => {
+                                    const rounded = Math.round(v);
+                                    setAge(prev => {
+                                        if (rounded !== prev) haptic.selection();
+                                        return rounded;
+                                    });
+                                }}
+                                minimumTrackTintColor={colors.accent}
+                                maximumTrackTintColor="rgba(255,255,255,0.15)"
+                                thumbTintColor={colors.accent}
+                            />
+                            <View style={styles.ageBounds}>
+                                <Text style={[styles.ageBoundText, { color: colors.secondaryText }]}>{MIN_COMMUNITY_AGE}</Text>
+                                <Text style={[styles.ageBoundText, { color: colors.secondaryText }]}>{MAX_AGE_SLIDER}</Text>
+                            </View>
+                            <Text style={[styles.ageNote, { color: colors.secondaryText }]}>
+                                {t('onboard.age.body')}
+                            </Text>
                             <TouchableOpacity
-                                style={[
-                                    styles.cta,
-                                    { backgroundColor: colors.accent, marginTop: 14, opacity: birthYear ? 1 : 0.4 },
-                                ]}
-                                disabled={!birthYear}
+                                style={[styles.cta, { backgroundColor: colors.accent, marginTop: 18 }]}
                                 onPress={async () => {
-                                    if (!birthYear) return;
                                     haptic.light();
                                     // Only the pass/fail result is persisted —
-                                    // the year itself never leaves this state.
-                                    const passed = meetsCommunityAge(birthYear);
+                                    // the age itself never leaves this state.
+                                    const passed = meetsCommunityAge(age);
                                     await setAgeStatus(passed);
                                     if (!passed) {
                                         track('onboarding_age_blocked');
@@ -538,13 +538,12 @@ export async function hasCompletedOnboarding(): Promise<boolean> {
 }
 
 const styles = StyleSheet.create({
-    yearList: { maxHeight: 260, alignSelf: 'stretch' },
-    yearRow: {
-        paddingVertical: 12, borderRadius: 12, marginBottom: 6,
-        borderWidth: 1, borderColor: 'rgba(255,255,255,0.08)',
-        backgroundColor: 'rgba(255,255,255,0.04)', alignItems: 'center',
-    },
-    yearText: { fontSize: 16, fontWeight: '700' },
+    ageDisplay: { alignItems: 'center', marginBottom: 8 },
+    ageNumber: { fontSize: 56, fontWeight: '800' },
+    ageSlider: { width: '100%', height: 40 },
+    ageBounds: { flexDirection: 'row', justifyContent: 'space-between', alignSelf: 'stretch', marginTop: -4 },
+    ageBoundText: { fontSize: 12, fontWeight: '600' },
+    ageNote: { fontSize: 12.5, lineHeight: 17, textAlign: 'center', marginTop: 16, paddingHorizontal: 8 },
     termsText: { fontSize: 11.5, lineHeight: 16, textAlign: 'center', marginTop: 14, textDecorationLine: 'underline' },
     root: { flex: 1, alignItems: 'center' },
     dots: {

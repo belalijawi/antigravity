@@ -108,6 +108,20 @@ export function TasbeehCard() {
     const goalCelebratedRef = useRef<string>(''); // tracks which day+goal we already celebrated
     const hasLoadedRef      = useRef(false);       // prevents celebration firing on initial mount
     const prevGoalRef       = useRef<number>(0);   // detects goal changes vs count crossings
+    // Authoritative, always-synchronous mirrors of `sessions`/`count`. A user
+    // tapping fast enough (confirmed via a screen recording: the daily total
+    // visibly DROPPED by whole rounds instead of climbing) can fire handleTap
+    // several times before React commits a re-render — so the `sessions`/
+    // `count` STATE these closures capture is stale for every tap after the
+    // first in that burst. Each stale-based saveSession() computed its own
+    // `[newSession, ...sessions]` from the SAME outdated array and called
+    // setSessions() with it; only the last of those calls to run "won", and
+    // the sessions every other call in the burst had just added were silently
+    // thrown away — a real, permanent loss of completed rounds, not a
+    // rendering glitch. Refs are mutated synchronously, so every tap in a
+    // burst sees the previous tap's write immediately, before any render.
+    const sessionsRef = useRef<Session[]>([]);
+    const countRef    = useRef(0);
 
     const BUILT_IN = getBuiltIn();
     const allDhikrs: Dhikr[] = [...BUILT_IN, ...customDhikrs];
@@ -125,7 +139,7 @@ export function TasbeehCard() {
             ]);
             // Guard: only accept arrays — corrupt/migrated storage could hold a
             // non-array, which would crash .filter/.reduce at render time.
-            if (rawSessions) { const s = JSON.parse(rawSessions); if (Array.isArray(s)) setSessions(s); }
+            if (rawSessions) { const s = JSON.parse(rawSessions); if (Array.isArray(s)) { setSessions(s); sessionsRef.current = s; } }
             if (rawCustom)   { const c = JSON.parse(rawCustom);   if (Array.isArray(c)) setCustomDhikrs(c); }
             if (rawGoal)     setDailyGoal(parseInt(rawGoal, 10) || 0);
         } catch (_) {}
@@ -223,7 +237,10 @@ export function TasbeehCard() {
             count:      finalCount,
             date:       new Date().toISOString(),
         };
-        const updated = [session, ...sessions].slice(0, 100);
+        // Built from the REF, not the `sessions` state closure — see
+        // sessionsRef's own comment for why that closure can be stale.
+        const updated = [session, ...sessionsRef.current].slice(0, 100);
+        sessionsRef.current = updated;
         setSessions(updated);
         try { await AsyncStorage.setItem(SESSIONS_KEY, JSON.stringify(updated)); } catch (_) {}
         // Analytics: report the number of presses so PostHog can SUM them into a
@@ -234,7 +251,13 @@ export function TasbeehCard() {
 
     // ── Counter tap ───────────────────────────────────────────────────────────
     const handleTap = useCallback(() => {
-        const newCount = count + 1;
+        // Read/write countRef, not the `count` state closure — same
+        // staleness risk as sessions above, and the more visible symptom of
+        // it: without this, a fast enough burst computes the identical
+        // `newCount` for several taps in a row (each reads the same stale
+        // `count`), so real taps are silently dropped from the ring even
+        // though the haptic/analytics for each one still fires.
+        const newCount = countRef.current + 1;
         if (Platform.OS === 'ios') Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
         else Vibration.vibrate(20);
 
@@ -252,6 +275,7 @@ export function TasbeehCard() {
         );
 
         if (newCount >= dhikr.target) {
+            countRef.current = 0;
             setRounds(r => r + 1);
             setCount(0);
             if (Platform.OS === 'ios') Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
@@ -259,19 +283,22 @@ export function TasbeehCard() {
             saveSession(dhikr.target);
             import('../utils/analytics').then(m => m.track('tasbeeh_round', { dhikr: dhikr.id, target: dhikr.target })).catch(() => {});
         } else {
+            countRef.current = newCount;
             setCount(newCount);
         }
-    }, [count, dhikr, rounds, sessions]);
+    }, [dhikr]);
 
     const handleReset = () => {
-        if (count > 0) saveSession(count);
+        if (countRef.current > 0) saveSession(countRef.current);
+        countRef.current = 0;
         setCount(0);
         setRounds(0);
     };
 
     const selectDhikr = (index: number) => {
-        if (count > 0) saveSession(count);
+        if (countRef.current > 0) saveSession(countRef.current);
         setSelectedIndex(index);
+        countRef.current = 0;
         setCount(0);
         setRounds(0);
     };

@@ -887,8 +887,14 @@ export function DuaWallModal({ visible, onClose, focusDuaId, inline }: Props) {
                             onPress={() => {
                                 haptic.light();
                                 if (!isPremium) {
-                                    if (inline) openPaywall('feature_gate:dua_map_pin', 'dua_map_pin');
-                                    else setPaywallOverlay({ source: 'feature_gate:dua_map_pin', featureId: 'dua_map_pin' });
+                                    // Always the in-place overlay, never the
+                                    // root-level openPaywall(): the compose
+                                    // form is itself a full-screen overlay, and
+                                    // routing through a root Modal from here
+                                    // silently presented nothing at all — the
+                                    // tap looked completely dead. Same trap the
+                                    // Leaderboard hit.
+                                    setPaywallOverlay({ source: 'feature_gate:dua_map_pin', featureId: 'dua_map_pin' });
                                     return;
                                 }
                                 setShowOnMap(v => !v);
@@ -1010,8 +1016,13 @@ export function DuaWallModal({ visible, onClose, focusDuaId, inline }: Props) {
 
                 {/* ══ Paywall overlay — same plain-View pattern as compose (see
                     note above): a Modal here would silently fail to present.
-                    Modal mode only — inline uses the global paywall route. ══ */}
-                {!inline && paywallOverlay && (
+                    Rendered in INLINE mode too. It used to be modal-only, with
+                    inline deferring to the root-level openPaywall(), which
+                    never appeared — so the premium map-pin toggle did nothing
+                    when the wall was opened as the Duas tab segment (its normal
+                    home). Declared after the compose overlay so it paints on
+                    top of the form that launched it. ══ */}
+                {paywallOverlay && (
                     <View style={styles.composeOverlay}>
                         <Paywall
                             onClose={() => setPaywallOverlay(null)}
