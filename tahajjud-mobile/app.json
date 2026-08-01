@@ -63,7 +63,7 @@
         "FOREGROUND_SERVICE_MEDIA_PLAYBACK"
       ],
       "package": "com.tahajjudplus.app",
-      "versionCode": 29,
+      "versionCode": 37,
       "googleServicesFile": "./google-services.json",
       "edgeToEdgeEnabled": true,
       "predictiveBackGestureEnabled": false
