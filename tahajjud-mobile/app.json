@@ -2,7 +2,7 @@
   "expo": {
     "name": "Tahajjud+",
     "slug": "tahajjud-plus",
-    "version": "1.9.0",
+    "version": "1.9.1",
     "scheme": "tahajjud-plus",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
@@ -17,7 +17,7 @@
       "supportsTablet": true,
       "bundleIdentifier": "com.tahajjudplus.app",
       "appStoreUrl": "https://apps.apple.com/app/id6759176533",
-      "buildNumber": "109",
+      "buildNumber": "110",
       "googleServicesFile": "./GoogleService-Info.plist",
       "entitlements": {
         "com.apple.developer.usernotifications.time-sensitive": true
