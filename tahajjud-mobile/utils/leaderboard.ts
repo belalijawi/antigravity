@@ -26,6 +26,7 @@ import {
 import { getISOWeek, getISOWeekYear } from 'date-fns';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { getFirebaseAuth, getFirebaseDb, ensureSignedIn } from './firebase';
+import RevenueCatService from '../services/revenueCat';
 
 export type LeaderboardMetric = 'dhikr' | 'quranAyahs' | 'tahajjud';
 export type LeaderboardWindow = 'week' | 'allTime';
@@ -86,6 +87,12 @@ export interface LeaderboardEntry {
     nickname: string;
     country?: string; // ISO alpha-2, e.g. "US" — self-reported, see utils/countries.ts
     value: number;
+    // Quiet supporter mark, same visual as the Dua Wall's comment badge —
+    // unlike that one this is refreshed on every opt-in/count sync rather
+    // than frozen at post time, since a leaderboard row is long-lived and
+    // should reflect current status, not a snapshot from whenever someone
+    // first opted in.
+    isPremium?: boolean;
 }
 
 export interface LeaderboardStatus {
@@ -175,11 +182,15 @@ export const Leaderboard = {
             const db = getFirebaseDb();
             const ref = doc(db, 'leaderboard', user.uid);
             const existing = await getDoc(ref);
+            // Best-effort — a failed RevenueCat call shouldn't block opting in;
+            // worst case the badge is just missing until the next sync.
+            const isPremium = await RevenueCatService.checkPremiumStatus().catch(() => false);
             if (existing.exists()) {
                 // Renaming/re-flagging — leave counts untouched.
                 await updateDoc(ref, {
                     nickname: nickname.trim(),
                     ...(countryCode ? { country: countryCode } : {}),
+                    isPremium,
                 });
             } else {
                 await setDoc(ref, {
@@ -191,6 +202,7 @@ export const Leaderboard = {
                     tahajjud: { week: 0, allTime: 0 },
                     reportCount: 0,
                     hidden: false,
+                    isPremium,
                     updatedAt: serverTimestamp(),
                 });
             }
@@ -199,6 +211,32 @@ export const Leaderboard = {
             console.error('[Leaderboard] optIn error', e);
             return { ok: false, error: 'firestore-error' };
         }
+    },
+
+    /**
+     * Refresh just the premium badge flag — call with a value the caller
+     * ALREADY has in hand (usePurchases()'s isPremium), never fetches its
+     * own RevenueCat status. Deliberately kept separate from syncDelta:
+     * that function is fired from the dhikr/Quran debounced flush at the
+     * exact moment the app is backgrounding (see App.tsx), which already
+     * races iOS suspending the process — adding another async round-trip
+     * there would only make that worse. The Leaderboard screen already
+     * knows isPremium for free, so it calls this on open instead. Silently
+     * no-ops if not opted in (no doc to update) or if the value hasn't
+     * actually changed since the last write.
+     */
+    async updatePremiumFlag(isPremium: boolean): Promise<void> {
+        try {
+            await ensureSignedIn();
+            const user = getFirebaseAuth()?.currentUser;
+            if (!user) return;
+            const db = getFirebaseDb();
+            const ref = doc(db, 'leaderboard', user.uid);
+            const snap = await getDoc(ref);
+            if (!snap.exists()) return;
+            if ((snap.data() as any).isPremium === isPremium) return; // already current
+            await updateDoc(ref, { isPremium });
+        } catch { /* best-effort — badge staleness isn't worth surfacing an error over */ }
     },
 
     /** Opt out — deletes the doc entirely. Nothing lingers. */
@@ -383,6 +421,7 @@ export const Leaderboard = {
                 nickname: (d.data() as any).nickname ?? 'Anonymous',
                 country: (d.data() as any).country,
                 value: (d.data() as any)[metric]?.[window] ?? 0,
+                isPremium: (d.data() as any).isPremium ?? false,
             }));
         } catch (e) {
             console.error('[Leaderboard] getTopN error', e);
@@ -498,6 +537,7 @@ export const Leaderboard = {
                 nickname: (d.data() as any).nickname ?? 'Anonymous',
                 country: (d.data() as any).country,
                 value: (d.data() as any)[metric]?.[window] ?? 0,
+                isPremium: (d.data() as any).isPremium ?? false,
             });
             const [aboveSnap, belowSnap] = await Promise.all([
                 // Closest above me: smallest values that still beat mine,

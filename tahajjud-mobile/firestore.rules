@@ -458,12 +458,17 @@ service cloud.firestore {
 
       allow update: if request.auth != null && request.auth.uid == uid
         && (
-          // Renaming / changing country — no counts touched.
-          (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['nickname', 'country'])
+          // Renaming / changing country / refreshing the premium badge —
+          // no counts touched. isPremium is purely cosmetic (doesn't affect
+          // ranking), so it rides along in this same branch rather than
+          // needing its own — covers both optIn()'s combined write and
+          // updatePremiumFlag()'s standalone one.
+          (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['nickname', 'country', 'isPremium'])
             && request.resource.data.nickname is string
             && request.resource.data.nickname.size() >= 1
             && request.resource.data.nickname.size() <= 24
-            && countryOk())
+            && countryOk()
+            && (!('isPremium' in request.resource.data) || request.resource.data.isPremium is bool))
           // Score sync — dhikr/quranAyahs/tahajjud, always with the weekKey +
           // updatedAt stamp. A sync touching only one metric leaves the
           // others' nested maps untouched, which the delta checks below

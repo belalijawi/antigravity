@@ -13,7 +13,7 @@ import {
 import { LinearGradient } from 'expo-linear-gradient';
 import * as Localization from 'expo-localization';
 import { GlassBg as BlurView } from './GlassBg';
-import { X, Trophy, Flag, ChevronRight, Pencil, ChevronUp, ChevronDown, Info } from 'lucide-react-native';
+import { X, Trophy, Flag, ChevronRight, Pencil, ChevronUp, ChevronDown, Info, Crown } from 'lucide-react-native';
 import { useTheme } from '../context/ThemeContext';
 import { haptic } from '../utils/haptic';
 import { t } from '../utils/i18n';
@@ -246,6 +246,13 @@ export function LeaderboardModal({ visible, onClose }: Props) {
                     if (suggested && isValidCountryCode(suggested)) setCountryCode(suggested);
                 });
             } else {
+                // Refresh the premium badge from the value this screen
+                // already has for free (usePurchases()) — no RevenueCat
+                // call needed. Deliberately not part of syncDelta, which
+                // fires from a background flush that already races app
+                // suspension (see App.tsx); this only ever runs while the
+                // screen is open and fully foregrounded.
+                Leaderboard.updatePremiumFlag(isPremium).catch(() => {});
                 // Already opted in — silently re-sync if the name/country
                 // changed on another surface (Dua Wall, Settings, a comment)
                 // since the last time this was saved here, so the public
@@ -397,7 +404,7 @@ export function LeaderboardModal({ visible, onClose }: Props) {
             const myRankNum = myRank.rank;
             const combined = [
                 ...above.map((e, i) => ({ ...e, rank: myRankNum - (above.length - i), isMe: false })),
-                { uid: 'me', nickname: status.nickname ?? '', country: status.country, value: myRank.value, rank: myRankNum, isMe: true },
+                { uid: 'me', nickname: status.nickname ?? '', country: status.country, value: myRank.value, isPremium, rank: myRankNum, isMe: true },
                 ...below.map((e, i) => ({ ...e, rank: myRankNum + 1 + i, isMe: false })),
             ];
             setNearbyList(combined);
@@ -810,9 +817,15 @@ export function LeaderboardModal({ visible, onClose }: Props) {
                                                     {isTop3 ? MEDALS[item.rank - 1] : String(item.rank)}
                                                 </Text>
                                                 {!!item.country && <Text style={styles.rowFlag}>{flagEmoji(item.country)}</Text>}
-                                                <Text style={[styles.nickname, { color: item.isMe ? colors.accent : colors.primaryText }, item.isMe && { fontWeight: '800' }]} numberOfLines={1}>
-                                                    {item.isMe ? t('leaderboard.you') : item.nickname}
-                                                </Text>
+                                                <View style={styles.nicknameRow}>
+                                                    <Text style={[styles.nickname, { color: item.isMe ? colors.accent : colors.primaryText }, item.isMe && { fontWeight: '800' }]} numberOfLines={1}>
+                                                        {item.isMe ? t('leaderboard.you') : item.nickname}
+                                                    </Text>
+                                                    {/* Quiet supporter mark, same as the Dua Wall's comment badge */}
+                                                    {item.isPremium && (
+                                                        <Crown size={10} color="#fbbf24" fill="#fbbf24" strokeWidth={2} accessibilityLabel="Premium supporter" />
+                                                    )}
+                                                </View>
                                                 <Text style={[styles.value, { color: isTop3 ? '#fbbf24' : colors.accent }]}>
                                                     {item.value.toLocaleString()}
                                                 </Text>
@@ -866,9 +879,15 @@ export function LeaderboardModal({ visible, onClose }: Props) {
                                                 {isTop3 ? MEDALS[index] : String(index + 1)}
                                             </Text>
                                             {!!item.country && <Text style={styles.rowFlag}>{flagEmoji(item.country)}</Text>}
-                                            <Text style={[styles.nickname, { color: colors.primaryText }]} numberOfLines={1}>
-                                                {item.nickname}
-                                            </Text>
+                                            <View style={styles.nicknameRow}>
+                                                <Text style={[styles.nickname, { color: colors.primaryText }]} numberOfLines={1}>
+                                                    {item.nickname}
+                                                </Text>
+                                                {/* Quiet supporter mark, same as the Dua Wall's comment badge */}
+                                                {item.isPremium && (
+                                                    <Crown size={10} color="#fbbf24" fill="#fbbf24" strokeWidth={2} accessibilityLabel="Premium supporter" />
+                                                )}
+                                            </View>
                                             <Text style={[styles.value, { color: isTop3 ? '#fbbf24' : colors.accent }]}>
                                                 {item.value.toLocaleString()}
                                             </Text>
@@ -1051,7 +1070,8 @@ const styles = StyleSheet.create({
     },
     rankSlot: { width: 26, textAlign: 'center', fontSize: 14, fontWeight: '800', color: '#64748b' },
     rowFlag: { fontSize: 14 },
-    nickname: { flex: 1, fontSize: 14, fontWeight: '600' },
+    nicknameRow: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 4 },
+    nickname: { flexShrink: 1, fontSize: 14, fontWeight: '600' },
     value: { fontSize: 13, fontWeight: '800' },
     flagBtn: { padding: 2 },
     leaveBtn: { alignItems: 'center', paddingVertical: 16 },
