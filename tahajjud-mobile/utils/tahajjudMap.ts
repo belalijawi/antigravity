@@ -293,6 +293,7 @@ export interface MapDua {
     lng: number;
     text: string;
     displayName: string;    // 'Anonymous' if the author didn't give a name
+    authorPremium?: boolean;
     answered: boolean;
     ameenCount: number;
     createdAt: Date;
@@ -360,6 +361,7 @@ export function subscribeMapDuas(
                             lng: data.lng,
                             text: data.text ?? '',
                             displayName: data.displayName ?? 'Anonymous',
+                            authorPremium: data.authorPremium ?? false,
                             answered: data.answered ?? false,
                             ameenCount: data.ameenCount ?? 0,
                             createdAt: data.createdAt?.toDate?.() ?? new Date(),

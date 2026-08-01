@@ -14,7 +14,7 @@ import { useNavigation } from '@react-navigation/native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { formatDistanceToNowStrict } from 'date-fns';
 import { GlassBg as BlurView } from './GlassBg';
-import { X, Moon, Plus, Minus, Globe, MapPin, Heart, MessageCircle, Flag, Sparkles } from 'lucide-react-native';
+import { X, Moon, Plus, Minus, Globe, MapPin, Heart, MessageCircle, Flag, Sparkles, Crown } from 'lucide-react-native';
 import { useTheme } from '../context/ThemeContext';
 import { subscribeTahajjudMap, subscribeMapDuas, MapDot, MapDua, MAP_DOT_LIMIT } from '../utils/tahajjudMap';
 import { DuaWall } from '../utils/duaWall';
@@ -842,6 +842,10 @@ export function GlobalTahajjudMap({ visible, onClose, onLiveTotal, serverTotal }
                                         <Text style={[styles.duaCardTitle, { color: colors.accent }]} numberOfLines={1}>
                                             {selectedDua.answered ? '✨' : '🤲'} {selectedDua.displayName || 'Anonymous'}
                                         </Text>
+                                        {/* Quiet supporter mark, same as CommentThread's */}
+                                        {selectedDua.authorPremium && (
+                                            <Crown size={10} color="#fbbf24" fill="#fbbf24" strokeWidth={2} accessibilityLabel="Premium supporter" />
+                                        )}
                                         {ownMapDuaIds.has(selectedDua.id) && (
                                             <View style={styles.ownBadge}>
                                                 <Text style={styles.ownBadgeText}>{t('globalMap.yourDua')}</Text>

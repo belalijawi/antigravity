@@ -1154,11 +1154,24 @@ const DuaCard = React.memo(function DuaCard({
 
             <View style={styles.cardFooter}>
                 <View style={styles.footerTop}>
-                    <Text style={styles.timeText} numberOfLines={1} ellipsizeMode="tail">
-                        {isSeed
-                            ? 'A community staple'
-                            : `${formatDuaAuthor(dua)} · ${formatDistanceToNowStrict(dua.createdAt)} ago`}
-                    </Text>
+                    {isSeed ? (
+                        <Text style={styles.timeText} numberOfLines={1} ellipsizeMode="tail">
+                            A community staple
+                        </Text>
+                    ) : (
+                        <View style={styles.authorRow}>
+                            <Text style={[styles.timeText, styles.authorName]} numberOfLines={1} ellipsizeMode="tail">
+                                {formatDuaAuthor(dua)}
+                            </Text>
+                            {/* Quiet supporter mark, same as CommentThread's */}
+                            {dua.authorPremium && (
+                                <Crown size={10} color="#fbbf24" fill="#fbbf24" strokeWidth={2} accessibilityLabel="Premium supporter" />
+                            )}
+                            <Text style={[styles.timeText, styles.authorTime]} numberOfLines={1}>
+                                {` · ${formatDistanceToNowStrict(dua.createdAt)} ago`}
+                            </Text>
+                        </View>
+                    )}
                     {isOwn ? (
                         <TouchableOpacity
                             onPress={onDelete}
@@ -1406,6 +1419,14 @@ const styles = StyleSheet.create({
         flex: 1,
         marginRight: 8,
     },
+    authorRow: {
+        flex: 1,
+        marginRight: 8,
+        flexDirection: 'row',
+        alignItems: 'center',
+    },
+    authorName: { flex: 0, flexShrink: 1, marginRight: 0 },
+    authorTime: { flex: 0, flexShrink: 0, marginRight: 0 },
     // Full-width row; the two reaction buttons flex equally so they always
     // fit inside the card and never overflow the edge.
     cardActions: { flexDirection: 'row', alignItems: 'center', gap: 10 },

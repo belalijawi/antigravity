@@ -92,6 +92,10 @@ export interface PublicDua {
     text: string;
     displayName?: string;   // optional first name; 'Anonymous' if not given
     country?: string;       // optional ISO country code, shown as "Name, Country"
+    // Quiet supporter mark, same as CommentThread's — snapshotted at publish
+    // time (like displayName/country above), not a live join against current
+    // subscription status.
+    authorPremium?: boolean;
     answered?: boolean;     // author marked this dua answered (one-way)
     answeredAt?: Date;
     ameenCount: number;
@@ -353,6 +357,7 @@ export const DuaWall = {
                 // Same optional-name pattern as comments: always a non-empty
                 // string, defaulting to 'Anonymous' — never left unset.
                 displayName: (opts?.displayName ?? '').trim().slice(0, MAX_NAME_LENGTH) || 'Anonymous',
+                authorPremium: opts?.isPremium ?? false,
                 ameenCount: 0,
                 reportCount: 0,
                 authorId: user.uid, // server-only field
@@ -439,6 +444,7 @@ export const DuaWall = {
                         id: d.id,
                         text: data.text ?? '',
                         displayName: data.displayName ?? 'Anonymous',
+                authorPremium: data.authorPremium ?? false,
                         country: data.country ?? undefined,
                         answered: data.answered ?? false,
                         answeredAt: data.answeredAt?.toDate?.() ?? undefined,
@@ -488,6 +494,7 @@ export const DuaWall = {
                 id: snap.id,
                 text: data.text ?? '',
                 displayName: data.displayName ?? 'Anonymous',
+                authorPremium: data.authorPremium ?? false,
                 country: data.country ?? undefined,
                 answered: data.answered ?? false,
                 answeredAt: data.answeredAt?.toDate?.() ?? undefined,
@@ -534,6 +541,7 @@ export const DuaWall = {
                     id: d.id,
                     text: data.text ?? '',
                     displayName: data.displayName ?? 'Anonymous',
+                authorPremium: data.authorPremium ?? false,
                     country: data.country ?? undefined,
                     answered: true,
                     answeredAt: data.answeredAt?.toDate?.() ?? undefined,
@@ -799,6 +807,7 @@ export const DuaWall = {
                     id: d.id,
                     text: data.text ?? '',
                     displayName: data.displayName ?? 'Anonymous',
+                authorPremium: data.authorPremium ?? false,
                     country: data.country ?? undefined,
                     answered: data.answered ?? false,
                     answeredAt: data.answeredAt?.toDate?.() ?? undefined,

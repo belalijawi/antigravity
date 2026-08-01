@@ -4,7 +4,7 @@ import {
     ActivityIndicator, DeviceEventEmitter, TextInput, Alert,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
-import { Sparkles, Trash2 } from 'lucide-react-native';
+import { Sparkles, Trash2, Crown } from 'lucide-react-native';
 import { formatDistanceToNowStrict } from 'date-fns';
 import type { QueryDocumentSnapshot, DocumentData } from 'firebase/firestore';
 import { useTheme } from '../context/ThemeContext';
@@ -429,7 +429,13 @@ export function DuasHistoryScreen({ onClose, accent, onRequestPaywall, initialTa
                                     </Text>
                                 </View>
                                 <Text style={styles.duaText}>{item.text}</Text>
-                                <Text style={styles.meta}>{formatDuaAuthor(item)}</Text>
+                                <View style={styles.metaRow}>
+                                    <Text style={styles.meta}>{formatDuaAuthor(item)}</Text>
+                                    {/* Quiet supporter mark, same as CommentThread's */}
+                                    {item.authorPremium && (
+                                        <Crown size={10} color="#fbbf24" fill="#fbbf24" strokeWidth={2} accessibilityLabel="Premium supporter" />
+                                    )}
+                                </View>
                                 {/* The "share how it was answered" copy only
                                     makes sense to whoever this dua actually
                                     happened to — a stranger reading someone
@@ -500,6 +506,7 @@ const styles = StyleSheet.create({
     badgeRow: { flexDirection: 'row', alignItems: 'center', gap: 5 },
     badgeText: { color: '#fbbf24', fontSize: 11, fontWeight: '700' },
     duaText: { color: '#e2e8f0', fontSize: 14, lineHeight: 20 },
+    metaRow: { flexDirection: 'row', alignItems: 'center', gap: 4 },
     meta: { color: '#64748b', fontSize: 11, fontWeight: '600' },
     myDuaFooter: {
         flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
