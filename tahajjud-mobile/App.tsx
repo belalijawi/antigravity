@@ -401,7 +401,30 @@ function MainApp() {
     // comes back to the foreground, not just at cold start — otherwise a log
     // made while merely backgrounded wouldn't show up until a full relaunch.
     const appStateSub = AppState.addEventListener('change', (state) => {
-      if (state === 'active') drainPendingPrayerLogs().catch(() => {});
+      if (state === 'active') {
+        drainPendingPrayerLogs().catch(() => {});
+        // Rank-milestone notifications for dhikr/Quran are normally fired by
+        // checkRankMilestones right after the debounced flush below — but
+        // that flush is forced out at the exact moment the app is
+        // backgrounding, with no background-task extension requested, so
+        // iOS can suspend the process mid-chain before the (multi-network-
+        // round-trip) rank check ever reaches notifyNow(). In practice this
+        // made the notification only reliably appear when the Leaderboard
+        // screen was opened directly (its own trackRank call runs safely in
+        // the foreground) — never from background activity, which is the
+        // whole point of a notification. Re-running the check here, on the
+        // NEXT safe foreground, catches whatever the backgrounding attempt
+        // didn't finish. Idempotent: trackRank only notifies on an actual
+        // tier change since the last stored rank, so a redundant check
+        // (the backgrounding one DID complete) is a harmless no-op. Tahajjud
+        // isn't included — its syncDelta always runs from an already-
+        // foregrounded context (Tracker/quickLogPrayer/pendingIntents-on-
+        // launch), so it never has this race.
+        import('./utils/leaderboard').then(m => {
+          m.Leaderboard.checkRankMilestones('dhikr').catch(() => {});
+          m.Leaderboard.checkRankMilestones('quranAyahs').catch(() => {});
+        }).catch(() => {});
+      }
       // Dhikr/Quran leaderboard counters are debounced a few seconds so a
       // burst of taps doesn't turn into one Firestore write each — but that
       // means backgrounding the app mid-debounce would otherwise strand
