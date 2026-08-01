@@ -181,6 +181,27 @@ const DuaPinMarker = React.memo(function DuaPinMarker({
 export function GlobalTahajjudMap({ visible, onClose, onLiveTotal, serverTotal }: Props) {
     const { colors } = useTheme();
     const navigation = useNavigation<any>();
+    // Android crash fix: this component is always mounted by HomeTab (only
+    // `visible` toggles), and RN's <Modal visible={false}> on Android just
+    // hides its native Dialog while leaving children — including MapView —
+    // fully mounted underneath. MapView never actually unmounts, so
+    // react-native-maps' own native cleanup never runs; the GoogleMap
+    // renderer keeps holding a Surface/TextureView that Android can tear
+    // down out from under it, producing exactly the crashes Play Console
+    // flagged: ViewGroup.dispatchGetDisplayList and ReactViewGroup.dispatchDraw
+    // NPEs (drawing a child whose native resources are already gone) and
+    // Maps' own policy_maps_core_dynamite IllegalStateException. Mounting
+    // the map content on mountContent (not visible directly) — delayed
+    // past the close animation, so the slide-out still shows the map —
+    // makes MapView actually unmount and release its native resources
+    // every time the map closes, instead of sitting mounted-but-hidden
+    // indefinitely for as long as the Home tab stays open.
+    const [mountContent, setMountContent] = useState(visible);
+    useEffect(() => {
+        if (visible) { setMountContent(true); return; }
+        const timer = setTimeout(() => setMountContent(false), 400);
+        return () => clearTimeout(timer);
+    }, [visible]);
     const [dots, setDots] = useState<MapDot[]>([]);
     const [total, setTotal] = useState(0);
     // Wall duas whose authors opted in to a map pin (last 24h).
@@ -626,6 +647,7 @@ export function GlobalTahajjudMap({ visible, onClose, onLiveTotal, serverTotal }
     return (
         <Modal visible={visible} animationType="slide" presentationStyle="fullScreen" onRequestClose={onClose}>
             <View style={styles.root}>
+                {mountContent && <>
 
                 {/* Dark background shown while map tiles load — prevents grey flash */}
                 <View style={[StyleSheet.absoluteFill, { backgroundColor: '#060b18' }]} />
@@ -947,6 +969,7 @@ export function GlobalTahajjudMap({ visible, onClose, onLiveTotal, serverTotal }
                     </View>
                 )}
 
+                </>}
             </View>
         </Modal>
     );
