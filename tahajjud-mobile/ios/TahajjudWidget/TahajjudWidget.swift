@@ -36,9 +36,20 @@ struct WidgetData: Codable {
         return String(format: "%04d-%02d-%02d", c.year ?? 0, c.month ?? 0, c.day ?? 0)
     }
 
-    private var liveNext: (name: String, date: Date)? {
+    // ── "As of" derivations ────────────────────────────────────────────
+    // Parameterized on an explicit reference date rather than reading Date()
+    // ambiently. WidgetKit pre-renders every entry in a timeline once, right
+    // after getTimeline() returns — a SwiftUI view that reads Date() inside
+    // its body sees whatever "now" was at that single generation moment for
+    // EVERY entry, so a multi-entry timeline (one entry per upcoming prayer
+    // transition) would show the same stale prayer for every entry instead
+    // of advancing on its own. Each entry instead bakes in its own
+    // nextPrayer/nextPrayerTime/loggableNow computed as of ITS OWN date, so
+    // the widget flips to the correct prayer automatically as each entry's
+    // date arrives — no reload, and no tapping the widget first, required.
+
+    private func liveNext(asOf now: Date) -> (name: String, date: Date)? {
         guard !prayerTimesToday.isEmpty else { return nil }
-        let now = Date()
         for key in Self.prayerOrder {
             guard let t = prayerTimesToday[key], t > now else { continue }
             return (key.prefix(1).uppercased() + key.dropFirst(), t)
@@ -55,8 +66,8 @@ struct WidgetData: Codable {
         return ("Fajr", fajr)
     }
 
-    var nextPrayer: String { liveNext?.name ?? fallbackNextPrayer }
-    var nextPrayerTime: Date { liveNext?.date ?? fallbackNextPrayerTime }
+    func nextPrayer(asOf now: Date) -> String { liveNext(asOf: now)?.name ?? fallbackNextPrayer }
+    func nextPrayerTime(asOf now: Date) -> Date { liveNext(asOf: now)?.date ?? fallbackNextPrayerTime }
 
     /// tahajjudStart, but only while it's still meaningful to display. The
     /// app writes whatever night it last calculated — opened at 1am that's
@@ -64,24 +75,22 @@ struct WidgetData: Codable {
     /// showing that stale time all the following day. Allow a grace window
     /// after the start (the gate stays open for the last third itself),
     /// then hide rather than mislead.
-    var freshTahajjudStart: Date? {
+    func freshTahajjudStart(asOf now: Date) -> Date? {
         guard let t = tahajjudStart else { return nil }
-        let now = Date()
         guard t > now.addingTimeInterval(-6 * 3600),
               t < now.addingTimeInterval(24 * 3600) else { return nil }
         return t
     }
 
     /// The most recent of today's daily prayers whose time has started but
-    /// that isn't in loggedToday yet — computed live against Date(). nil if
-    /// prayerTimesToday is unavailable, or if todayDateStr doesn't match
-    /// today (the pushed data is stale by more than a day, so loggedToday
-    /// would refer to the wrong day — better to fall back than guess wrong).
-    private var liveLoggablePrayer: String? {
+    /// that isn't in loggedToday yet. nil if prayerTimesToday is unavailable,
+    /// or if todayDateStr doesn't match today (the pushed data is stale by
+    /// more than a day, so loggedToday would refer to the wrong day — better
+    /// to fall back than guess wrong).
+    private func liveLoggablePrayer(asOf now: Date) -> String? {
         guard !prayerTimesToday.isEmpty,
-              let stamped = todayDateStr, stamped == Self.localDateStr(Date())
+              let stamped = todayDateStr, stamped == Self.localDateStr(now)
         else { return nil }
-        let now = Date()
         var best: (prayer: String, time: Date)?
         for key in Self.prayerOrder {
             guard let t = prayerTimesToday[key], t <= now else { continue }
@@ -91,11 +100,11 @@ struct WidgetData: Codable {
         return best?.prayer
     }
 
-    /// The prayer key the widget's "Log" button should target right now, if
-    /// any — the open Tahajjud gate takes priority over a daily prayer.
-    var loggableNow: String? {
-        if let t = freshTahajjudStart, Date() >= t { return "tahajjud" }
-        return liveLoggablePrayer ?? fallbackLoggablePrayer
+    /// The prayer key the widget's "Log" button should target as of `now`,
+    /// if any — the open Tahajjud gate takes priority over a daily prayer.
+    func loggableNow(asOf now: Date) -> String? {
+        if let t = freshTahajjudStart(asOf: now), now >= t { return "tahajjud" }
+        return liveLoggablePrayer(asOf: now) ?? fallbackLoggablePrayer
     }
 
     static let placeholder = WidgetData(
@@ -162,14 +171,34 @@ struct TahajjudProvider: TimelineProvider {
 
     func getTimeline(in context: Context, completion: @escaping (Timeline<TahajjudEntry>) -> Void) {
         let data = WidgetData.load()
-        let entry = TahajjudEntry(date: Date(), widgetData: data)
-        // Refresh 5 min after the next prayer OR at Tahajjud time — whichever is sooner
-        var refresh = data.nextPrayerTime.addingTimeInterval(300)
-        if let tahajjud = data.tahajjudStart, tahajjud > Date() {
-            refresh = min(refresh, tahajjud)
+        let now = Date()
+
+        // One entry per moment the displayed content should change: right
+        // now, each of today's remaining prayer times (when "next prayer"
+        // flips), and Tahajjud start (when the gate opens) — all sharing the
+        // same underlying data, each baking in its own as-of computation.
+        // WidgetKit switches to whichever entry's date has arrived on its
+        // own, with no reload needed — this is what makes the prayer name
+        // advance automatically instead of freezing until the widget is
+        // tapped (which was only ever forcing the single stale entry to
+        // regenerate via the app's own reload call).
+        var dates: [Date] = [now]
+        for key in ["fajr", "dhuhr", "asr", "maghrib", "isha"] {
+            if let t = data.prayerTimesToday[key], t > now { dates.append(t) }
         }
-        refresh = max(Date().addingTimeInterval(300), refresh)
-        let timeline = Timeline(entries: [entry], policy: .after(refresh))
+        if let tahajjud = data.tahajjudStart, tahajjud > now {
+            dates.append(tahajjud)
+        }
+        dates = Array(Set(dates)).sorted()
+
+        let entries = dates.map { TahajjudEntry(date: $0, widgetData: data) }
+
+        // Full refresh (fresh widget_data from the app) shortly after the
+        // last known transition, so a day with no prayer times pushed yet
+        // still checks back in rather than going stale indefinitely.
+        let lastKnown = dates.last ?? now
+        let refresh = max(now.addingTimeInterval(300), lastKnown.addingTimeInterval(300))
+        let timeline = Timeline(entries: entries, policy: .after(refresh))
         completion(timeline)
     }
 }
@@ -177,6 +206,19 @@ struct TahajjudProvider: TimelineProvider {
 struct TahajjudEntry: TimelineEntry {
     let date: Date
     let widgetData: WidgetData
+    let nextPrayer: String
+    let nextPrayerTime: Date
+    let freshTahajjudStart: Date?
+    let loggableNow: String?
+
+    init(date: Date, widgetData: WidgetData) {
+        self.date = date
+        self.widgetData = widgetData
+        self.nextPrayer = widgetData.nextPrayer(asOf: date)
+        self.nextPrayerTime = widgetData.nextPrayerTime(asOf: date)
+        self.freshTahajjudStart = widgetData.freshTahajjudStart(asOf: date)
+        self.loggableNow = widgetData.loggableNow(asOf: date)
+    }
 }
 
 // MARK: - Views
@@ -186,7 +228,7 @@ struct SmallWidgetView: View {
     @Environment(\.colorScheme) var colorScheme
 
     var countdownText: String {
-        let diff = entry.widgetData.nextPrayerTime.timeIntervalSince(Date())
+        let diff = entry.nextPrayerTime.timeIntervalSince(Date())
         if diff <= 0 { return "Now" }
         let hours = Int(diff) / 3600
         let mins  = (Int(diff) % 3600) / 60
@@ -195,7 +237,7 @@ struct SmallWidgetView: View {
     }
 
     var prayerEmoji: String {
-        switch entry.widgetData.nextPrayer.lowercased() {
+        switch entry.nextPrayer.lowercased() {
         case "fajr":    return "🌅"
         case "dhuhr":   return "☀️"
         case "asr":     return "🌤"
@@ -241,7 +283,7 @@ struct SmallWidgetView: View {
                 Spacer()
 
                 // Tahajjud time (if available)
-                if let tahajjud = entry.widgetData.freshTahajjudStart {
+                if let tahajjud = entry.freshTahajjudStart {
                     HStack(spacing: 3) {
                         Text("🌙")
                             .font(.system(size: 9))
@@ -257,12 +299,12 @@ struct SmallWidgetView: View {
                 }
 
                 // Prayer name
-                Text(entry.widgetData.nextPrayer)
+                Text(entry.nextPrayer)
                     .font(.system(size: 18, weight: .bold))
                     .foregroundColor(.white)
 
                 // Time
-                Text(entry.widgetData.nextPrayerTime, style: .time)
+                Text(entry.nextPrayerTime, style: .time)
                     .font(.system(size: 13, weight: .medium))
                     .foregroundColor(Color(hex: "94a3b8"))
 
@@ -280,7 +322,7 @@ struct MediumWidgetView: View {
     let entry: TahajjudEntry
 
     var countdownText: String {
-        let diff = entry.widgetData.nextPrayerTime.timeIntervalSince(Date())
+        let diff = entry.nextPrayerTime.timeIntervalSince(Date())
         if diff <= 0 { return "Now" }
         let hours = Int(diff) / 3600
         let mins  = (Int(diff) % 3600) / 60
@@ -311,11 +353,11 @@ struct MediumWidgetView: View {
                         .textCase(.uppercase)
                         .kerning(0.5)
 
-                    Text(entry.widgetData.nextPrayer)
+                    Text(entry.nextPrayer)
                         .font(.system(size: 24, weight: .bold))
                         .foregroundColor(.white)
 
-                    Text(entry.widgetData.nextPrayerTime, style: .time)
+                    Text(entry.nextPrayerTime, style: .time)
                         .font(.system(size: 15, weight: .medium))
                         .foregroundColor(Color(hex: "cbd5e1"))
 
@@ -329,7 +371,7 @@ struct MediumWidgetView: View {
                     }
 
                     // Tahajjud row
-                    if let tahajjud = entry.widgetData.freshTahajjudStart {
+                    if let tahajjud = entry.freshTahajjudStart {
                         HStack(spacing: 4) {
                             Text("🌙")
                                 .font(.system(size: 11))
@@ -359,7 +401,7 @@ struct MediumWidgetView: View {
 
                 // Right: log button (when something's loggable) or streak
                 VStack(spacing: 4) {
-                    if let prayer = entry.widgetData.loggableNow {
+                    if let prayer = entry.loggableNow {
                         Button(intent: LogPrayerIntent(prayer: prayer)) {
                             VStack(spacing: 2) {
                                 Image(systemName: "checkmark.circle.fill")
@@ -414,12 +456,12 @@ struct LargeWidgetView: View {
     let entry: TahajjudEntry
 
     var isGateOpen: Bool {
-        guard let t = entry.widgetData.freshTahajjudStart else { return false }
+        guard let t = entry.freshTahajjudStart else { return false }
         return Date() >= t
     }
 
     var countdownText: String {
-        let diff = entry.widgetData.nextPrayerTime.timeIntervalSince(Date())
+        let diff = entry.nextPrayerTime.timeIntervalSince(Date())
         if diff <= 0 { return "Now" }
         let h = Int(diff) / 3600
         let m = (Int(diff) % 3600) / 60
@@ -427,7 +469,7 @@ struct LargeWidgetView: View {
     }
 
     var prayerEmoji: String {
-        switch entry.widgetData.nextPrayer.lowercased() {
+        switch entry.nextPrayer.lowercased() {
         case "fajr":    return "🌅"
         case "dhuhr":   return "☀️"
         case "asr":     return "🌤"
@@ -480,7 +522,7 @@ struct LargeWidgetView: View {
                         .foregroundColor(isGateOpen ? Color(hex: "a78bfa") : Color(hex: "64748b"))
                         .kerning(1.2)
 
-                    if let tahajjud = entry.widgetData.freshTahajjudStart {
+                    if let tahajjud = entry.freshTahajjudStart {
                         Text(tahajjud, style: .time)
                             .font(.system(size: 52, weight: .heavy))
                             .foregroundColor(isGateOpen ? Color(hex: "a78bfa") : .white)
@@ -536,7 +578,7 @@ struct LargeWidgetView: View {
                             .font(.system(size: 9, weight: .bold))
                             .foregroundColor(Color(hex: "64748b"))
                             .kerning(1)
-                        Text(entry.widgetData.nextPrayer)
+                        Text(entry.nextPrayer)
                             .font(.system(size: 20, weight: .bold))
                             .foregroundColor(.white)
                     }
@@ -544,7 +586,7 @@ struct LargeWidgetView: View {
                     Spacer()
 
                     VStack(alignment: .trailing, spacing: 2) {
-                        Text(entry.widgetData.nextPrayerTime, style: .time)
+                        Text(entry.nextPrayerTime, style: .time)
                             .font(.system(size: 16, weight: .semibold))
                             .foregroundColor(Color(hex: "cbd5e1"))
                         Text("in \(countdownText)")
@@ -584,7 +626,7 @@ struct LargeWidgetView: View {
 
                     Spacer()
 
-                    if let prayer = entry.widgetData.loggableNow {
+                    if let prayer = entry.loggableNow {
                         Button(intent: LogPrayerIntent(prayer: prayer)) {
                             HStack(spacing: 6) {
                                 Image(systemName: "checkmark.circle.fill")
@@ -672,8 +714,8 @@ struct AccessoryRectangularView: View {
     let entry: TahajjudEntry
 
     var body: some View {
-        let nextDate = entry.widgetData.nextPrayerTime
-        let tahajjud = entry.widgetData.freshTahajjudStart
+        let nextDate = entry.nextPrayerTime
+        let tahajjud = entry.freshTahajjudStart
         let now = Date()
         // Guard: SwiftUI's `Text(timerInterval:...)` crashes if the upper
         // bound is in the past. Use `nextDate.addingTimeInterval(60)` floor.
@@ -681,7 +723,7 @@ struct AccessoryRectangularView: View {
         VStack(alignment: .leading, spacing: 2) {
             HStack(spacing: 4) {
                 Image(systemName: "moon.stars.fill")
-                Text(entry.widgetData.nextPrayer.uppercased())
+                Text(entry.nextPrayer.uppercased())
                     .font(.caption2.weight(.bold))
                     .tracking(1.0)
             }
@@ -732,8 +774,8 @@ struct AccessoryInlineView: View {
     let entry: TahajjudEntry
 
     var body: some View {
-        let nextDate = entry.widgetData.nextPrayerTime
-        Text("\(entry.widgetData.nextPrayer): \(nextDate, format: .dateTime.hour().minute())")
+        let nextDate = entry.nextPrayerTime
+        Text("\(entry.nextPrayer): \(nextDate, format: .dateTime.hour().minute())")
     }
 }
 

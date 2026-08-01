@@ -508,6 +508,16 @@ export function HifzSession({ surahNumber, surahName, surahNameTranslation, tota
             setPlaybackPos(status.positionMillis ?? 0);
             setPlaybackDur(status.durationMillis ?? 1);
             if (status.didJustFinish) {
+                // Quran leaderboard: this fires once per ayah's audio actually
+                // finishing, whether it's mid-group (advancing to the next
+                // ayah in an accumulation block) or a repeat of the same
+                // ayah/group — Hifz drilling never fed this metric at all
+                // before, despite being real Quran engagement, often MORE
+                // repetitive/volume-heavy than casual reading. Repeats
+                // counting is the existing, deliberate design (see
+                // quranReadingTracker.ts) — memorization repetition is
+                // exactly that, not double-counting.
+                import('../utils/quranReadingTracker').then(m => m.recordAyahRead()).catch(() => {});
                 const item = currentItemRef.current;
                 const nextInGroup = playingGroupIdxRef.current + 1;
                 if (item && nextInGroup < item.ayahIndices.length) {
