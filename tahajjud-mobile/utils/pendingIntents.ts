@@ -76,6 +76,10 @@ export async function drainPendingPrayerLogs(): Promise<number> {
                     refreshWeeklyDigest().catch(() => {});
                     TahajjudChallenge.recordTahajjudToday().catch(() => {});
                     import('./liveActivity').then(m => m.LiveActivity.endAll()).catch(() => {});
+                    // Leaderboard: every other Tahajjud-logging path (in-app,
+                    // notification action) syncs this — a widget-tap log,
+                    // drained here on next launch, was the one gap left.
+                    import('./leaderboard').then(m => m.Leaderboard.syncDelta('tahajjud', 1)).catch(() => {});
                 }
             }
         }
