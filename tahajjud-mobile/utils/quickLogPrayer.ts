@@ -62,6 +62,13 @@ export async function quickLogPrayer(key: PrayerKey, source: 'notification' | 'w
         refreshWeeklyDigest().catch(() => {});
         TahajjudChallenge.recordTahajjudToday().catch(() => {});
         import('./liveActivity').then(m => m.LiveActivity.endAll()).catch(() => {});
+        // Leaderboard: one Tahajjud night = +1 (alreadyLoggedToday above
+        // guards this to at most once per day). This was the actual gap a
+        // user reported as "Tahajjud not tracked properly on the
+        // leaderboard" — logging via the widget or a notification tap goes
+        // through THIS function, not Tracker.tsx's logPrayer(), and every
+        // other side effect here was already mirrored except this one.
+        import('./leaderboard').then(m => m.Leaderboard.syncDelta('tahajjud', 1)).catch(() => {});
     }
     DeviceEventEmitter.emit('prayerLogged');
 
