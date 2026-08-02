@@ -24,6 +24,7 @@
             display: flex; justify-content: space-between; align-items: center;
             padding: 16px 0 32px; margin-bottom: 32px;
             border-bottom: 1px solid var(--border);
+            gap: 12px; flex-wrap: wrap;
         }
         nav .logo {
             display: flex; align-items: center; gap: 10px;
@@ -36,7 +37,41 @@
             box-shadow: 0 2px 10px rgba(34,211,238,0.25);
         }
         .logo-icon img { width: 100%; height: 100%; display: block; object-fit: cover; }
-        nav a.back { color: var(--text-2); font-size: 14px; }
+        nav .nav-right { display: flex; align-items: center; gap: 16px; }
+        nav a.back { color: var(--text-2); font-size: 14px; text-decoration: none; }
+
+        /* Language picker */
+        .lang-picker { position: relative; }
+        .lang-btn {
+            display: flex; align-items: center; gap: 6px;
+            background: rgba(255,255,255,0.04);
+            border: 1px solid var(--border);
+            color: var(--text-2);
+            font-size: 13px; font-weight: 600;
+            padding: 7px 12px; border-radius: 10px;
+            cursor: pointer; font-family: inherit;
+        }
+        .lang-btn:hover { border-color: rgba(34,211,238,0.35); color: var(--text); }
+        .lang-menu {
+            display: none;
+            position: absolute; top: calc(100% + 6px); right: 0;
+            background: #0a1228; border: 1px solid var(--border);
+            border-radius: 12px; padding: 6px;
+            max-height: 320px; overflow-y: auto;
+            min-width: 170px; z-index: 20;
+            box-shadow: 0 12px 30px rgba(0,0,0,0.5);
+        }
+        html[dir="rtl"] .lang-menu { right: auto; left: 0; }
+        .lang-menu.open { display: block; }
+        .lang-option {
+            display: flex; justify-content: space-between; align-items: center;
+            padding: 8px 10px; border-radius: 8px;
+            font-size: 13px; color: var(--text-2);
+            cursor: pointer; white-space: nowrap;
+        }
+        .lang-option:hover { background: rgba(255,255,255,0.06); color: var(--text); }
+        .lang-option.active { color: var(--accent); font-weight: 700; }
+
         h1 {
             font-size: 36px; font-weight: 900; margin: 12px 0 8px;
             letter-spacing: -1px;
@@ -53,6 +88,7 @@
             font-size: 15px;
         }
         ul { padding-left: 22px; }
+        html[dir="rtl"] ul { padding-left: 0; padding-right: 22px; }
         strong { color: var(--text); font-weight: 700; }
         footer {
             margin-top: 80px; padding-top: 32px;
@@ -68,92 +104,104 @@
             <div class="logo-icon"><img src="icon.png" alt="" /></div>
             <span>Tahajjud+</span>
         </a>
-        <a href="index.html" class="back">← Back</a>
+        <div class="nav-right">
+            <div class="lang-picker">
+                <button class="lang-btn" id="langBtn" type="button" aria-haspopup="listbox" aria-expanded="false">
+                    <span id="langBtnLabel">English</span>
+                    <span aria-hidden="true">▾</span>
+                </button>
+                <div class="lang-menu" id="langMenu" role="listbox"></div>
+            </div>
+            <a href="index.html" class="back" data-i18n="nav.back">← Back</a>
+        </div>
     </nav>
 
-    <h1>Terms of Use</h1>
-    <div class="updated">Last updated: July 27, 2026</div>
+    <h1 data-i18n="h1">Terms of Use</h1>
+    <div class="updated"><span data-i18n="updatedLabel">Last updated:</span> <span data-i18n="updatedDate">July 27, 2026</span></div>
 
-    <h2>1. Acceptance of these terms</h2>
-    <p>By downloading or using Tahajjud+ (the "App") you agree to these Terms of Use. If you do not agree, please do not use the App.</p>
+    <h2 data-i18n="h2_1">1. Acceptance of these terms</h2>
+    <p data-i18n="p1_1">By downloading or using Tahajjud+ (the "App") you agree to these Terms of Use. If you do not agree, please do not use the App.</p>
 
-    <h2>2. What Tahajjud+ does</h2>
-    <p>Tahajjud+ is a religious practice companion for Muslims. It provides:</p>
+    <h2 data-i18n="h2_2">2. What Tahajjud+ does</h2>
+    <p data-i18n="p2_1">Tahajjud+ is a religious practice companion for Muslims. It provides:</p>
     <ul>
-        <li>Prayer times based on your location, including mosque timetable import via AI photo scan</li>
-        <li>Qibla direction</li>
-        <li>Tahajjud (night prayer) tracker, streak, journal, and reminders</li>
-        <li>Prayer analytics and weekly review</li>
-        <li>The Quran in 30+ translations with audio from 7 reciters, offline download, and Hifz memorisation mode</li>
-        <li>Tasbeeh (dhikr) counter with session history</li>
-        <li>A dua library with audio, a Night Journal, and Letters to Allah</li>
-        <li>A community Dua Wall, shared Tahajjud Stories, replies/comments on both, and a Global Tahajjud Map</li>
-        <li>An opt-in Leaderboard ranking dhikr, Qur'an-reading, and Tahajjud activity under a nickname you choose</li>
-        <li>Accountability partner circle with push notifications</li>
-        <li>Optional cloud sync, optional premium subscription</li>
+        <li data-i18n="li2_1">Prayer times based on your location, including mosque timetable import via AI photo scan</li>
+        <li data-i18n="li2_2">Qibla direction</li>
+        <li data-i18n="li2_3">Tahajjud (night prayer) tracker, streak, journal, and reminders</li>
+        <li data-i18n="li2_4">Prayer analytics and weekly review</li>
+        <li data-i18n="li2_5">The Quran in 30+ translations with audio from 7 reciters, offline download, and Hifz memorisation mode</li>
+        <li data-i18n="li2_6">Tasbeeh (dhikr) counter with session history</li>
+        <li data-i18n="li2_7">A dua library with audio, a Night Journal, and Letters to Allah</li>
+        <li data-i18n="li2_8">A community Dua Wall, shared Tahajjud Stories, replies/comments on both, and a Global Tahajjud Map</li>
+        <li data-i18n="li2_9">An opt-in Leaderboard ranking dhikr, Qur'an-reading, and Tahajjud activity under a nickname you choose</li>
+        <li data-i18n="li2_10">Accountability partner circle with push notifications</li>
+        <li data-i18n="li2_11">Optional cloud sync, optional premium subscription</li>
     </ul>
-    <p>The App is for personal spiritual use. It is not a substitute for guidance from a qualified scholar.</p>
+    <p data-i18n="p2_2">The App is for personal spiritual use. It is not a substitute for guidance from a qualified scholar.</p>
 
-    <h2>3. Subscriptions and free trial</h2>
-    <p>Tahajjud+ offers an optional <strong>Tahajjud+ Premium</strong> subscription that unlocks additional features including: all 7 reciters, Hifz memorisation mode, up to 5 accountability partners, the Night Journal (with biometric lock), offline Quran audio, custom playlists, full prayer history &amp; analytics, stacked reminders, mosque timetable import, extended streak freeze, dhikr meanings &amp; stats, and premium themes. A one-time <strong>Lifetime</strong> purchase is also available.</p>
+    <h2 data-i18n="h2_3">3. Subscriptions and free trial</h2>
+    <p data-i18n="p3_1">Tahajjud+ offers an optional <strong>Tahajjud+ Premium</strong> subscription that unlocks additional features including: all 7 reciters, Hifz memorisation mode, up to 5 accountability partners, the Night Journal (with biometric lock), offline Quran audio, custom playlists, full prayer history &amp; analytics, stacked reminders, mosque timetable import, extended streak freeze, dhikr meanings &amp; stats, and premium themes. A one-time <strong>Lifetime</strong> purchase is also available.</p>
     <ul>
-        <li><strong>Free trial:</strong> New subscribers receive 7 days free on the monthly plan. Cancel anytime during the trial — no charge if you cancel at least 24 hours before it ends.</li>
-        <li><strong>Auto-renewal:</strong> After the trial, the subscription auto-renews monthly at the regular price unless canceled. Annual plan renews yearly.</li>
-        <li><strong>Cancel:</strong> iPhone Settings → Apple ID → Subscriptions → Tahajjud+ Premium → Cancel.</li>
-        <li><strong>Refunds:</strong> Handled directly by Apple via reportaproblem.apple.com.</li>
-    </ul>
-
-    <h2>4. Religious content and accuracy</h2>
-    <p>The Quran text used in the App is sourced from <a href="https://tanzil.net" target="_blank">Tanzil</a>, verified character-by-character against the printed Madinah Mushaf. Translations are by recognized scholars (see in-app "Sources & Methodology" for full attribution).</p>
-    <p>We make every effort to ensure accuracy. However, you remain responsible for verifying religious rulings, prayer times, and translations against authoritative sources. We are not liable for misunderstandings arising from translation choices.</p>
-
-    <h2>5. Community content</h2>
-    <p>When you post to the Dua Wall, submit a Tahajjud Story, reply to either, or choose a nickname for the Leaderboard, you agree:</p>
-    <ul>
-        <li>Not to publish content (including nicknames) that is profane, harmful, defamatory, sectarian-inflammatory, or impersonates others</li>
-        <li>That published content may be removed, and Leaderboard entries hidden or removed, by moderators at any time</li>
-        <li>That repeated violations may result in account suspension</li>
-        <li>That you retain ownership of your own words, but grant us a non-exclusive license to display them within the App</li>
+        <li data-i18n="li3_1"><strong>Free trial:</strong> New subscribers receive 7 days free on the monthly plan. Cancel anytime during the trial — no charge if you cancel at least 24 hours before it ends.</li>
+        <li data-i18n="li3_2"><strong>Auto-renewal:</strong> After the trial, the subscription auto-renews monthly at the regular price unless canceled. Annual plan renews yearly.</li>
+        <li data-i18n="li3_3"><strong>Cancel:</strong> iPhone Settings → Apple ID → Subscriptions → Tahajjud+ Premium → Cancel.</li>
+        <li data-i18n="li3_4"><strong>Refunds:</strong> Handled directly by Apple via reportaproblem.apple.com.</li>
     </ul>
 
-    <h2>6. Your account</h2>
-    <p>If you sign in with Apple ID or Google, you are responsible for keeping your sign-in credentials secure. You may delete your account at any time via Settings → Sync & Cloud → Delete My Account, or by emailing us.</p>
+    <h2 data-i18n="h2_4">4. Religious content and accuracy</h2>
+    <p data-i18n="p4_1">The Quran text used in the App is sourced from <a href="https://tanzil.net" target="_blank">Tanzil</a>, verified character-by-character against the printed Madinah Mushaf. Translations are by recognized scholars (see in-app "Sources &amp; Methodology" for full attribution).</p>
+    <p data-i18n="p4_2">We make every effort to ensure accuracy. However, you remain responsible for verifying religious rulings, prayer times, and translations against authoritative sources. We are not liable for misunderstandings arising from translation choices.</p>
 
-    <h2>7. Privacy</h2>
-    <p>Your privacy is covered separately in our <a href="privacy.html">Privacy Policy</a>. By using Tahajjud+ you also accept the Privacy Policy.</p>
-
-    <h2>8. Acceptable use</h2>
-    <p>You agree not to:</p>
+    <h2 data-i18n="h2_5">5. Community content</h2>
+    <p data-i18n="p5_1">When you post to the Dua Wall, submit a Tahajjud Story, reply to either, or choose a nickname for the Leaderboard, you agree:</p>
     <ul>
-        <li>Reverse-engineer, decompile, or attempt to extract source code from the App</li>
-        <li>Use the App to harass, threaten, or harm others</li>
-        <li>Attempt to gain unauthorized access to our servers or other users' data</li>
-        <li>Resell, redistribute, or commercialize the App or its content without written permission</li>
+        <li data-i18n="li5_1">Not to publish content (including nicknames) that is profane, harmful, defamatory, sectarian-inflammatory, or impersonates others</li>
+        <li data-i18n="li5_2">That published content may be removed, and Leaderboard entries hidden or removed, by moderators at any time</li>
+        <li data-i18n="li5_3">That repeated violations may result in account suspension</li>
+        <li data-i18n="li5_4">That you retain ownership of your own words, but grant us a non-exclusive license to display them within the App</li>
     </ul>
 
-    <h2>9. Disclaimer of warranties</h2>
-    <p>The App is provided <strong>"as is"</strong>, without warranty of any kind. We do not guarantee that the App will be uninterrupted, error-free, or that prayer times will always be perfectly accurate (e.g. during DST transitions or in extreme latitudes).</p>
+    <h2 data-i18n="h2_6">6. Your account</h2>
+    <p data-i18n="p6_1">If you sign in with Apple ID or Google, you are responsible for keeping your sign-in credentials secure. You may delete your account at any time via Settings → Sync &amp; Cloud → Delete My Account, or by emailing us.</p>
 
-    <h2>10. Limitation of liability</h2>
-    <p>To the maximum extent permitted by law, we are not liable for any indirect, incidental, special, or consequential damages arising from your use of the App, including missed prayers, missed notifications, or data loss.</p>
+    <h2 data-i18n="h2_7">7. Privacy</h2>
+    <p data-i18n="p7_1">Your privacy is covered separately in our <a href="privacy.html">Privacy Policy</a>. By using Tahajjud+ you also accept the Privacy Policy.</p>
 
-    <h2>11. Changes to the App and terms</h2>
-    <p>We may update the App and these Terms from time to time. Material changes will be announced in-app. Continued use of the App after a change constitutes acceptance of the updated Terms.</p>
+    <h2 data-i18n="h2_8">8. Acceptable use</h2>
+    <p data-i18n="p8_1">You agree not to:</p>
+    <ul>
+        <li data-i18n="li8_1">Reverse-engineer, decompile, or attempt to extract source code from the App</li>
+        <li data-i18n="li8_2">Use the App to harass, threaten, or harm others</li>
+        <li data-i18n="li8_3">Attempt to gain unauthorized access to our servers or other users' data</li>
+        <li data-i18n="li8_4">Resell, redistribute, or commercialize the App or its content without written permission</li>
+    </ul>
 
-    <h2>12. Termination</h2>
-    <p>We may suspend or terminate your access if you violate these Terms or engage in conduct that harms other users or the integrity of the App. You may stop using the App at any time by deleting it from your device.</p>
+    <h2 data-i18n="h2_9">9. Disclaimer of warranties</h2>
+    <p data-i18n="p9_1">The App is provided <strong>"as is"</strong>, without warranty of any kind. We do not guarantee that the App will be uninterrupted, error-free, or that prayer times will always be perfectly accurate (e.g. during DST transitions or in extreme latitudes).</p>
 
-    <h2>13. Governing law</h2>
-    <p>These Terms are governed by the laws of the jurisdiction in which Tahajjud+ is operated, without regard to its conflict of law provisions.</p>
+    <h2 data-i18n="h2_10">10. Limitation of liability</h2>
+    <p data-i18n="p10_1">To the maximum extent permitted by law, we are not liable for any indirect, incidental, special, or consequential damages arising from your use of the App, including missed prayers, missed notifications, or data loss.</p>
 
-    <h2>14. Contact</h2>
-    <p>Questions about these Terms?<br>
+    <h2 data-i18n="h2_11">11. Changes to the App and terms</h2>
+    <p data-i18n="p11_1">We may update the App and these Terms from time to time. Material changes will be announced in-app. Continued use of the App after a change constitutes acceptance of the updated Terms.</p>
+
+    <h2 data-i18n="h2_12">12. Termination</h2>
+    <p data-i18n="p12_1">We may suspend or terminate your access if you violate these Terms or engage in conduct that harms other users or the integrity of the App. You may stop using the App at any time by deleting it from your device.</p>
+
+    <h2 data-i18n="h2_13">13. Governing law</h2>
+    <p data-i18n="p13_1">These Terms are governed by the laws of the jurisdiction in which Tahajjud+ is operated, without regard to its conflict of law provisions.</p>
+
+    <h2 data-i18n="h2_14">14. Contact</h2>
+    <p data-i18n="p14_1">Questions about these Terms?<br>
         <a href="mailto:tahajjud.letters@gmail.com">tahajjud.letters@gmail.com</a>
     </p>
 
     <footer>
-        © 2026 Tahajjud+ · <a href="index.html">Home</a> · <a href="privacy.html">Privacy</a> · <a href="support.html">Support</a>
+        <span data-i18n="footer.copy">© 2026 Tahajjud+</span> · <a href="index.html" data-i18n="footer.home">Home</a> · <a href="privacy.html" data-i18n="footer.privacy">Privacy</a> · <a href="support.html" data-i18n="footer.support">Support</a>
     </footer>
 </div>
+
+<script src="i18n/terms.i18n.js"></script>
+<script src="i18n/site-lang.js"></script>
 </body>
 </html>
