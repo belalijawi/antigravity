@@ -36,7 +36,41 @@
             box-shadow: 0 2px 10px rgba(34,211,238,0.25);
         }
         .logo-icon img { width: 100%; height: 100%; display: block; object-fit: cover; }
-        nav a.back { color: var(--text-2); font-size: 14px; }
+        nav a.back { color: var(--text-2); font-size: 14px; text-decoration: none; }
+        nav .nav-right { display: flex; align-items: center; gap: 16px; }
+
+        /* Language picker */
+        .lang-picker { position: relative; }
+        .lang-btn {
+            display: flex; align-items: center; gap: 6px;
+            background: rgba(255,255,255,0.04);
+            border: 1px solid var(--border);
+            color: var(--text-2);
+            font-size: 13px; font-weight: 600;
+            padding: 7px 12px; border-radius: 10px;
+            cursor: pointer; font-family: inherit;
+        }
+        .lang-btn:hover { border-color: rgba(34,211,238,0.35); color: var(--text); }
+        .lang-menu {
+            display: none;
+            position: absolute; top: calc(100% + 6px); right: 0;
+            background: #0a1228; border: 1px solid var(--border);
+            border-radius: 12px; padding: 6px;
+            max-height: 320px; overflow-y: auto;
+            min-width: 170px; z-index: 20;
+            box-shadow: 0 12px 30px rgba(0,0,0,0.5);
+        }
+        html[dir="rtl"] .lang-menu { right: auto; left: 0; }
+        .lang-menu.open { display: block; }
+        .lang-option {
+            display: flex; justify-content: space-between; align-items: center;
+            padding: 8px 10px; border-radius: 8px;
+            font-size: 13px; color: var(--text-2);
+            cursor: pointer; white-space: nowrap;
+        }
+        .lang-option:hover { background: rgba(255,255,255,0.06); color: var(--text); }
+        .lang-option.active { color: var(--accent); font-weight: 700; }
+
         h1 {
             font-size: 40px; font-weight: 900; margin: 12px 0 12px;
             letter-spacing: -1px;
@@ -70,6 +104,7 @@
         .faq-a { color: var(--text-2); font-size: 14px; line-height: 1.6; margin: 0; }
         .faq-a a { color: var(--accent); }
         ul { color: var(--text-2); padding-left: 22px; font-size: 14px; }
+        html[dir="rtl"] ul { padding-left: 0; padding-right: 22px; }
         ul li { margin-bottom: 6px; }
         footer {
             margin-top: 80px; padding-top: 32px;
@@ -86,137 +121,149 @@
             <div class="logo-icon"><img src="icon.png" alt="" /></div>
             <span>Tahajjud+</span>
         </a>
-        <a href="index.html" class="back">← Back</a>
+        <div class="nav-right">
+            <div class="lang-picker">
+                <button class="lang-btn" id="langBtn" type="button" aria-haspopup="listbox" aria-expanded="false">
+                    <span id="langBtnLabel">English</span>
+                    <span aria-hidden="true">▾</span>
+                </button>
+                <div class="lang-menu" id="langMenu" role="listbox"></div>
+            </div>
+            <a href="index.html" class="back" data-i18n="nav.back">← Back</a>
+        </div>
     </nav>
 
-    <h1>Support</h1>
-    <p class="intro">JazakAllah Khair for using Tahajjud+. We read every email and reply within 48 hours.</p>
+    <h1 data-i18n="h1">Support</h1>
+    <p class="intro" data-i18n="intro">JazakAllah Khair for using Tahajjud+. We read every email and reply within 48 hours.</p>
 
     <div class="contact-card">
-        <h2>Get in touch</h2>
-        <p>Bugs, feedback, feature requests, account issues — write to us:</p>
+        <h2 data-i18n="contact.h2">Get in touch</h2>
+        <p data-i18n="contact.p">Bugs, feedback, feature requests, account issues — write to us:</p>
         <a class="contact-email" href="mailto:tahajjud.letters@gmail.com">tahajjud.letters@gmail.com</a>
     </div>
 
-    <h2>Frequently asked questions</h2>
+    <h2 data-i18n="faqH2">Frequently asked questions</h2>
 
     <div class="faq-item">
-        <p class="faq-q">When does the free trial start? Will I be charged automatically?</p>
-        <p class="faq-a">Your 7-day free trial starts the moment you subscribe. Apple does not charge you during the trial. If you don't cancel at least 24 hours before it ends, it converts to the monthly subscription at the regular price. You can cancel anytime in iPhone Settings → Apple ID → Subscriptions → Tahajjud+ Premium.</p>
+        <p class="faq-q" data-i18n="faq1_q">When does the free trial start? Will I be charged automatically?</p>
+        <p class="faq-a" data-i18n="faq1_a">Your 7-day free trial starts the moment you subscribe. Apple does not charge you during the trial. If you don't cancel at least 24 hours before it ends, it converts to the monthly subscription at the regular price. You can cancel anytime in iPhone Settings → Apple ID → Subscriptions → Tahajjud+ Premium.</p>
     </div>
 
     <div class="faq-item">
-        <p class="faq-q">How do I cancel my subscription?</p>
-        <p class="faq-a">Apple handles all subscriptions. Open iPhone Settings → tap your name at the top → Subscriptions → Tahajjud+ Premium → Cancel Subscription. You'll keep access until the end of the paid period.</p>
+        <p class="faq-q" data-i18n="faq2_q">How do I cancel my subscription?</p>
+        <p class="faq-a" data-i18n="faq2_a">Apple handles all subscriptions. Open iPhone Settings → tap your name at the top → Subscriptions → Tahajjud+ Premium → Cancel Subscription. You'll keep access until the end of the paid period.</p>
     </div>
 
     <div class="faq-item">
-        <p class="faq-q">I cancelled but I'm still being charged.</p>
-        <p class="faq-a">Apple sometimes lags on reflecting cancellations. First confirm in Settings → Apple ID → Subscriptions that the subscription shows "Expires" rather than "Renews". If you were charged after canceling, request a refund at <a href="https://reportaproblem.apple.com" target="_blank">reportaproblem.apple.com</a> — Apple typically approves these within 48h. We can't process refunds directly because we don't process the charge.</p>
+        <p class="faq-q" data-i18n="faq3_q">I cancelled but I'm still being charged.</p>
+        <p class="faq-a" data-i18n="faq3_a">Apple sometimes lags on reflecting cancellations. First confirm in Settings → Apple ID → Subscriptions that the subscription shows "Expires" rather than "Renews". If you were charged after canceling, request a refund at <a href="https://reportaproblem.apple.com" target="_blank">reportaproblem.apple.com</a> — Apple typically approves these within 48h. We can't process refunds directly because we don't process the charge.</p>
     </div>
 
     <div class="faq-item">
-        <p class="faq-q">I bought premium but the app says I'm still free.</p>
-        <p class="faq-a">Open the paywall and tap "Already a member? Restore Purchases" at the bottom. This re-syncs your subscription status from Apple's servers. If still stuck, email us your Apple ID receipt number.</p>
+        <p class="faq-q" data-i18n="faq4_q">I bought premium but the app says I'm still free.</p>
+        <p class="faq-a" data-i18n="faq4_a">Open the paywall and tap "Already a member? Restore Purchases" at the bottom. This re-syncs your subscription status from Apple's servers. If still stuck, email us your Apple ID receipt number.</p>
     </div>
 
     <div class="faq-item">
-        <p class="faq-q">Prayer times look wrong for my city.</p>
-        <p class="faq-a">Open Settings → Prayer Times → check which Calculation Method is selected. Different scholarly schools use slightly different Fajr/Isha angles. Try switching to your local mosque's preferred method (ISNA for North America, Muslim World League for Europe, Umm al-Qura for the Gulf, etc.). Also verify location is enabled — Settings → Tahajjud+ → Location.</p>
+        <p class="faq-q" data-i18n="faq5_q">Prayer times look wrong for my city.</p>
+        <p class="faq-a" data-i18n="faq5_a">Open Settings → Prayer Times → check which Calculation Method is selected. Different scholarly schools use slightly different Fajr/Isha angles. Try switching to your local mosque's preferred method (ISNA for North America, Muslim World League for Europe, Umm al-Qura for the Gulf, etc.). Also verify location is enabled — Settings → Tahajjud+ → Location.</p>
     </div>
 
     <div class="faq-item">
-        <p class="faq-q">I'm not getting prayer notifications.</p>
-        <p class="faq-a">Three things to check: (1) iOS Settings → Notifications → Tahajjud+ → make sure notifications are on with "Time-Sensitive" enabled, (2) in the app, Settings → Notifications → enable the prayers you want, (3) make sure you're not in Do Not Disturb / Focus mode during prayer times. If still failing, restart the app — this re-schedules everything.</p>
+        <p class="faq-q" data-i18n="faq6_q">I'm not getting prayer notifications.</p>
+        <p class="faq-a" data-i18n="faq6_a">Three things to check: (1) iOS Settings → Notifications → Tahajjud+ → make sure notifications are on with "Time-Sensitive" enabled, (2) in the app, Settings → Notifications → enable the prayers you want, (3) make sure you're not in Do Not Disturb / Focus mode during prayer times. If still failing, restart the app — this re-schedules everything.</p>
     </div>
 
     <div class="faq-item">
-        <p class="faq-q">My Tahajjud streak disappeared.</p>
-        <p class="faq-a">Streaks survive one missed night per week thanks to the weekly Freeze. The Freeze is auto-consumed the moment you'd otherwise break the streak — you don't have to do anything. If you miss two nights in the same week, the streak resets. To preserve a streak you don't want to lose, log Tahajjud as soon as you wake — the app accepts a log up to a few hours after Fajr.</p>
+        <p class="faq-q" data-i18n="faq7_q">My Tahajjud streak disappeared.</p>
+        <p class="faq-a" data-i18n="faq7_a">Streaks survive one missed night per week thanks to the weekly Freeze. The Freeze is auto-consumed the moment you'd otherwise break the streak — you don't have to do anything. If you miss two nights in the same week, the streak resets. To preserve a streak you don't want to lose, log Tahajjud as soon as you wake — the app accepts a log up to a few hours after Fajr.</p>
     </div>
 
     <div class="faq-item">
-        <p class="faq-q">How do I download surahs for offline listening?</p>
-        <p class="faq-a">Premium feature. Quran tab → tap any surah → tap the cloud-download icon next to it. Downloaded surahs play instantly with no internet. Each reciter is stored separately — if you download Al-Fatihah with Alafasy and then switch to Sudais, you'll need to download it again for Sudais to work offline too. Manage all downloads in Settings → Storage.</p>
+        <p class="faq-q" data-i18n="faq8_q">How do I download surahs for offline listening?</p>
+        <p class="faq-a" data-i18n="faq8_a">Premium feature. Quran tab → tap any surah → tap the cloud-download icon next to it. Downloaded surahs play instantly with no internet. Each reciter is stored separately — if you download Al-Fatihah with Alafasy and then switch to Sudais, you'll need to download it again for Sudais to work offline too. Manage all downloads in Settings → Storage.</p>
     </div>
 
     <div class="faq-item">
-        <p class="faq-q">Can I change reciter?</p>
-        <p class="faq-a">Free users get Mishary Rashid Alafasy. Premium unlocks all 7 reciters: Alafasy, Sudais, Maher Al-Mueaqly, Saood Ash-Shuraym, Abdul Basit, Minshawi, Husary. Settings → Quran Reciter → tap any to switch (changes mid-playback if you're listening).</p>
+        <p class="faq-q" data-i18n="faq9_q">Can I change reciter?</p>
+        <p class="faq-a" data-i18n="faq9_a">Free users get Mishary Rashid Alafasy. Premium unlocks all 7 reciters: Alafasy, Sudais, Maher Al-Mueaqly, Saood Ash-Shuraym, Abdul Basit, Minshawi, Husary. Settings → Quran Reciter → tap any to switch (changes mid-playback if you're listening).</p>
     </div>
 
     <div class="faq-item">
-        <p class="faq-q">How does the Mosque Timetable import work?</p>
-        <p class="faq-a">Settings → Prayer Times → Mosque Timetable → tap "Import from Photo." Point your camera at your mosque's printed prayer schedule (or choose from your photo library) and the app uses AI to read the times automatically. You can review and correct them before saving. Once saved, those times replace the calculated prayer times in the app. Remove them any time in the same menu to go back to calculated times.</p>
+        <p class="faq-q" data-i18n="faq10_q">How does the Mosque Timetable import work?</p>
+        <p class="faq-a" data-i18n="faq10_a">Settings → Prayer Times → Mosque Timetable → tap "Import from Photo." Point your camera at your mosque's printed prayer schedule (or choose from your photo library) and the app uses AI to read the times automatically. You can review and correct them before saving. Once saved, those times replace the calculated prayer times in the app. Remove them any time in the same menu to go back to calculated times.</p>
     </div>
 
     <div class="faq-item">
-        <p class="faq-q">What is the Global Tahajjud Map?</p>
-        <p class="faq-a">The Global Map shows anonymous dots wherever Muslims around the world are praying right now. Tap "I'm praying" to add your own dot — it appears at city level only (not your precise location) and disappears after 24 hours. No account is needed and no identifying information is stored. You can find the map on the Home tab.</p>
+        <p class="faq-q" data-i18n="faq11_q">What is the Global Tahajjud Map?</p>
+        <p class="faq-a" data-i18n="faq11_a">The Global Map shows anonymous dots wherever Muslims around the world are praying right now. Tap "I'm praying" to add your own dot — it appears at city level only (not your precise location) and disappears after 24 hours. No account is needed and no identifying information is stored. You can find the map on the Home tab.</p>
     </div>
 
     <div class="faq-item">
-        <p class="faq-q">Where can I see my prayer statistics?</p>
-        <p class="faq-a">Prayers tab → tap the chart icon at the top. You'll see a weekly breakdown of which prayers you completed, streak history, and your best streaks. All data stays on your device — nothing is sent to a server.</p>
+        <p class="faq-q" data-i18n="faq12_q">Where can I see my prayer statistics?</p>
+        <p class="faq-a" data-i18n="faq12_a">Prayers tab → tap the chart icon at the top. You'll see a weekly breakdown of which prayers you completed, streak history, and your best streaks. All data stays on your device — nothing is sent to a server.</p>
     </div>
 
     <div class="faq-item">
-        <p class="faq-q">The Hifz session took a long time to load.</p>
-        <p class="faq-a">On the very first open of a surah, the app downloads per-ayah audio files for offline playback. This is a one-time process per surah — after that, everything loads instantly. If it feels slow, check your internet connection. Once a surah is loaded, the session screen appears immediately even while the audio downloads in the background.</p>
+        <p class="faq-q" data-i18n="faq13_q">The Hifz session took a long time to load.</p>
+        <p class="faq-a" data-i18n="faq13_a">On the very first open of a surah, the app downloads per-ayah audio files for offline playback. This is a one-time process per surah — after that, everything loads instantly. If it feels slow, check your internet connection. Once a surah is loaded, the session screen appears immediately even while the audio downloads in the background.</p>
     </div>
 
     <div class="faq-item">
-        <p class="faq-q">My journal entries aren't syncing across my iPhone and iPad.</p>
-        <p class="faq-a">Cloud sync requires signing in on both devices with the same account (Apple Sign-In or Google). Go to Settings → Sync & Cloud → make sure you're signed in. If the issue persists, force a sync by opening any entry and saving it again.</p>
+        <p class="faq-q" data-i18n="faq14_q">My journal entries aren't syncing across my iPhone and iPad.</p>
+        <p class="faq-a" data-i18n="faq14_a">Cloud sync requires signing in on both devices with the same account (Apple Sign-In or Google). Go to Settings → Sync & Cloud → make sure you're signed in. If the issue persists, force a sync by opening any entry and saving it again.</p>
     </div>
 
     <div class="faq-item">
-        <p class="faq-q">How does the Dua Wall work? Is my identity shown?</p>
-        <p class="faq-a">Your dua text appears anonymously to other users. Your identity is never displayed. We store your account ID server-side only to prevent abuse (one publish per day, response to reports) but never show it. See the <a href="privacy.html">Privacy Policy</a> for details.</p>
+        <p class="faq-q" data-i18n="faq15_q">How does the Dua Wall work? Is my identity shown?</p>
+        <p class="faq-a" data-i18n="faq15_a">Your dua text appears anonymously to other users. Your identity is never displayed. We store your account ID server-side only to prevent abuse (one publish per day, response to reports) but never show it. See the <a href="privacy.html">Privacy Policy</a> for details.</p>
     </div>
 
     <div class="faq-item">
-        <p class="faq-q">I submitted a testimony — when will it appear?</p>
-        <p class="faq-a">All submissions are reviewed by a moderator before going live, usually within 24-48 hours. We check for accuracy, language, and respect. You're welcome to email us to follow up.</p>
+        <p class="faq-q" data-i18n="faq16_q">I submitted a testimony — when will it appear?</p>
+        <p class="faq-a" data-i18n="faq16_a">All submissions are reviewed by a moderator before going live, usually within 24-48 hours. We check for accuracy, language, and respect. You're welcome to email us to follow up.</p>
     </div>
 
     <div class="faq-item">
-        <p class="faq-q">How do I delete my account and all my data?</p>
-        <p class="faq-a">Settings → Sync & Cloud → Delete My Account. This permanently removes all your Firestore data and signs you out. Local data on your phone is removed when you delete the app. To verify, email us — we'll confirm deletion within 30 days.</p>
+        <p class="faq-q" data-i18n="faq17_q">How do I delete my account and all my data?</p>
+        <p class="faq-a" data-i18n="faq17_a">Settings → Sync & Cloud → Delete My Account. This permanently removes all your Firestore data and signs you out. Local data on your phone is removed when you delete the app. To verify, email us — we'll confirm deletion within 30 days.</p>
     </div>
 
     <div class="faq-item">
-        <p class="faq-q">The Quran translation in my language has a typo / I don't agree with how a verse is rendered.</p>
-        <p class="faq-a">Translations are sourced from Tanzil (the digital standard used by Quran.com, Tarteel, Muslim Pro, and most major Quran apps). We don't author translations ourselves. If you find a clear typo, email us and we'll forward to the Tanzil maintainers. If you disagree with a translator's interpretation, switch to a different translation in the Quran reader's language picker.</p>
+        <p class="faq-q" data-i18n="faq18_q">The Quran translation in my language has a typo / I don't agree with how a verse is rendered.</p>
+        <p class="faq-a" data-i18n="faq18_a">Translations are sourced from Tanzil (the digital standard used by Quran.com, Tarteel, Muslim Pro, and most major Quran apps). We don't author translations ourselves. If you find a clear typo, email us and we'll forward to the Tanzil maintainers. If you disagree with a translator's interpretation, switch to a different translation in the Quran reader's language picker.</p>
     </div>
 
     <div class="faq-item">
-        <p class="faq-q">I have a feature idea.</p>
-        <p class="faq-a">Please share. We read every message. Email <a href="mailto:tahajjud.letters@gmail.com">tahajjud.letters@gmail.com</a> with the subject "Feature idea".</p>
+        <p class="faq-q" data-i18n="faq19_q">I have a feature idea.</p>
+        <p class="faq-a" data-i18n="faq19_a">Please share. We read every message. Email <a href="mailto:tahajjud.letters@gmail.com">tahajjud.letters@gmail.com</a> with the subject "Feature idea".</p>
     </div>
 
     <div class="faq-item">
-        <p class="faq-q">Does Tahajjud+ work on Android?</p>
-        <p class="faq-a">Yes — the app is built for both iOS and Android. Some iOS-specific features (Apple Watch, Live Activities, Siri Shortcuts, Apple Health bedtime suggestions) are iOS-only. The core experience — prayer times, Quran, journal, tracker, Dua Wall — is identical on both platforms.</p>
+        <p class="faq-q" data-i18n="faq20_q">Does Tahajjud+ work on Android?</p>
+        <p class="faq-a" data-i18n="faq20_a">Yes — the app is built for both iOS and Android. Some iOS-specific features (Apple Watch, Live Activities, Siri Shortcuts, Apple Health bedtime suggestions) are iOS-only. The core experience — prayer times, Quran, journal, tracker, Dua Wall — is identical on both platforms.</p>
     </div>
 
-    <h2>Reporting content</h2>
-    <p>If you see a dua on the Dua Wall or a testimony you believe violates our community guidelines (profanity, harassment, false attribution), tap the flag icon next to that content. After 5 reports, content is automatically hidden pending moderator review. You can also email us with screenshots for faster response.</p>
+    <h2 data-i18n="reportContent.h2">Reporting content</h2>
+    <p data-i18n="reportContent.p">If you see a dua on the Dua Wall or a testimony you believe violates our community guidelines (profanity, harassment, false attribution), tap the flag icon next to that content. After 5 reports, content is automatically hidden pending moderator review. You can also email us with screenshots for faster response.</p>
 
-    <h2>Reporting bugs</h2>
-    <p>When emailing about a bug, please include:</p>
+    <h2 data-i18n="reportBugs.h2">Reporting bugs</h2>
+    <p data-i18n="reportBugs.p1">When emailing about a bug, please include:</p>
     <ul>
-        <li>iPhone model + iOS version (Settings → General → About)</li>
-        <li>Tahajjud+ version (Settings → About)</li>
-        <li>What you did before the bug</li>
-        <li>What you expected to happen vs. what actually happened</li>
-        <li>Screenshot if visual</li>
+        <li data-i18n="reportBugs.li1">iPhone model + iOS version (Settings → General → About)</li>
+        <li data-i18n="reportBugs.li2">Tahajjud+ version (Settings → About)</li>
+        <li data-i18n="reportBugs.li3">What you did before the bug</li>
+        <li data-i18n="reportBugs.li4">What you expected to happen vs. what actually happened</li>
+        <li data-i18n="reportBugs.li5">Screenshot if visual</li>
     </ul>
-    <p>This helps us reproduce + fix significantly faster.</p>
+    <p data-i18n="reportBugs.p2">This helps us reproduce + fix significantly faster.</p>
 
     <footer>
-        © 2026 Tahajjud+ · <a href="index.html">Home</a> · <a href="privacy.html">Privacy</a> · <a href="terms.html">Terms of Use</a>
+        <span data-i18n="footer.copy">© 2026 Tahajjud+</span> · <a href="index.html" data-i18n="footer.home">Home</a> · <a href="privacy.html" data-i18n="footer.privacy">Privacy</a> · <a href="terms.html" data-i18n="footer.terms">Terms of Use</a>
     </footer>
 </div>
+
+<script src="i18n/support.i18n.js"></script>
+<script src="i18n/site-lang.js"></script>
 </body>
 </html>
