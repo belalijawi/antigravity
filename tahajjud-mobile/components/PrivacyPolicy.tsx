@@ -7,7 +7,7 @@ import {
 } from 'lucide-react-native';
 import { GlassBg as BlurView } from './GlassBg';
 import { useTheme } from '../context/ThemeContext';
-import { APP_URLS } from '../utils/urls';
+import { APP_URLS, localizedUrl } from '../utils/urls';
 
 interface Props { onClose: () => void; }
 
@@ -254,7 +254,7 @@ export function PrivacyPolicy({ onClose }: Props) {
                         Full Privacy Policy:{'\n'}
                         <Text
                             style={{ color: colors.accent, textDecorationLine: 'underline' }}
-                            onPress={() => Linking.openURL(APP_URLS.privacy)}
+                            onPress={() => Linking.openURL(localizedUrl(APP_URLS.privacy))}
                         >
                             tahajjud-2d7bf.web.app/privacy
                         </Text>

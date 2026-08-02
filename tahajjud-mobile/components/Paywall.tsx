@@ -17,7 +17,7 @@ import RevenueCatService, { ENTITLEMENT_ID } from '../services/revenueCat';
 import { usePurchases } from '../context/PurchasesContext';
 import { useTheme } from '../context/ThemeContext';
 import { PurchasesPackage, PurchasesWinBackOffer, PurchasesStoreProductDiscount, SubscriptionOption } from 'react-native-purchases';
-import { APP_URLS } from '../utils/urls';
+import { APP_URLS, localizedUrl } from '../utils/urls';
 import { track } from '../utils/analytics';
 import { t } from '../utils/i18n';
 import type { FeatureId } from '../utils/featureDiscovery';
@@ -498,7 +498,7 @@ const Paywall: React.FC<PaywallProps> = ({ onClose, source = 'unknown', featureI
                         {t('paywall.footerIntro', { manageLocation: Platform.OS === 'ios' ? t('paywall.manageIOS') : t('paywall.manageAndroid') })}
                         <Text
                             style={[styles.footerText, { color: colors.accent, textDecorationLine: 'underline' }]}
-                            onPress={() => Linking.openURL(APP_URLS.terms)}
+                            onPress={() => Linking.openURL(localizedUrl(APP_URLS.terms))}
                             accessibilityRole="link"
                         >
                             {t('settings.termsOfUse')}
@@ -506,7 +506,7 @@ const Paywall: React.FC<PaywallProps> = ({ onClose, source = 'unknown', featureI
                         {' '}{t('paywall.and')}{' '}
                         <Text
                             style={[styles.footerText, { color: colors.accent, textDecorationLine: 'underline' }]}
-                            onPress={() => Linking.openURL(APP_URLS.privacy)}
+                            onPress={() => Linking.openURL(localizedUrl(APP_URLS.privacy))}
                             accessibilityRole="link"
                         >
                             {t('settings.privacyPolicy')}

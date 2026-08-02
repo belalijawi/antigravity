@@ -16,7 +16,7 @@ import { useTheme } from '../context/ThemeContext';
 import { haptic } from '../utils/haptic';
 import { track } from '../utils/analytics';
 import { t } from '../utils/i18n';
-import { APP_URLS } from '../utils/urls';
+import { APP_URLS, localizedUrl } from '../utils/urls';
 import { MIN_COMMUNITY_AGE, MAX_AGE_SLIDER, meetsCommunityAge, setAgeStatus } from '../utils/ageGate';
 
 interface Props {
@@ -104,7 +104,7 @@ export function AgeAssuranceGate({ onComplete }: Props) {
                             <Text style={styles.ctaText}>{t('btn.continue')}</Text>
                         </TouchableOpacity>
                         <TouchableOpacity
-                            onPress={() => Linking.openURL(APP_URLS.terms)}
+                            onPress={() => Linking.openURL(localizedUrl(APP_URLS.terms))}
                             hitSlop={{ top: 8, bottom: 8, left: 12, right: 12 }}
                         >
                             <Text style={[styles.termsText, { color: colors.secondaryText }]}>

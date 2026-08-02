@@ -30,7 +30,7 @@ import { GoogleAuthProvider, OAuthProvider } from 'firebase/auth';
 import { getFirebaseAuth, upgradeAnonymousAccount } from '../utils/firebase';
 import { friendlyAuthErrorMessage } from '../utils/authErrors';
 import { Linking } from 'react-native';
-import { APP_URLS } from '../utils/urls';
+import { APP_URLS, localizedUrl } from '../utils/urls';
 import { MIN_COMMUNITY_AGE, MAX_AGE_SLIDER, meetsCommunityAge, setAgeStatus } from '../utils/ageGate';
 import Slider from '@react-native-community/slider';
 
@@ -437,7 +437,7 @@ export function OnboardingFlow({ onComplete }: Props) {
                                 Shown here because this is the last screen
                                 before the community becomes reachable. */}
                             <TouchableOpacity
-                                onPress={() => Linking.openURL(APP_URLS.terms)}
+                                onPress={() => Linking.openURL(localizedUrl(APP_URLS.terms))}
                                 hitSlop={{ top: 8, bottom: 8, left: 12, right: 12 }}
                             >
                                 <Text style={[styles.termsText, { color: colors.secondaryText }]}>

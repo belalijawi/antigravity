@@ -55,7 +55,7 @@ import { SourcesMethodology } from './SourcesMethodology';
 import { WidgetPromo } from './WidgetPromo';
 import { ModerationModal } from './ModerationModal';
 import { isCurrentUserAdmin } from '../utils/admins';
-import { APP_URLS } from '../utils/urls';
+import { APP_URLS, localizedUrl } from '../utils/urls';
 import Paywall from './Paywall';
 import { haptic } from '../utils/haptic';
 import { CommunityProfileStore } from '../utils/communityProfile';
@@ -1206,7 +1206,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ onClose }) => {
 
                         <TouchableOpacity
                             style={styles.cardItem}
-                            onPress={() => Linking.openURL(APP_URLS.support)}
+                            onPress={() => Linking.openURL(localizedUrl(APP_URLS.support))}
                             accessibilityRole="button"
                             accessibilityLabel="Open support center"
                         >
@@ -1254,7 +1254,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ onClose }) => {
 
                         <TouchableOpacity
                             style={styles.cardItem}
-                            onPress={() => Linking.openURL(APP_URLS.privacy)}
+                            onPress={() => Linking.openURL(localizedUrl(APP_URLS.privacy))}
                             accessibilityRole="button"
                             accessibilityLabel="Open Privacy Policy on the web"
                         >
@@ -1270,7 +1270,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ onClose }) => {
 
                         <TouchableOpacity
                             style={styles.cardItem}
-                            onPress={() => Linking.openURL(APP_URLS.terms)}
+                            onPress={() => Linking.openURL(localizedUrl(APP_URLS.terms))}
                             accessibilityRole="button"
                             accessibilityLabel="Open Terms of Use"
                         >

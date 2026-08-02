@@ -5,6 +5,8 @@
  * BASE here and every link in the app picks it up.
  */
 
+import { getLocale } from './i18n';
+
 const BASE = 'https://tahajjud-2d7bf.web.app';
 
 export const APP_URLS = {
@@ -19,3 +21,16 @@ export const APP_URLS = {
     /** Contact email */
     email:   'mailto:tahajjud.letters@gmail.com',
 };
+
+/**
+ * Appends the app's current language as a ?lang= param, so the website
+ * opens already in whatever language the user has set in-app — on top of
+ * the site's own language picker for anyone visiting directly. No-ops
+ * (returns the URL unchanged) for mailto: links, which don't take query
+ * params the same way.
+ */
+export function localizedUrl(url: string): string {
+    if (url.startsWith('mailto:')) return url;
+    const separator = url.includes('?') ? '&' : '?';
+    return `${url}${separator}lang=${getLocale()}`;
+}
