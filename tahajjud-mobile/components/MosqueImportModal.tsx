@@ -123,6 +123,7 @@ export function MosqueImportModal({ visible, onClose }: Props) {
                 else if (extracted.error === 'not_a_timetable') msg = t('mosqueImport.errNotTimetable');
                 else if (extracted.error === 'image_unclear') msg = t('mosqueImport.errImageUnclear');
                 else if (extracted.error === 'network') msg = t('mosqueImport.errNetwork');
+                else if (extracted.error === 'service_limit') msg = t('mosqueImport.errServiceLimit');
                 setErrorMsg(msg);
                 setStep('error');
                 return;

@@ -10,6 +10,7 @@
 
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { localDateStr } from './localDate';
+import { track } from './analytics';
 
 const STORAGE_KEY = 'mosque-timetable-v1';
 const ANTHROPIC_KEY = process.env.EXPO_PUBLIC_ANTHROPIC_KEY ?? '';
@@ -109,7 +110,7 @@ STRICT RULES:
 
 export type ExtractionResult =
     | { ok: true; timetable: MosqueTimetable }
-    | { ok: false; error: 'no_key' | 'not_a_timetable' | 'image_unclear' | 'network' | 'parse_error' };
+    | { ok: false; error: 'no_key' | 'not_a_timetable' | 'image_unclear' | 'network' | 'parse_error' | 'service_limit' };
 
 export async function extractTimetableFromImage(
     base64Image: string,
@@ -148,6 +149,28 @@ export async function extractTimetableFromImage(
 
         clearTimeout(timeout); // clear on success path
         if (!response.ok) {
+            // This app calls Anthropic directly with ONE shared API key baked
+            // into the client build — every user of this feature draws
+            // against the same account-level rate limit and credit balance.
+            // A 429 (rate limited) or a 400 whose body says the credit
+            // balance is too low both mean "the shared key hit its own
+            // ceiling," not "your wifi is broken" — previously both got
+            // lumped into the same generic 'network' error, which told users
+            // to check their internet connection for a problem their
+            // internet had nothing to do with, and gave no way to notice
+            // from analytics that the key itself needed attention.
+            let isServiceLimit = response.status === 429;
+            if (!isServiceLimit && response.status === 400) {
+                try {
+                    const errBody = await response.clone().json();
+                    const errMsg = String(errBody?.error?.message ?? '').toLowerCase();
+                    if (errMsg.includes('credit balance')) isServiceLimit = true;
+                } catch { /* fall through to generic network error below */ }
+            }
+            if (isServiceLimit) {
+                track('mosque_import_service_limit', { status: response.status });
+                return { ok: false, error: 'service_limit' };
+            }
             return { ok: false, error: 'network' };
         }
 

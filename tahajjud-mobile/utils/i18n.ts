@@ -1074,6 +1074,7 @@ const en: Dict = {
     'mosqueImport.errNotTimetable': 'This doesn\'t look like a prayer timetable. Try a clearer photo of your mosque\'s monthly schedule.',
     'mosqueImport.errImageUnclear': 'The image is too blurry to read. Try a clearer, well-lit photo.',
     'mosqueImport.errNetwork': 'Network error. Check your internet connection and try again.',
+    'mosqueImport.errServiceLimit': 'The photo import service is at capacity right now. Please try again in a few minutes.',
     'mosqueImport.saveFailedTitle': 'Save failed',
     'mosqueImport.saveFailedBody': 'Could not save the timetable. Please try again.',
     'mosqueImport.removeTitle': 'Remove mosque timetable?',
