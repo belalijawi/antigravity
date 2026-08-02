@@ -78,7 +78,7 @@ import { refreshWeeklyDigest } from './utils/weeklyDigest';
 import { initAnalytics, track, setSuperProperties, noteOnboardedAtLaunch } from './utils/analytics';
 import { applyRtlIfNeeded } from './utils/rtl';
 import { drainPendingPrayerLogs } from './utils/pendingIntents';
-import { scheduleIslamicEventNotifications } from './utils/islamicEvents';
+import { scheduleIslamicEventNotifications, forceRescheduleIslamicEventNotifications } from './utils/islamicEvents';
 import { useFonts } from 'expo-font';
 
 // Suppress known SVG warnings
@@ -612,6 +612,22 @@ function App() {
   useEffect(() => {
     const sub = DeviceEventEmitter.addListener('localeChanged', () => {
       setLocaleNonce(n => n + 1);
+      // Local notifications bake their title/body in as plain strings at
+      // schedule time — there's no "render live in whatever language is
+      // active when it fires" for these, unlike in-app UI. A notification
+      // already queued in the old language stays in that language forever
+      // unless something re-schedules it. Without this, switching language
+      // (even switching back) leaves every already-pending, translated
+      // notification stuck in whatever language was active when it was
+      // queued — exactly the "got a notification in the old language after
+      // switching back" report this fixes. Covers the notification types
+      // that are safe to recompute on demand (weekly digest, streak-at-risk,
+      // Islamic events); trial/win-back/feature-nudge notifications are
+      // one-shot state machines and are deliberately left alone here rather
+      // than risking a duplicate or an out-of-sequence resend.
+      refreshWeeklyDigest().catch(() => {});
+      forceRescheduleIslamicEventNotifications().catch(() => {});
+      import('./utils/streakReminder').then(m => m.cancelStreakAtRisk()).catch(() => {});
     });
     return () => sub.remove();
   }, []);

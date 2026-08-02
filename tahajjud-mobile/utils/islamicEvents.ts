@@ -128,3 +128,16 @@ export async function scheduleIslamicEventNotifications(): Promise<void> {
         console.warn('[islamicEvents] scheduling failed:', e);
     }
 }
+
+/**
+ * Force a fresh schedule, bypassing the 6-day throttle above — for when the
+ * content itself just became stale (e.g. the user changed language), not
+ * just when it's been a while. Without this, an event notification queued
+ * days ago in the old language would sit there un-refreshed until the
+ * throttle window happened to expire on its own, firing in the wrong
+ * language in the meantime.
+ */
+export async function forceRescheduleIslamicEventNotifications(): Promise<void> {
+    try { await AsyncStorage.removeItem(LAST_SCHEDULED_KEY); } catch { /* ignore */ }
+    await scheduleIslamicEventNotifications();
+}
