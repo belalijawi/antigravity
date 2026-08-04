@@ -66,15 +66,16 @@ const Paywall: React.FC<PaywallProps> = ({ onClose, source = 'unknown', featureI
     // and the subscriber is actually eligible per App Store Connect / Play Console.
     const [winBackOffers, setWinBackOffers] = useState<Record<string, PurchasesWinBackOffer>>({});
     // Trial-cancel win-back discount (Promotional Offer), keyed by package
-    // identifier — only populated when opened from that specific notification
-    // (source === 'trial_winback'). Apple applies no automatic eligibility
+    // identifier — populated whenever PurchasesContext's trialWinbackEligible
+    // is true (any cancelled trial, lapsing or already expired), regardless
+    // of how this paywall was opened. Apple applies no automatic eligibility
     // gate here (unlike Win-Back Offers), so this is just the local discount
     // metadata for display; actual eligibility is checked at purchase time.
     const [trialWinbackDiscounts, setTrialWinbackDiscounts] = useState<Record<string, PurchasesStoreProductDiscount>>({});
     // Same offer, Android shape — Google Play's SubscriptionOption instead of
-    // a discount-then-sign split. Also only populated for source === 'trial_winback'.
+    // a discount-then-sign split. Also gated on trialWinbackEligible.
     const [trialWinbackOptions, setTrialWinbackOptions] = useState<Record<string, SubscriptionOption>>({});
-    const { isPremium, checkPremiumStatus } = usePurchases();
+    const { isPremium, checkPremiumStatus, trialWinbackEligible } = usePurchases();
     const { colors } = useTheme();
 
     useEffect(() => {
@@ -121,7 +122,15 @@ const Paywall: React.FC<PaywallProps> = ({ onClose, source = 'unknown', featureI
             // Same idea for the trial-cancel win-back offer, but no round-trip
             // needed on either platform — the offer metadata is already on
             // the local product, we just filter for our offer identifier.
-            if (source === 'trial_winback') {
+            // Gated on trialWinbackEligible (from PurchasesContext) rather
+            // than a specific source — a user who cancelled a trial should
+            // see this discount on ANY paywall open (Settings, a locked
+            // feature, etc.), not only if they happen to arrive via the
+            // in-app banner or tap the one follow-up notification. Neither
+            // Apple nor Google apply their own eligibility restriction to
+            // this offer, so the app is the only gate, and it shouldn't be
+            // narrower than it has to be.
+            if (trialWinbackEligible) {
                 const discountEntries = offerings.availablePackages
                     .map((pkg) => [pkg.identifier, RevenueCatService.getTrialWinbackDiscount(pkg)] as const)
                     .filter(([, discount]) => !!discount) as [string, PurchasesStoreProductDiscount][];
@@ -134,7 +143,7 @@ const Paywall: React.FC<PaywallProps> = ({ onClose, source = 'unknown', featureI
 
                 const shownPackages = [...discountEntries.map(([id]) => id), ...optionEntries.map(([id]) => id)];
                 if (shownPackages.length > 0) {
-                    track('trial_winback_offer_shown', { packages: shownPackages.join(',') });
+                    track('trial_winback_offer_shown', { packages: shownPackages.join(','), source });
                 }
             }
         } else {
@@ -396,10 +405,12 @@ const Paywall: React.FC<PaywallProps> = ({ onClose, source = 'unknown', featureI
                         const trialWinbackOption = trialWinbackOptions[pkg.identifier];
                         // Unified view of the trial win-back offer regardless of which
                         // platform shape it came from — everything below reads this.
+                        // periodUnit matters because the annual plan's offer is priced
+                        // per year, not per month — "1 months" would read as broken.
                         const trialWinback = trialWinbackDiscount
-                            ? { priceString: trialWinbackDiscount.priceString, cycles: trialWinbackDiscount.cycles }
+                            ? { priceString: trialWinbackDiscount.priceString, cycles: trialWinbackDiscount.cycles, periodUnit: trialWinbackDiscount.periodUnit }
                             : trialWinbackOption
-                                ? { priceString: trialWinbackOption.pricingPhases[0]?.price.formatted ?? '', cycles: trialWinbackOption.pricingPhases[0]?.billingCycleCount ?? 1 }
+                                ? { priceString: trialWinbackOption.pricingPhases[0]?.price.formatted ?? '', cycles: trialWinbackOption.pricingPhases[0]?.billingCycleCount ?? 1, periodUnit: trialWinbackOption.pricingPhases[0]?.billingPeriod.unit ?? 'MONTH' }
                                 : null;
 
                         const badge = winBackOffer
@@ -440,7 +451,9 @@ const Paywall: React.FC<PaywallProps> = ({ onClose, source = 'unknown', featureI
                                             </Text>
                                         ) : trialWinback ? (
                                             <Text style={[styles.packageDesc, { color: colors.accent }]}>
-                                                {t('paywall.trialWinbackPriceFor', { price: trialWinback.priceString, n: trialWinback.cycles })}
+                                                {trialWinback.periodUnit === 'YEAR'
+                                                    ? t('paywall.trialWinbackPriceForYear', { price: trialWinback.priceString })
+                                                    : t('paywall.trialWinbackPriceFor', { price: trialWinback.priceString, n: trialWinback.cycles })}
                                             </Text>
                                         ) : isFreeTrial && isAnnual ? (
                                             <Text style={[styles.packageDesc, { color: colors.accent }]}>

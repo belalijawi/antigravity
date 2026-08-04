@@ -32,6 +32,7 @@ import { JoinLeaderboardPrompt } from './JoinLeaderboardPrompt';
 import { SupportModal } from './SupportModal';
 import { NotificationReAskModal } from './NotificationReAskModal';
 import { CancellationSurveyModal } from './CancellationSurveyModal';
+import { TrialWinbackOfferModal } from './TrialWinbackOfferModal';
 import { WidgetPromo } from './WidgetPromo';
 import { shouldShowNotificationReAsk, getNotificationReAskCount } from '../utils/notificationReAsk';
 import {
@@ -68,7 +69,7 @@ export function HomeTab() {
     const { colors, userName, cardBg, cardBorder, blurIntensity } = useTheme();
     const scrollRef = useRef<ScrollView>(null);
     const sectionYRef = useRef<Record<string, number>>({});
-    const { openPaywall, isPremium, trialLapsing, trialEndsAt, showCancellationSurvey, dismissCancellationSurvey } = usePurchases();
+    const { openPaywall, isPremium, trialLapsing, trialEndsAt, showCancellationSurvey, dismissCancellationSurvey, showTrialWinbackPopup, dismissTrialWinbackPopup } = usePurchases();
     // Session-scoped dismiss for the trial-save banner (it returns next launch
     // while the lapsing state persists — deliberate, the stakes are real).
     const [trialSaveDismissed, setTrialSaveDismissed] = useState(false);
@@ -1004,6 +1005,15 @@ export function HomeTab() {
             <CancellationSurveyModal
                 visible={showCancellationSurvey}
                 onClose={dismissCancellationSurvey}
+            />
+
+            <TrialWinbackOfferModal
+                visible={showTrialWinbackPopup}
+                onClose={dismissTrialWinbackPopup}
+                onClaim={() => {
+                    dismissTrialWinbackPopup();
+                    openPaywall('trial_winback_popup');
+                }}
             />
 
             <Modal

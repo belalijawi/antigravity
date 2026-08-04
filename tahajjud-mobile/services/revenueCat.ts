@@ -9,21 +9,31 @@ const API_KEYS = {
 // The name of the Entitlement you create in RevenueCat (e.g., 'Premium', 'Pro')
 export const ENTITLEMENT_ID = 'Tahajjud+ Premium';
 
-// App Store Connect Promotional Offer identifier for the monthly plan, 40%
-// off for 2 months. Unlike Win-Back Offers, Apple has no automatic eligibility
-// check tied to paid history — it's usable by anyone with a subscription
-// record (including a cancelled free trial that was never charged). Because
-// of that, the app itself must be the one deciding when to look this up; see
-// PurchasesContext.updateTrialState / Paywall.tsx (source === 'trial_winback').
-const TRIAL_WINBACK_OFFER_ID = 'monthly_promo_trialcancel_40off_2mo';
+// App Store Connect Promotional Offer identifiers, one per subscription
+// product — each product's offers live entirely on that product, so the
+// monthly and annual discounts each need their own separately-configured
+// offer in ASC. Unlike Win-Back Offers, Apple has no automatic eligibility
+// check tied to paid history for either — usable by anyone with a
+// subscription record (including a cancelled free trial that was never
+// charged). Because of that, the app itself must be the one deciding when to
+// look this up; see PurchasesContext.updateTrialState / Paywall.tsx
+// (source === 'trial_winback').
+const TRIAL_WINBACK_OFFER_IDS = [
+    'monthly_promo_trialcancel_40off_2mo', // 40% off, 2 months
+    'annual_promo_trialcancel_40off_1yr',  // 40% off, first year
+];
 
-// Google Play Console offer ID for the same win-back promotion (base plan
-// "monthly", offer "trial-winback-40off-2mo", eligibility "Developer
-// determined"). Play does no automatic eligibility check for that
-// eligibility type either — every configured offer just appears in
-// product.subscriptionOptions regardless of who's asking — so exactly like
-// iOS, the app itself decides when to look this up and offer it.
-const TRIAL_WINBACK_OFFER_ID_ANDROID = 'trial-winback-40off-2mo';
+// Google Play Console offer IDs for the same win-back promotion, one per
+// base plan — "monthly" and "annual" each need their own offer configured
+// in Play Console (eligibility "Developer determined"). Play does no
+// automatic eligibility check for that eligibility type either — every
+// configured offer just appears in product.subscriptionOptions regardless
+// of who's asking — so exactly like iOS, the app itself decides when to
+// look this up and offer it.
+const TRIAL_WINBACK_OFFER_IDS_ANDROID = [
+    'trial-winback-40off-2mo',  // base plan "monthly", 40% off, 2 months
+    'trial-winback-40off-1yr',  // base plan "annual", 40% off, first year
+];
 
 class RevenueCatService {
     /**
@@ -116,7 +126,7 @@ class RevenueCatService {
      */
     static getTrialWinbackDiscount(pkg: PurchasesPackage): PurchasesStoreProductDiscount | null {
         if (Platform.OS !== 'ios') return null;
-        return pkg.product.discounts?.find((d) => d.identifier === TRIAL_WINBACK_OFFER_ID) ?? null;
+        return pkg.product.discounts?.find((d) => TRIAL_WINBACK_OFFER_IDS.includes(d.identifier)) ?? null;
     }
 
     /**
@@ -141,15 +151,17 @@ class RevenueCatService {
     }
 
     /**
-     * The trial-cancel win-back offer for `pkg` on Google Play, if the
-     * "monthly:trial-winback-40off-2mo" base-plan/offer combo is present in
-     * this product's subscriptionOptions. This is the actual purchasable
-     * option (unlike iOS's discount-then-fetch-signed-offer split, Android
-     * offers don't need a separate signing step). Android only.
+     * The trial-cancel win-back offer for `pkg` on Google Play, if any of the
+     * known base-plan/offer combos is present in this product's
+     * subscriptionOptions. This is the actual purchasable option (unlike
+     * iOS's discount-then-fetch-signed-offer split, Android offers don't
+     * need a separate signing step). Android only.
      */
     static getTrialWinbackSubscriptionOption(pkg: PurchasesPackage): SubscriptionOption | null {
         if (Platform.OS !== 'android') return null;
-        return pkg.product.subscriptionOptions?.find((o) => o.id.endsWith(`:${TRIAL_WINBACK_OFFER_ID_ANDROID}`)) ?? null;
+        return pkg.product.subscriptionOptions?.find((o) =>
+            TRIAL_WINBACK_OFFER_IDS_ANDROID.some((id) => o.id.endsWith(`:${id}`))
+        ) ?? null;
     }
 
     /** Purchase a specific Google Play SubscriptionOption (e.g. the trial win-back offer). */

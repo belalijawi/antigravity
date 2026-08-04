@@ -68,7 +68,7 @@ interface SettingsScreenProps {
 }
 export const SettingsScreen: React.FC<SettingsScreenProps> = ({ onClose }) => {
     const { theme, setTheme, colors, userName, setUserName, darkMode, setDarkMode, cardBg, cardBorder, blurIntensity } = useTheme();
-    const { isPremium } = usePurchases();
+    const { isPremium, trialWinbackEligible } = usePurchases();
     const [isDeleting, setIsDeleting] = useState(false);
     const [localPaywallVisible, setLocalPaywallVisible] = useState(false);
     const [localPaywallSource, setLocalPaywallSource] = useState('settings');
@@ -173,11 +173,28 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ onClose }) => {
 
     const prayerMethods = [
         { id: 2,  name: 'ISNA',         sub: 'US, Canada, Mexico — most North American masjids' },
-        { id: 3,  name: 'MWL',          sub: 'Muslim World League — Europe, Africa, Far East' },
-        { id: 4,  name: 'Umm al-Qura',  sub: 'Saudi Arabia, Gulf states' },
+        { id: 3,  name: 'MWL',          sub: 'Muslim World League — global default' },
+        { id: 4,  name: 'Umm al-Qura',  sub: 'Saudi Arabia, Yemen' },
         { id: 1,  name: 'Karachi',      sub: 'Pakistan, India, Bangladesh, South Asia' },
+        { id: 0,  name: 'Jafari',       sub: 'Shia Ithna-Ashari — not tied to one country' },
         { id: 13, name: 'Diyanet',      sub: 'Turkey, Northern Cyprus' },
         { id: 15, name: 'Moonsighting', sub: 'UK, Ireland, Nordic — handles high-latitude summers' },
+        { id: 12, name: 'UOIF',         sub: 'France' },
+        { id: 5,  name: 'Egyptian',     sub: 'Egypt' },
+        { id: 7,  name: 'Tehran',       sub: 'Iran' },
+        { id: 8,  name: 'Gulf',         sub: 'Bahrain, Oman' },
+        { id: 9,  name: 'Kuwait',       sub: 'Kuwait' },
+        { id: 10, name: 'Qatar',        sub: 'Qatar' },
+        { id: 16, name: 'Dubai',        sub: 'United Arab Emirates' },
+        { id: 17, name: 'JAKIM',        sub: 'Malaysia' },
+        { id: 20, name: 'Kemenag',      sub: 'Indonesia' },
+        { id: 21, name: 'Morocco',      sub: 'Morocco' },
+        { id: 19, name: 'Algeria',      sub: 'Algeria' },
+        { id: 18, name: 'Tunisia',      sub: 'Tunisia' },
+        { id: 23, name: 'Jordan',       sub: 'Jordan' },
+        { id: 14, name: 'Russia',       sub: 'Russia' },
+        { id: 11, name: 'Singapore',    sub: 'Singapore (MUIS)' },
+        { id: 22, name: 'Portugal',     sub: 'Portugal' },
     ];
 
     // Recommended method first — otherwise its pill can sit off-screen at the
@@ -597,7 +614,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ onClose }) => {
                 showsVerticalScrollIndicator={false}
                 contentContainerStyle={[styles.scrollContent, tabletContentStyle()]}
             >
-                {!isPremium && (
+                {!isPremium && !trialWinbackEligible && (
                     <Animated.View entering={FadeInDown.delay(50).duration(600)}>
                         <TouchableOpacity
                             onPress={() => openPaywall('settings_banner')}
@@ -612,6 +629,28 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ onClose }) => {
                             />
                             <Star size={20} color="#000" fill="#000" />
                             <Text style={styles.upgradeBannerText}>{t('settings.upgradeBanner')}</Text>
+                            <ChevronRight size={18} color="#000" />
+                        </TouchableOpacity>
+                    </Animated.View>
+                )}
+                {trialWinbackEligible && (
+                    <Animated.View entering={FadeInDown.delay(60).duration(600)}>
+                        <TouchableOpacity
+                            onPress={() => {
+                                haptic.light();
+                                openPaywall('settings_trial_winback');
+                            }}
+                            style={styles.upgradeBanner}
+                            activeOpacity={0.85}
+                        >
+                            <LinearGradient
+                                colors={[colors.accentGradient[0], colors.accentGradient[1]]}
+                                start={{ x: 0, y: 0 }}
+                                end={{ x: 1, y: 0 }}
+                                style={StyleSheet.absoluteFill}
+                            />
+                            <Star size={20} color="#000" fill="#000" />
+                            <Text style={styles.upgradeBannerText}>{t('settings.trialWinbackBanner')}</Text>
                             <ChevronRight size={18} color="#000" />
                         </TouchableOpacity>
                     </Animated.View>
