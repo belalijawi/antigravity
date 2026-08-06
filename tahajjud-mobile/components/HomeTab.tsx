@@ -69,10 +69,11 @@ export function HomeTab() {
     const { colors, userName, cardBg, cardBorder, blurIntensity } = useTheme();
     const scrollRef = useRef<ScrollView>(null);
     const sectionYRef = useRef<Record<string, number>>({});
-    const { openPaywall, isPremium, trialLapsing, trialEndsAt, showCancellationSurvey, dismissCancellationSurvey, showTrialWinbackPopup, dismissTrialWinbackPopup } = usePurchases();
+    const { openPaywall, isPremium, trialLapsing, trialEndsAt, trialWinbackPercentOff, neverConvertedOfferEligible, showCancellationSurvey, dismissCancellationSurvey, showTrialWinbackPopup, dismissTrialWinbackPopup } = usePurchases();
     // Session-scoped dismiss for the trial-save banner (it returns next launch
     // while the lapsing state persists — deliberate, the stakes are real).
     const [trialSaveDismissed, setTrialSaveDismissed] = useState(false);
+    const [neverConvertedBannerDismissed, setNeverConvertedBannerDismissed] = useState(false);
     const [isSettingsVisible, setIsSettingsVisible] = useState(false);
     const [showSearch, setShowSearch] = useState(false);
 
@@ -318,6 +319,7 @@ export function HomeTab() {
         // Append today to tracker history; Tracker recomputes streak on its
         // own next mount. We persist directly here so it works without that tab being open.
         let alreadyLogged = false;
+        let tahajjudCount = 0;
         try {
             const raw = await AsyncStorage.getItem('prayer-tracker-v2');
             const history = raw ? JSON.parse(raw) : { fajr: [], dhuhr: [], asr: [], maghrib: [], isha: [], tahajjud: [] };
@@ -327,6 +329,7 @@ export function HomeTab() {
                 history.tahajjud = [...(history.tahajjud || []), new Date().toISOString()];
                 await AsyncStorage.setItem('prayer-tracker-v2', JSON.stringify(history));
             }
+            tahajjudCount = history.tahajjud.length;
         } catch { /* never block the user */ }
 
         if (!alreadyLogged) {
@@ -343,6 +346,34 @@ export function HomeTab() {
             // Tally toward the 40-night challenge (idempotent for today)
             const { TahajjudChallenge } = await import('../utils/tahajjudChallenge');
             await TahajjudChallenge.recordTahajjudToday().catch(() => null);
+
+            // Leaderboard: one Tahajjud night = +1 (alreadyLogged above
+            // already guards this to at most once per day). syncTahajjudNight
+            // retries on failure instead of silently dropping this +1 (see
+            // utils/tahajjudLeaderboardSync.ts).
+            import('../utils/tahajjudLeaderboardSync').then(m => m.syncTahajjudNight()).catch(() => {});
+
+            // Persist any newly-crossed achievement threshold (3rd/7th/30th
+            // night etc.) — same check Tracker's logPrayer runs, just without
+            // its celebratory alert (that UI lives in the Tracker tab; the
+            // unlock itself still needs to be recorded regardless of which
+            // screen logged the prayer, or it stays locked until Tracker
+            // happens to run with a high-enough count later).
+            import('../utils/achievements').then(m => m.checkAchievements('prayer', tahajjudCount)).catch(() => {});
+
+            // Refresh the Friday digest so it reflects this week's count
+            import('../utils/weeklyDigest').then(m => m.refreshWeeklyDigest()).catch(() => {});
+
+            // End any Live Activity (Lock Screen countdown) — they prayed
+            import('../utils/liveActivity').then(m => m.LiveActivity.endAll()).catch(() => {});
+
+            // Refresh the home-screen widget so its "Log X" button and streak
+            // reflect this log immediately, instead of staying stale until an
+            // unrelated NightCalculator refresh happens to run.
+            import('../utils/widgetBridge').then(async m => {
+                const times = await m.loadCachedPrayerTimes();
+                if (times) await m.updateWidget(times);
+            }).catch(() => {});
 
             // Track analytics
             const { track } = await import('../utils/analytics');
@@ -545,14 +576,48 @@ export function HomeTab() {
                         }}
                     >
                         <Text style={[styles.trialSaveTitle, { color: colors.accent }]}>
-                            {t('trialBanner.title', { day: trialEndsAt ? new Date(trialEndsAt).toLocaleDateString([], { weekday: 'long' }) : '…' })}
+                            {t('trialBanner.title', { percent: trialWinbackPercentOff ?? 40 })}
                         </Text>
                         <Text style={styles.trialSaveBody}>
-                            {t('trialBanner.body')}
+                            {t('trialBanner.body', {
+                                day: trialEndsAt ? new Date(trialEndsAt).toLocaleDateString([], { weekday: 'long' }) : '…',
+                                percent: trialWinbackPercentOff ?? 40,
+                            })}
                         </Text>
                         <TouchableOpacity
                             style={styles.trialSaveDismiss}
                             onPress={() => setTrialSaveDismissed(true)}
+                            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                        >
+                            <Text style={{ color: '#64748b', fontSize: 12, fontWeight: '700' }}>✕</Text>
+                        </TouchableOpacity>
+                    </TouchableOpacity>
+                )}
+
+                {/* Engaged-but-never-subscribed banner — see
+                    usePurchases()'s neverConvertedOfferEligible doc comment
+                    and utils/neverConvertedOffer.ts for the full targeting
+                    rule. Mutually exclusive with the trial-save banner above
+                    (that one requires an actual trial to be lapsing; this
+                    one is specifically for people who've never trialed). */}
+                {neverConvertedOfferEligible && !neverConvertedBannerDismissed && (
+                    <TouchableOpacity
+                        style={[styles.trialSaveBanner, { borderColor: colors.accent + '44', backgroundColor: colors.accent + '14' }]}
+                        activeOpacity={0.85}
+                        onPress={() => {
+                            import('../utils/analytics').then(m => m.track('never_converted_banner_tapped')).catch(() => {});
+                            openPaywall('never_converted_banner');
+                        }}
+                    >
+                        <Text style={[styles.trialSaveTitle, { color: colors.accent }]}>
+                            {t('neverConvertedBanner.title')}
+                        </Text>
+                        <Text style={styles.trialSaveBody}>
+                            {t('neverConvertedBanner.body')}
+                        </Text>
+                        <TouchableOpacity
+                            style={styles.trialSaveDismiss}
+                            onPress={() => setNeverConvertedBannerDismissed(true)}
                             hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
                         >
                             <Text style={{ color: '#64748b', fontSize: 12, fontWeight: '700' }}>✕</Text>

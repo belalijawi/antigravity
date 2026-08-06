@@ -22,6 +22,7 @@ import { QuranWordService, AyahWords } from '../services/QuranWordService';
 import { getCurrentReciterId, subscribeReciter } from '../utils/reciters';
 import { t } from '../utils/i18n';
 import { formatMinSec } from '../utils/timeFormat';
+import { haptic } from '../utils/haptic';
 
 interface Props {
     surahNumber: number;
@@ -246,13 +247,13 @@ const AyahRow = React.memo(function AyahRow({
                     </View>
                 );
             })() : isTajweedEdition(edition) ? (
-                <Text style={[...baseTextStyle, isActive && { opacity: 0.95 }]}>
+                <Text style={[...baseTextStyle, isActive && { opacity: 0.95 }]} selectable>
                     {parseTajweed(ayah.text).map((tok, ti) => (
                         <Text key={ti} style={{ color: TAJWEED_COLORS[tok.rule] }}>{tok.text}</Text>
                     ))}
                 </Text>
             ) : (
-                <Text style={[...baseTextStyle, isActive && { color: '#22d3ee' }]}>
+                <Text style={[...baseTextStyle, isActive && { color: '#22d3ee' }]} selectable>
                     {ayah.text}
                 </Text>
             )}
@@ -430,6 +431,7 @@ export function SurahReader({ surahNumber: initialSurahNumber, edition = 'en.sah
     };
 
     const cycleSleepTimer = useCallback(() => {
+        haptic.light();
         clearSleepTimer();
         const next = sleepTimerMins === 0 ? 15 : sleepTimerMins === 15 ? 30 : sleepTimerMins === 30 ? 60 : 0;
         if (next === 0) return;
@@ -759,6 +761,7 @@ export function SurahReader({ surahNumber: initialSurahNumber, edition = 'en.sah
     };
 
     const handleSpeedChange = async () => {
+        haptic.light();
         const speeds: (0.75 | 1 | 1.25 | 1.5)[] = [0.75, 1, 1.25, 1.5];
         const next = speeds[(speeds.indexOf(playbackSpeed) + 1) % speeds.length];
         setPlaybackSpeed(next);
@@ -788,7 +791,7 @@ export function SurahReader({ surahNumber: initialSurahNumber, edition = 'en.sah
 
                 {/* Skip back */}
                 <Pressable
-                    onPress={handlePrevAyah}
+                    onPress={() => { haptic.light(); handlePrevAyah(); }}
                     android_ripple={{ color: 'rgba(255,255,255,0.2)', borderless: true, radius: 28 }}
                     hitSlop={10}
                     style={({ pressed }) => [styles.controlButton, pressed && { opacity: 0.6 }]}
@@ -798,7 +801,7 @@ export function SurahReader({ surahNumber: initialSurahNumber, edition = 'en.sah
 
                 {/* Play / Pause — centre button, accent-coloured with glow */}
                 <Pressable
-                    onPress={handlePlayPause}
+                    onPress={() => { haptic.light(); handlePlayPause(); }}
                     android_ripple={{ color: 'rgba(0,0,0,0.2)', borderless: true, radius: 34 }}
                     hitSlop={10}
                     style={({ pressed }) => [
@@ -821,7 +824,7 @@ export function SurahReader({ surahNumber: initialSurahNumber, edition = 'en.sah
 
                 {/* Skip forward */}
                 <Pressable
-                    onPress={handleNextAyah}
+                    onPress={() => { haptic.light(); handleNextAyah(); }}
                     android_ripple={{ color: 'rgba(255,255,255,0.2)', borderless: true, radius: 28 }}
                     hitSlop={10}
                     style={({ pressed }) => [styles.controlButton, pressed && { opacity: 0.6 }]}
@@ -857,7 +860,7 @@ export function SurahReader({ surahNumber: initialSurahNumber, edition = 'en.sah
             {/* Footer: toggles row */}
             <View style={styles.audioFooterToggles}>
                 <TouchableOpacity
-                    onPress={() => setRepeatSurah(prev => !prev)}
+                    onPress={() => { haptic.light(); setRepeatSurah(prev => !prev); }}
                     style={[styles.sleepTimerBtn, repeatSurah && { backgroundColor: colors.accent + '33', borderColor: colors.accent + '66' }]}
                 >
                     <Repeat size={13} color={repeatSurah ? colors.accent : '#94a3b8'} />
@@ -951,6 +954,7 @@ export function SurahReader({ surahNumber: initialSurahNumber, edition = 'en.sah
     const actionsRef = useRef({ saveBookmark, removeBookmark, playAyah, handlePlayPause });
     actionsRef.current = { saveBookmark, removeBookmark, playAyah, handlePlayPause };
     const handleAyahPress = useCallback((ayahNumber: number) => {
+        haptic.light();
         if (bookmarkedAyahRef.current === ayahNumber) {
             actionsRef.current.removeBookmark();
         } else {
@@ -958,6 +962,7 @@ export function SurahReader({ surahNumber: initialSurahNumber, edition = 'en.sah
         }
     }, []);
     const handleAyahPlayPress = useCallback((index: number) => {
+        haptic.light();
         if (currentAyahIndexRef.current === index) {
             actionsRef.current.handlePlayPause();
         } else {
@@ -1054,6 +1059,7 @@ export function SurahReader({ surahNumber: initialSurahNumber, edition = 'en.sah
     };
 
     const handleEditionSelect = (item: typeof VERIFIED_EDITIONS[0]) => {
+        haptic.light();
         // Quran translations are FREE for everyone — we never paywall the
         // meaning of the Quran. Premium is for tools (Hifz, offline, etc.).
         onEditionChange(item.identifier);
@@ -1160,8 +1166,8 @@ export function SurahReader({ surahNumber: initialSurahNumber, edition = 'en.sah
 
                     return (
                         <View style={styles.bismillahContainer}>
-                            <Text style={styles.arabicBismillah}>بِسْمِ اللَّهِ الرَّحْمَٰنِ الرَّحِيمِ</Text>
-                            <Text style={styles.englishBismillah}>
+                            <Text style={styles.arabicBismillah} selectable>بِسْمِ اللَّهِ الرَّحْمَٰنِ الرَّحِيمِ</Text>
+                            <Text style={styles.englishBismillah} selectable>
                                 {localizedBismillah}
                             </Text>
                         </View>

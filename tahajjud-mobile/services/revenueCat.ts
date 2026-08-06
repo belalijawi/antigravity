@@ -35,6 +35,39 @@ const TRIAL_WINBACK_OFFER_IDS_ANDROID = [
     'trial-winback-40off-1yr',  // base plan "annual", 40% off, first year
 ];
 
+// Engaged-but-never-subscribed offer (see utils/neverConvertedOffer.ts for
+// the targeting rule) — the two platforms need genuinely DIFFERENT
+// mechanisms here, not a shared one:
+//
+// iOS: Apple allows only ONE introductory offer per subscription group per
+// user, so "free trial → then a discounted price" can't be configured as a
+// single offer on a NEW subscriber's product — confirmed against current
+// RevenueCat/Apple docs, not assumed. The only way to give this segment a
+// real discount is a genuinely SEPARATE product with NO trial phase — the
+// discount itself, shown upfront, is the entire offer. (This is also the
+// better choice on its own merits: this segment already knows the app from
+// a week+ of free use, so a trial doesn't address their actual hesitation
+// the way a visible price cut does.)
+//
+// Android: Play Billing DOES support a two-phase offer (free trial, THEN a
+// discounted recurring price, then the base plan price) as ONE offer on the
+// EXISTING product — no new product needed, same as the win-back IDs below.
+// Play's own checkout UI won't display both phases attractively on its own
+// (no strikethrough/comparison), so Paywall.tsx builds that display itself
+// from the raw pricingPhases data, same as it already does for win-back.
+//
+// PLACEHOLDER IDENTIFIERS on both — swap for the real ones once created in
+// App Store Connect + Play Console. Until then, both lookups below simply
+// find nothing and the standard package is shown instead.
+export const NEVER_CONVERTED_OFFER_PRODUCT_IDS_IOS = [
+    'monthly_never_converted_promo', // discounted price, no trial
+    'annual_never_converted_promo',  // discounted price, no trial
+];
+const NEVER_CONVERTED_OFFER_IDS_ANDROID = [
+    'never-converted-trial-then-40off-2mo', // base plan "monthly": 7-day trial, then 40% off 2mo
+    'never-converted-trial-then-40off-1yr', // base plan "annual": 7-day trial, then 40% off 1yr
+];
+
 class RevenueCatService {
     /**
      * Initialize the RevenueCat SDK
@@ -175,6 +208,36 @@ class RevenueCatService {
             }
             return null;
         }
+    }
+
+    /**
+     * iOS: the engaged-but-never-subscribed offer package, if configured —
+     * see NEVER_CONVERTED_OFFER_PRODUCT_IDS_IOS's comment for why this is a
+     * whole separate (trial-less, discount-only) product rather than a
+     * discount/offer object on the standard one. Just a normal package once
+     * found: no signing step — purchase it with the regular purchasePackage()
+     * below, same as any other package. iOS only; Android uses the
+     * subscription-option path below instead.
+     */
+    static getNeverConvertedPackage(offering: PurchasesOffering | null, isAnnual: boolean): PurchasesPackage | null {
+        if (Platform.OS !== 'ios' || !offering) return null;
+        const targetId = isAnnual ? NEVER_CONVERTED_OFFER_PRODUCT_IDS_IOS[1] : NEVER_CONVERTED_OFFER_PRODUCT_IDS_IOS[0];
+        return offering.availablePackages.find((p) => p.product.identifier === targetId) ?? null;
+    }
+
+    /**
+     * Android: the engaged-but-never-subscribed offer for `pkg`, if the
+     * known trial-then-discount offer is present in this product's
+     * subscriptionOptions — see NEVER_CONVERTED_OFFER_IDS_ANDROID's comment.
+     * Unlike iOS this attaches to the EXISTING product as a second offer, so
+     * there's no separate "package" to swap in — purchase this option
+     * directly with purchaseWithSubscriptionOption() above. Android only.
+     */
+    static getNeverConvertedSubscriptionOption(pkg: PurchasesPackage): SubscriptionOption | null {
+        if (Platform.OS !== 'android') return null;
+        return pkg.product.subscriptionOptions?.find((o) =>
+            NEVER_CONVERTED_OFFER_IDS_ANDROID.some((id) => o.id.endsWith(`:${id}`))
+        ) ?? null;
     }
 
     /**

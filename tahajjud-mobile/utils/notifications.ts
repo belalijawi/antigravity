@@ -114,11 +114,17 @@ export async function requestNotificationPermissions(): Promise<boolean> {
             bypassDnd: true,
         });
 
-        await Notifications.setNotificationChannelAsync('prayers', {
+        // 'prayers_adhan' (not the older 'prayers' id) — Android locks a
+        // channel's sound in at creation and ignores config changes to an
+        // already-existing channel id, so already-installed devices would
+        // keep the old default-sound channel forever if we edited it in
+        // place. A new id makes this take effect for existing installs too.
+        await Notifications.setNotificationChannelAsync('prayers_adhan', {
             name: 'Prayer Times',
             importance: Notifications.AndroidImportance.HIGH,
             vibrationPattern: [0, 500, 500, 500],
             lightColor: '#06b6d4',
+            sound: 'tahajjud_alert.wav',
             lockscreenVisibility: Notifications.AndroidNotificationVisibility.PUBLIC,
         });
     }
@@ -173,7 +179,12 @@ export async function scheduleMorningAfter(hasStreak: boolean): Promise<void> {
             trigger: {
                 type: Notifications.SchedulableTriggerInputTypes.DATE,
                 date: fireDate,
-                ...(Platform.OS === 'android' && { channelId: 'prayers' }),
+                // 'prayers_adhan' is the channel the app actually creates now
+                // (see requestNotificationPermissionsAsync) — the old
+                // 'prayers' id is no longer created, so pointing here at it
+                // would leave this one-time notification on a channel that
+                // may not exist on a fresh install.
+                ...(Platform.OS === 'android' && { channelId: 'prayers_adhan' }),
             },
         });
         await AsyncStorage.setItem(KEY, 'true');
@@ -466,7 +477,10 @@ export async function scheduleFuturePrayerNotifications(
                     title,
                     body,
                     priority: Notifications.AndroidNotificationPriority.HIGH,
-                    sound: 'default',
+                    // Same custom alert Tahajjud uses — was 'default' (silent
+                    // during Focus modes without interruptionLevel below, and
+                    // just the plain system chime otherwise).
+                    sound: 'tahajjud_alert.caf',
                     // Without this, iOS silently delivers the notification
                     // with no sound whenever any Focus mode is active (Sleep
                     // Focus overnight is extremely common — and directly
@@ -479,7 +493,7 @@ export async function scheduleFuturePrayerNotifications(
                 trigger: {
                     type: Notifications.SchedulableTriggerInputTypes.DATE,
                     date: scheduleTime,
-                    ...(Platform.OS === 'android' && { channelId: 'prayers' }),
+                    ...(Platform.OS === 'android' && { channelId: 'prayers_adhan' }),
                 },
             });
             ids.push(id);
@@ -700,7 +714,8 @@ async function internalSchedulePrayerNotification(prayerName: string, targetTime
                 title,
                 body,
                 priority: Notifications.AndroidNotificationPriority.HIGH,
-                sound: 'default',
+                // Same custom alert Tahajjud uses — was 'default'.
+                sound: 'tahajjud_alert.caf',
                 // Without this, iOS silently delivers the notification with
                 // no sound whenever any Focus mode is active (Sleep Focus
                 // overnight is extremely common — and directly covers Fajr).
@@ -715,7 +730,7 @@ async function internalSchedulePrayerNotification(prayerName: string, targetTime
             trigger: {
                 type: Notifications.SchedulableTriggerInputTypes.DATE,
                 date: scheduleTime,
-                ...(Platform.OS === 'android' && { channelId: 'prayers' }),
+                ...(Platform.OS === 'android' && { channelId: 'prayers_adhan' }),
             },
         });
 

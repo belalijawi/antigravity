@@ -72,5 +72,13 @@ export async function quickLogPrayer(key: PrayerKey, source: 'notification' | 'w
     }
     DeviceEventEmitter.emit('prayerLogged');
 
+    // Refresh the home-screen widget so its "Log X" button and streak
+    // reflect this log immediately, instead of staying stale until some
+    // unrelated NightCalculator refresh happens to run.
+    import('./widgetBridge').then(async m => {
+        const times = await m.loadCachedPrayerTimes();
+        if (times) await m.updateWidget(times);
+    }).catch(() => {});
+
     return true;
 }

@@ -13,12 +13,13 @@ import {
 } from 'react-native';
 import { X, Check, Star, Moon, CalendarDays, WifiOff, Brain, Users, MapPin, BellRing, BarChart3, Repeat, PenLine, Globe, Trophy } from 'lucide-react-native';
 import { BlurView } from 'expo-blur';
-import RevenueCatService, { ENTITLEMENT_ID } from '../services/revenueCat';
+import RevenueCatService, { ENTITLEMENT_ID, NEVER_CONVERTED_OFFER_PRODUCT_IDS_IOS } from '../services/revenueCat';
 import { usePurchases } from '../context/PurchasesContext';
 import { useTheme } from '../context/ThemeContext';
 import { PurchasesPackage, PurchasesWinBackOffer, PurchasesStoreProductDiscount, SubscriptionOption } from 'react-native-purchases';
 import { APP_URLS, localizedUrl } from '../utils/urls';
 import { track } from '../utils/analytics';
+import { recordPaywallViewed } from '../utils/neverConvertedOffer';
 import { t } from '../utils/i18n';
 import type { FeatureId } from '../utils/featureDiscovery';
 
@@ -75,12 +76,25 @@ const Paywall: React.FC<PaywallProps> = ({ onClose, source = 'unknown', featureI
     // Same offer, Android shape — Google Play's SubscriptionOption instead of
     // a discount-then-sign split. Also gated on trialWinbackEligible.
     const [trialWinbackOptions, setTrialWinbackOptions] = useState<Record<string, SubscriptionOption>>({});
-    const { isPremium, checkPremiumStatus, trialWinbackEligible } = usePurchases();
+    // Engaged-but-never-subscribed offer, keyed by the STANDARD package's
+    // identifier (not swapped in place) so the original price stays
+    // available for the struck-through comparison, same convention as the
+    // trial-winback state above. iOS: a whole separate trial-less product
+    // (Apple can't chain trial+discount into one offer for a new
+    // subscriber — see revenueCat.ts). Android: a second offer with both
+    // phases on the SAME product (Play Billing supports that natively).
+    const [neverConvertedIosPackages, setNeverConvertedIosPackages] = useState<Record<string, PurchasesPackage>>({});
+    const [neverConvertedAndroidOptions, setNeverConvertedAndroidOptions] = useState<Record<string, SubscriptionOption>>({});
+    const { isPremium, checkPremiumStatus, trialWinbackEligible, neverConvertedOfferEligible } = usePurchases();
     const { colors } = useTheme();
 
     useEffect(() => {
         loadOfferings();
         track('paywall_viewed', { source });
+        // Regardless of source (self-initiated or blocked by a locked
+        // feature) — see utils/neverConvertedOffer.ts's eligibility rule
+        // for why any view resets the 2-day recency window.
+        recordPaywallViewed().catch(() => {});
         // Fires only if the paywall unmounts WITHOUT a completed purchase —
         // i.e. the user closed it. Pairs with paywall_viewed for a true
         // view -> dismiss / convert funnel per source.
@@ -102,7 +116,39 @@ const Paywall: React.FC<PaywallProps> = ({ onClose, source = 'unknown', featureI
                 productId: p.product.identifier,
                 price: p.product.priceString,
             })));
-            setPackages(offerings.availablePackages);
+            // The iOS never-converted offer lives on its own separate promo
+            // products (see revenueCat.ts), which must themselves be present
+            // in this offering for getNeverConvertedPackage() to find them.
+            // They're never a standalone card — only ever shown as an
+            // overlay on the matching standard Monthly/Annual card below —
+            // so exclude them here before they can render as their own
+            // (undiscounted-looking, unlabeled) duplicate entries.
+            setPackages(offerings.availablePackages.filter(
+                (pkg) => !NEVER_CONVERTED_OFFER_PRODUCT_IDS_IOS.includes(pkg.product.identifier)
+            ));
+
+            // Engaged-but-never-subscribed offer — see revenueCat.ts's
+            // NEVER_CONVERTED_OFFER_PRODUCT_IDS_IOS / _ANDROID comments for
+            // why iOS and Android need genuinely different lookups here.
+            if (neverConvertedOfferEligible) {
+                const iosEntries = offerings.availablePackages
+                    .map((pkg) => {
+                        const isAnnual = pkg.packageType === 'ANNUAL' || pkg.identifier === '$rc_annual';
+                        return [pkg.identifier, RevenueCatService.getNeverConvertedPackage(offerings, isAnnual)] as const;
+                    })
+                    .filter(([, special]) => !!special) as [string, PurchasesPackage][];
+                setNeverConvertedIosPackages(Object.fromEntries(iosEntries));
+
+                const androidEntries = offerings.availablePackages
+                    .map((pkg) => [pkg.identifier, RevenueCatService.getNeverConvertedSubscriptionOption(pkg)] as const)
+                    .filter(([, option]) => !!option) as [string, SubscriptionOption][];
+                setNeverConvertedAndroidOptions(Object.fromEntries(androidEntries));
+
+                const shownPackages = [...iosEntries.map(([id]) => id), ...androidEntries.map(([id]) => id)];
+                if (shownPackages.length > 0) {
+                    track('never_converted_offer_shown', { packages: shownPackages.join(','), source });
+                }
+            }
 
             // Only worth checking win-back eligibility when the user actually
             // arrived via a win-back notification — avoids a needless
@@ -157,7 +203,16 @@ const Paywall: React.FC<PaywallProps> = ({ onClose, source = 'unknown', featureI
         const winBackOffer = winBackOffers[pkg.identifier];
         const trialWinbackDiscount = trialWinbackDiscounts[pkg.identifier];
         const trialWinbackOption = trialWinbackOptions[pkg.identifier];
-        const via = winBackOffer ? 'winback_offer' : (trialWinbackDiscount || trialWinbackOption) ? 'trial_winback_offer' : 'standard';
+        // iOS: an entirely separate package (see revenueCat.ts) — purchase
+        // IT, not the standard `pkg`. Android: a second offer on the SAME
+        // package — purchase the option via purchaseWithSubscriptionOption,
+        // same shape as the trial-winback Android path above.
+        const neverConvertedIosPackage = neverConvertedIosPackages[pkg.identifier];
+        const neverConvertedAndroidOption = neverConvertedAndroidOptions[pkg.identifier];
+        const via = winBackOffer ? 'winback_offer'
+            : (trialWinbackDiscount || trialWinbackOption) ? 'trial_winback_offer'
+            : (neverConvertedIosPackage || neverConvertedAndroidOption) ? 'never_converted_offer'
+            : 'standard';
         track('purchase_started', { package: pkg.identifier, source, via });
         try {
             const customerInfo = winBackOffer
@@ -166,7 +221,11 @@ const Paywall: React.FC<PaywallProps> = ({ onClose, source = 'unknown', featureI
                     ? await RevenueCatService.purchaseWithTrialWinbackOffer(pkg, trialWinbackDiscount)
                     : trialWinbackOption
                         ? await RevenueCatService.purchaseWithSubscriptionOption(trialWinbackOption)
-                        : await RevenueCatService.purchasePackage(pkg);
+                        : neverConvertedIosPackage
+                            ? await RevenueCatService.purchasePackage(neverConvertedIosPackage)
+                            : neverConvertedAndroidOption
+                                ? await RevenueCatService.purchaseWithSubscriptionOption(neverConvertedAndroidOption)
+                                : await RevenueCatService.purchasePackage(pkg);
             if (customerInfo) {
                 const price = winBackOffer
                     ? winBackOffer.price
@@ -174,13 +233,26 @@ const Paywall: React.FC<PaywallProps> = ({ onClose, source = 'unknown', featureI
                         ? trialWinbackDiscount.price
                         : trialWinbackOption
                             ? (trialWinbackOption.pricingPhases[0]?.price.amountMicros ?? 0) / 1_000_000
-                            : pkg.product.price;
+                            : neverConvertedIosPackage
+                                ? neverConvertedIosPackage.product.price
+                                : neverConvertedAndroidOption
+                                    ? (neverConvertedAndroidOption.pricingPhases[1]?.price.amountMicros ?? 0) / 1_000_000
+                                    : pkg.product.price;
                 track('purchase_completed', { package: pkg.identifier, source, price, currency: pkg.product.currencyCode, via });
                 setConverted(true);
                 // If this was a free-trial purchase, schedule the "trial ends soon"
-                // reminder so the paywall's promise is genuinely kept.
+                // reminder so the paywall's promise is genuinely kept. The
+                // never-converted Android offer has a real trial phase too
+                // (phase 0); its iOS counterpart deliberately has none.
                 const intro: any = (pkg.product as any).introPrice;
-                if (intro && intro.price === 0) {
+                if (neverConvertedAndroidOption) {
+                    const trialPhase = neverConvertedAndroidOption.pricingPhases[0];
+                    const n = trialPhase?.billingPeriod?.value ?? 7;
+                    const unitDays: Record<string, number> = { DAY: 1, WEEK: 7, MONTH: 30, YEAR: 365 };
+                    const perUnit = unitDays[trialPhase?.billingPeriod?.unit ?? 'DAY'] ?? 1;
+                    const { scheduleTrialEndingReminder } = await import('../utils/trialReminder');
+                    scheduleTrialEndingReminder(n * perUnit).catch(() => {});
+                } else if (intro && intro.price === 0) {
                     const n = intro.periodNumberOfUnits ?? 1;
                     const unitDays: Record<string, number> = { DAY: 1, WEEK: 7, MONTH: 30, YEAR: 365 };
                     const perUnit = unitDays[intro.periodUnit] ?? 7; // default to a week if unknown
@@ -408,22 +480,53 @@ const Paywall: React.FC<PaywallProps> = ({ onClose, source = 'unknown', featureI
                         // periodUnit matters because the annual plan's offer is priced
                         // per year, not per month — "1 months" would read as broken.
                         const trialWinback = trialWinbackDiscount
-                            ? { priceString: trialWinbackDiscount.priceString, cycles: trialWinbackDiscount.cycles, periodUnit: trialWinbackDiscount.periodUnit }
+                            ? { priceString: trialWinbackDiscount.priceString, price: trialWinbackDiscount.price, cycles: trialWinbackDiscount.cycles, periodUnit: trialWinbackDiscount.periodUnit }
                             : trialWinbackOption
-                                ? { priceString: trialWinbackOption.pricingPhases[0]?.price.formatted ?? '', cycles: trialWinbackOption.pricingPhases[0]?.billingCycleCount ?? 1, periodUnit: trialWinbackOption.pricingPhases[0]?.billingPeriod.unit ?? 'MONTH' }
+                                ? { priceString: trialWinbackOption.pricingPhases[0]?.price.formatted ?? '', price: (trialWinbackOption.pricingPhases[0]?.price.amountMicros ?? 0) / 1_000_000, cycles: trialWinbackOption.pricingPhases[0]?.billingCycleCount ?? 1, periodUnit: trialWinbackOption.pricingPhases[0]?.billingPeriod.unit ?? 'MONTH' }
                                 : null;
+
+                        // Engaged-but-never-subscribed offer. iOS has NO
+                        // trial phase (a separate product, discounted price
+                        // read from ITS OWN introPrice — see revenueCat.ts
+                        // for why Apple can't chain trial+discount for a new
+                        // subscriber). Android DOES have a trial phase
+                        // (phase 0), read here for the description text
+                        // below; phase 1 is the discounted price shown.
+                        const neverConvertedIosPkg = neverConvertedIosPackages[pkg.identifier];
+                        const neverConvertedIosIntro: any = neverConvertedIosPkg ? (neverConvertedIosPkg.product as any).introPrice : null;
+                        const neverConvertedAndroidOption = neverConvertedAndroidOptions[pkg.identifier];
+                        const neverConvertedAndroidTrialPhase = neverConvertedAndroidOption?.pricingPhases[0];
+                        const neverConvertedAndroidTrialDays = neverConvertedAndroidTrialPhase
+                            ? (neverConvertedAndroidTrialPhase.billingPeriod?.value ?? 7) * (({ DAY: 1, WEEK: 7, MONTH: 30, YEAR: 365 } as Record<string, number>)[neverConvertedAndroidTrialPhase.billingPeriod?.unit ?? 'DAY'] ?? 1)
+                            : 0;
+                        const neverConverted = (neverConvertedIosPkg && neverConvertedIosIntro)
+                            ? { priceString: neverConvertedIosIntro.priceString, price: neverConvertedIosIntro.price, cycles: neverConvertedIosIntro.cycles ?? 1, periodUnit: neverConvertedIosIntro.periodUnit ?? (isAnnual ? 'YEAR' : 'MONTH'), trialDays: 0 }
+                            : neverConvertedAndroidOption
+                                ? { priceString: neverConvertedAndroidOption.pricingPhases[1]?.price.formatted ?? '', price: (neverConvertedAndroidOption.pricingPhases[1]?.price.amountMicros ?? 0) / 1_000_000, cycles: neverConvertedAndroidOption.pricingPhases[1]?.billingCycleCount ?? 1, periodUnit: neverConvertedAndroidOption.pricingPhases[1]?.billingPeriod.unit ?? 'MONTH', trialDays: neverConvertedAndroidTrialDays }
+                                : null;
+
+                        // Computed from each user's own local-currency prices (both sides of
+                        // this ratio come from the store for their region), so it reflects
+                        // the real discount rather than assuming a fixed "40%" everywhere —
+                        // store price-tier rounding can shift the actual percentage slightly.
+                        const discountedPrice = winBackOffer ? winBackOffer.price : trialWinback ? trialWinback.price : neverConverted ? neverConverted.price : null;
+                        const percentOff = discountedPrice != null && pkg.product.price > 0
+                            ? Math.round((1 - discountedPrice / pkg.product.price) * 100)
+                            : null;
 
                         const badge = winBackOffer
                             ? { text: `🎉 ${t('paywall.winbackBadge').toUpperCase()}` }
                             : trialWinback
                                 ? { text: `🎉 ${t('paywall.trialWinbackBadge').toUpperCase()}` }
-                                : isAnnual
-                                ? { text: isFreeTrial ? t('paywall.bestValueTrial') : t('paywall.bestValue') }
-                                : isFreeTrial
-                                    ? { text: `🎁 ${trialLabel.toUpperCase()}` }
-                                    : isLifetime
-                                        ? { text: t('paywall.forever') }
-                                        : null;
+                                : neverConverted
+                                    ? { text: `🎉 ${t('paywall.neverConvertedBadge').toUpperCase()}` }
+                                    : isAnnual
+                                    ? { text: isFreeTrial ? t('paywall.bestValueTrial') : t('paywall.bestValue') }
+                                    : isFreeTrial
+                                        ? { text: `🎁 ${trialLabel.toUpperCase()}` }
+                                        : isLifetime
+                                            ? { text: t('paywall.forever') }
+                                            : null;
 
                         return (
                             <View key={pkg.identifier} style={styles.packageWrapper}>
@@ -455,6 +558,18 @@ const Paywall: React.FC<PaywallProps> = ({ onClose, source = 'unknown', featureI
                                                     ? t('paywall.trialWinbackPriceForYear', { price: trialWinback.priceString })
                                                     : t('paywall.trialWinbackPriceFor', { price: trialWinback.priceString, n: trialWinback.cycles })}
                                             </Text>
+                                        ) : neverConverted ? (
+                                            <Text style={[styles.packageDesc, { color: colors.accent }]}>
+                                                {neverConverted.trialDays > 0
+                                                    // Android: has a real trial phase — say so, then the discount.
+                                                    ? (neverConverted.periodUnit === 'YEAR'
+                                                        ? t('paywall.neverConvertedTrialThenPriceForYear', { trial: t('paywall.daysFree', { n: neverConverted.trialDays }), price: neverConverted.priceString })
+                                                        : t('paywall.neverConvertedTrialThenPriceFor', { trial: t('paywall.daysFree', { n: neverConverted.trialDays }), price: neverConverted.priceString, n: neverConverted.cycles }))
+                                                    // iOS: no trial phase — the discount itself is the whole offer.
+                                                    : (neverConverted.periodUnit === 'YEAR'
+                                                        ? t('paywall.trialWinbackPriceForYear', { price: neverConverted.priceString })
+                                                        : t('paywall.trialWinbackPriceFor', { price: neverConverted.priceString, n: neverConverted.cycles }))}
+                                            </Text>
                                         ) : isFreeTrial && isAnnual ? (
                                             <Text style={[styles.packageDesc, { color: colors.accent }]}>
                                                 {weeklyEquivalent
@@ -478,10 +593,20 @@ const Paywall: React.FC<PaywallProps> = ({ onClose, source = 'unknown', featureI
                                         )}
                                     </View>
                                     <View style={[styles.priceBadge, { backgroundColor: colors.accent }]}>
+                                        {(winBackOffer || trialWinback || neverConverted) && (
+                                            <View style={styles.discountRow}>
+                                                <Text style={styles.originalPriceText}>{pkg.product.priceString}</Text>
+                                                {percentOff != null && percentOff > 0 && (
+                                                    <View style={styles.percentOffPill}>
+                                                        <Text style={styles.percentOffText}>-{percentOff}%</Text>
+                                                    </View>
+                                                )}
+                                            </View>
+                                        )}
                                         <Text style={styles.priceText}>
-                                            {winBackOffer ? winBackOffer.priceString : trialWinback ? trialWinback.priceString : isFreeTrial ? t('paywall.startFree') : pkg.product.priceString}
+                                            {winBackOffer ? winBackOffer.priceString : trialWinback ? trialWinback.priceString : neverConverted ? neverConverted.priceString : isFreeTrial ? t('paywall.startFree') : pkg.product.priceString}
                                         </Text>
-                                        {!winBackOffer && !trialWinback && !isFreeTrial && isAnnual && <Text style={styles.priceSubText}>{t('paywall.perYearBadge')}</Text>}
+                                        {!winBackOffer && !trialWinback && !neverConverted && !isFreeTrial && isAnnual && <Text style={styles.priceSubText}>{t('paywall.perYearBadge')}</Text>}
                                     </View>
                                 </TouchableOpacity>
                             </View>
@@ -751,6 +876,30 @@ const styles = StyleSheet.create({
         fontWeight: 'bold',
         fontSize: 16,
         textAlign: 'center',
+    },
+    originalPriceText: {
+        color: '#000',
+        fontSize: 12,
+        textAlign: 'center',
+        textDecorationLine: 'line-through',
+        opacity: 0.55,
+    },
+    discountRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'center',
+        gap: 6,
+    },
+    percentOffPill: {
+        backgroundColor: 'rgba(0,0,0,0.75)',
+        borderRadius: 8,
+        paddingHorizontal: 6,
+        paddingVertical: 1,
+    },
+    percentOffText: {
+        color: '#fff',
+        fontSize: 11,
+        fontWeight: '700',
     },
     priceSubText: {
         color: '#000',

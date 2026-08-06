@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useEffect, useState, useCallback, useMemo } from 'react';
+import React, { createContext, useContext, useEffect, useRef, useState, useCallback, useMemo } from 'react';
 import { Platform } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import RevenueCatService, { ENTITLEMENT_ID } from '../services/revenueCat';
@@ -39,6 +39,19 @@ interface PurchasesContextType {
      *  their own on this specific offer, so the app is the only gate; this
      *  flag is that gate. Clears the instant they resubscribe. */
     trialWinbackEligible: boolean;
+    /** The real win-back discount percentage off the monthly plan, computed
+     *  from this user's own local-currency prices (both the regular price
+     *  and the discounted price come from the store for their region) — not
+     *  a hardcoded 40, since store price-tier rounding can shift the actual
+     *  percentage slightly per country. Null while unavailable (offer not
+     *  loaded yet, no network, etc.); callers should fall back to a generic
+     *  number or generic copy. */
+    trialWinbackPercentOff: number | null;
+    /** True for engaged-but-never-subscribed users who qualify for the
+     *  discounted-post-trial offer — see utils/neverConvertedOffer.ts for
+     *  the full rule. Already accounts for the measurement holdout group:
+     *  false for them regardless of underlying eligibility. */
+    neverConvertedOfferEligible: boolean;
     paywallVisible: boolean;
     paywallSource: string;
     /** The specific feature that triggered this paywall, if any — lets the
@@ -79,8 +92,50 @@ export const PurchasesProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     const [trialLapsing, setTrialLapsing] = useState<boolean>(false);
     const [trialEndsAt, setTrialEndsAt] = useState<string | null>(null);
     const [trialWinbackEligible, setTrialWinbackEligible] = useState<boolean>(false);
+    const [trialWinbackPercentOff, setTrialWinbackPercentOff] = useState<number | null>(null);
+    // Separate from trialWinbackEligible: this is for users who have used
+    // the app for real but never trialed/subscribed AT ALL — see
+    // utils/neverConvertedOffer.ts for the full eligibility rule. Already
+    // false (not just unset) for anyone assigned to the measurement
+    // holdout group, so no UI ever hints the offer exists to them.
+    const [neverConvertedOfferEligible, setNeverConvertedOfferEligible] = useState<boolean>(false);
     const [showCancellationSurvey, setShowCancellationSurvey] = useState<boolean>(false);
     const [trialWinbackPopupPending, setTrialWinbackPopupPending] = useState<boolean>(false);
+
+    // updateTrialState() runs from both checkPremiumStatus() and the
+    // RevenueCat CustomerInfoUpdateListener, which can fire several times in
+    // quick succession around a purchase/cancel — so calls to this function
+    // can resolve out of order. Without this generation guard, an earlier
+    // eligible=true call still awaiting getOfferings() could resolve AFTER a
+    // later eligible=false call already cleared the state, "resurrecting" a
+    // stale discount percentage right after the user resubscribed.
+    const winbackPercentOffGenerationRef = useRef(0);
+    const updateTrialWinbackPercentOff = async (eligible: boolean) => {
+        const generation = ++winbackPercentOffGenerationRef.current;
+        if (!eligible) {
+            setTrialWinbackPercentOff(null);
+            return;
+        }
+        try {
+            const offerings = await RevenueCatService.getOfferings();
+            const monthly = offerings?.availablePackages.find(
+                (p) => p.packageType === 'MONTHLY' || p.identifier === '$rc_monthly'
+            );
+            if (!monthly || monthly.product.price <= 0) return;
+            const discount = RevenueCatService.getTrialWinbackDiscount(monthly);
+            const option = RevenueCatService.getTrialWinbackSubscriptionOption(monthly);
+            const discountedPrice = discount
+                ? discount.price
+                : option
+                    ? (option.pricingPhases[0]?.price.amountMicros ?? 0) / 1_000_000
+                    : null;
+            // Discard a stale result — a newer call has already superseded
+            // this one (e.g. the user resubscribed while this was in flight).
+            if (discountedPrice != null && generation === winbackPercentOffGenerationRef.current) {
+                setTrialWinbackPercentOff(Math.round((1 - discountedPrice / monthly.product.price) * 100));
+            }
+        } catch { /* leave previous value — banner falls back to a default */ }
+    };
 
     // Detect the "silent lapse" state: an active trial whose auto-renew is
     // already switched off. RevenueCat data showed a meaningful share of
@@ -111,21 +166,41 @@ export const PurchasesProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         // next customerInfo update and every discount UI disappears.
         const allEnt: any = info.entitlements.all[ENTITLEMENT_ID];
         const hadCancelledSub = !!allEnt && allEnt.willRenew === false;
-        setTrialWinbackEligible(isLapsingTrial || hadCancelledSub);
+        const eligible = isLapsingTrial || hadCancelledSub;
+        setTrialWinbackEligible(eligible);
+        updateTrialWinbackPercentOff(eligible).catch(() => {});
 
-        // Trial win-back nudge: only relevant while a cancelled trial is
-        // still pending its real expiration — reschedule against it every
-        // time (self-corrects if the date shifts or they re-enable
-        // auto-renew), cancel otherwise so a converted/renewing user never
-        // sees a "come back" push while they're already paying.
+        // Cancellation win-back nudge: relevant while EITHER a cancelled
+        // trial OR a cancelled PAID subscription is still pending its real
+        // expiration — matches trialWinbackEligible's own scope above, which
+        // already covers both. Previously this push only fired for
+        // isLapsingTrial, so someone who subscribed and then cancelled got
+        // the in-app banner/paywall discount if they happened to reopen the
+        // app, but was never proactively brought back — the one segment
+        // that's already proven willing to pay got the weakest win-back
+        // treatment. Reschedule against the real expiration every time
+        // (self-corrects if the date shifts or they re-enable auto-renew),
+        // cancel otherwise so a converted/renewing user never sees a "come
+        // back" push while they're already paying.
+        const isLapsingPaid = !!ent && ent.periodType !== 'TRIAL' && ent.willRenew === false;
         try {
             const { scheduleTrialWinbackNudge, cancelTrialWinbackNudge } = await import('../utils/trialWinback');
-            if (isLapsingTrial && ent.expirationDate) {
+            if ((isLapsingTrial || isLapsingPaid) && ent.expirationDate) {
                 await scheduleTrialWinbackNudge(new Date(ent.expirationDate));
             } else {
                 await cancelTrialWinbackNudge();
             }
         } catch { /* never block on a notification-scheduling failure */ }
+
+        // Trial-ending reminder ("your trial ends in N days... cancel to
+        // avoid a charge") is only accurate while a trial is genuinely still
+        // pending conversion. If they've already cancelled (isLapsingTrial)
+        // or the entitlement is no longer a TRIAL at all (converted to paid,
+        // bought lifetime, or fully expired), that message is now false —
+        // cancel it rather than let it fire referencing a stale state.
+        if (isLapsingTrial || ent?.periodType !== 'TRIAL') {
+            import('../utils/trialReminder').then(m => m.cancelTrialEndingReminder()).catch(() => {});
+        }
 
         // Trial win-back popup: fires the moment a trial is cancelled, no
         // matter how many days are left on it (someone cancelling on day 1 of
@@ -168,6 +243,43 @@ export const PurchasesProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     // only actually appears once the survey isn't (or was never) showing;
     // dismissing the survey immediately reveals it if it was pending.
     const showTrialWinbackPopup = trialWinbackPopupPending && !showCancellationSurvey;
+
+    // Re-checked whenever premium/trial-winback status changes — both must
+    // be settled (not just "not yet loaded") before this can mean anything.
+    // Purely local/AsyncStorage-based, so unlike trialWinbackEligible this
+    // doesn't need to hang off the RevenueCat customer-info listener.
+    const neverConvertedTrackedRef = useRef(false);
+    useEffect(() => {
+        if (isLoading) return;
+        if (isPremium || trialWinbackEligible) {
+            setNeverConvertedOfferEligible(false);
+            return;
+        }
+        let cancelled = false;
+        (async () => {
+            const { checkNeverConvertedEligibility, isInNeverConvertedHoldout } = await import('../utils/neverConvertedOffer');
+            const rawEligible = await checkNeverConvertedEligibility();
+            if (cancelled) return;
+            if (!rawEligible) {
+                setNeverConvertedOfferEligible(false);
+                return;
+            }
+            const inHoldout = await isInNeverConvertedHoldout();
+            if (cancelled) return;
+            setNeverConvertedOfferEligible(!inHoldout);
+            // Fired once per determination (not on every re-render/app open)
+            // so PostHog can compare the holdout vs. treatment group's
+            // eventual conversion rate — the only way to know if this offer
+            // is converting people who wouldn't have paid otherwise, versus
+            // just pulling forward purchases that would've happened anyway.
+            if (!neverConvertedTrackedRef.current) {
+                neverConvertedTrackedRef.current = true;
+                import('../utils/analytics').then(m => m.track('never_converted_offer_determined', { in_holdout: inHoldout })).catch(() => {});
+            }
+        })();
+        return () => { cancelled = true; };
+    }, [isLoading, isPremium, trialWinbackEligible]);
+
     const [paywallVisible, setPaywallVisible] = useState<boolean>(false);
     const [paywallSource, setPaywallSource] = useState<string>('unknown');
     const [paywallFeatureId, setPaywallFeatureId] = useState<FeatureId | undefined>(undefined);
@@ -252,10 +364,10 @@ export const PurchasesProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     // DuasTab, HistoryCalendar, etc.) — so every openPaywall()/closePaywall()
     // call re-renders all of them even though most only read `isPremium`.
     const value = useMemo(() => ({
-        isPremium, isLoading, trialLapsing, trialEndsAt, trialWinbackEligible, paywallVisible, paywallSource, paywallFeatureId,
+        isPremium, isLoading, trialLapsing, trialEndsAt, trialWinbackEligible, trialWinbackPercentOff, neverConvertedOfferEligible, paywallVisible, paywallSource, paywallFeatureId,
         openPaywall, closePaywall, checkPremiumStatus, showCancellationSurvey, dismissCancellationSurvey,
         showTrialWinbackPopup, dismissTrialWinbackPopup,
-    }), [isPremium, isLoading, trialLapsing, trialEndsAt, trialWinbackEligible, paywallVisible, paywallSource, paywallFeatureId,
+    }), [isPremium, isLoading, trialLapsing, trialEndsAt, trialWinbackEligible, trialWinbackPercentOff, neverConvertedOfferEligible, paywallVisible, paywallSource, paywallFeatureId,
         openPaywall, closePaywall, checkPremiumStatus, showCancellationSurvey, dismissCancellationSurvey,
         showTrialWinbackPopup, dismissTrialWinbackPopup]);
 

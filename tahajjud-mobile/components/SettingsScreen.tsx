@@ -68,7 +68,7 @@ interface SettingsScreenProps {
 }
 export const SettingsScreen: React.FC<SettingsScreenProps> = ({ onClose }) => {
     const { theme, setTheme, colors, userName, setUserName, darkMode, setDarkMode, cardBg, cardBorder, blurIntensity } = useTheme();
-    const { isPremium, trialWinbackEligible } = usePurchases();
+    const { isPremium, trialWinbackEligible, neverConvertedOfferEligible } = usePurchases();
     const [isDeleting, setIsDeleting] = useState(false);
     const [localPaywallVisible, setLocalPaywallVisible] = useState(false);
     const [localPaywallSource, setLocalPaywallSource] = useState('settings');
@@ -614,7 +614,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ onClose }) => {
                 showsVerticalScrollIndicator={false}
                 contentContainerStyle={[styles.scrollContent, tabletContentStyle()]}
             >
-                {!isPremium && !trialWinbackEligible && (
+                {!isPremium && !trialWinbackEligible && !neverConvertedOfferEligible && (
                     <Animated.View entering={FadeInDown.delay(50).duration(600)}>
                         <TouchableOpacity
                             onPress={() => openPaywall('settings_banner')}
@@ -629,6 +629,28 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ onClose }) => {
                             />
                             <Star size={20} color="#000" fill="#000" />
                             <Text style={styles.upgradeBannerText}>{t('settings.upgradeBanner')}</Text>
+                            <ChevronRight size={18} color="#000" />
+                        </TouchableOpacity>
+                    </Animated.View>
+                )}
+                {neverConvertedOfferEligible && (
+                    <Animated.View entering={FadeInDown.delay(55).duration(600)}>
+                        <TouchableOpacity
+                            onPress={() => {
+                                haptic.light();
+                                openPaywall('settings_never_converted');
+                            }}
+                            style={styles.upgradeBanner}
+                            activeOpacity={0.85}
+                        >
+                            <LinearGradient
+                                colors={[colors.accentGradient[0], colors.accentGradient[1]]}
+                                start={{ x: 0, y: 0 }}
+                                end={{ x: 1, y: 0 }}
+                                style={StyleSheet.absoluteFill}
+                            />
+                            <Star size={20} color="#000" fill="#000" />
+                            <Text style={styles.upgradeBannerText}>{t('settings.neverConvertedBanner')}</Text>
                             <ChevronRight size={18} color="#000" />
                         </TouchableOpacity>
                     </Animated.View>

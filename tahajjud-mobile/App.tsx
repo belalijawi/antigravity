@@ -76,8 +76,12 @@ import { QuranPreloadService } from './services/QuranPreloadService';
 import { requestNotificationPermissions } from './utils/notifications';
 import { refreshWeeklyDigest } from './utils/weeklyDigest';
 import { initAnalytics, track, setSuperProperties, noteOnboardedAtLaunch } from './utils/analytics';
+import { recordAppOpen } from './utils/neverConvertedOffer';
 import { applyRtlIfNeeded } from './utils/rtl';
 import { drainPendingPrayerLogs } from './utils/pendingIntents';
+import { hydrateDhikrPending } from './utils/dhikrLeaderboardTracker';
+import { hydrateQuranPending } from './utils/quranReadingTracker';
+import { hydrateTahajjudPending } from './utils/tahajjudLeaderboardSync';
 import { scheduleIslamicEventNotifications, forceRescheduleIslamicEventNotifications } from './utils/islamicEvents';
 import { useFonts } from 'expo-font';
 
@@ -348,6 +352,14 @@ function MainApp() {
       // it must run before onboarding completes, and MainApp only mounts after)
       requestNotificationPermissions();
       drainPendingPrayerLogs().catch(() => {});
+      // Recover any dhikr/Quran leaderboard count stranded by a hard app
+      // kill before its debounced or backgrounding flush ever ran — see
+      // dhikrLeaderboardTracker.ts / quranReadingTracker.ts.
+      hydrateDhikrPending().catch(() => {});
+      hydrateQuranPending().catch(() => {});
+      // Retry any Tahajjud leaderboard +1 that failed to sync last session
+      // — see utils/tahajjudLeaderboardSync.ts.
+      hydrateTahajjudPending().catch(() => {});
       // Re-personalize a pending trial-ending reminder with the user's
       // current nights-prayed count (no-op when no trial is running).
       import('./utils/trialReminder').then(m => m.refreshTrialReminder()).catch(() => {});
@@ -681,6 +693,9 @@ function AppNavigator() {
           environment: IS_PRODUCTION ? 'production' : 'development',
         });
         track('app_launched');
+        // Depends on analytics' own FIRST_OPEN_KEY stamp above, so it's
+        // chained here rather than run independently.
+        recordAppOpen().catch(() => {});
       }).catch(() => {});
     }, 1200);
     // Set up the foreground notification handler immediately on cold start —

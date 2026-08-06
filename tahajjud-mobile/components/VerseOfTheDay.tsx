@@ -127,11 +127,11 @@ export function VerseOfTheDay({ onOpenSurah }: Props) {
                 </Text>
             </View>
 
-            <Text style={styles.arabic} numberOfLines={3}>
+            <Text style={styles.arabic} numberOfLines={3} selectable>
                 {verse.arabic}
             </Text>
 
-            <Text style={[styles.translation, { color: colors.primaryText }]} numberOfLines={4}>
+            <Text style={[styles.translation, { color: colors.primaryText }]} numberOfLines={4} selectable>
                 {verse.translation}
             </Text>
 

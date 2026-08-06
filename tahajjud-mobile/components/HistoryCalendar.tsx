@@ -211,6 +211,14 @@ export function HistoryCalendar() {
                 const ts = new Date(y, m - 1, d, pk === 'tahajjud' ? 4 : 12, 0, 0, 0);
                 parsed[pk] = [...parsed[pk], ts.toISOString()];
                 track('prayer_logged', { prayer: pk, backfill: true, source: 'history' });
+                // Leaderboard: this is the same "backfill" case as the
+                // Tracker's yesterday toggle, just for an arbitrary past date
+                // — `had` above already guards this to at most once per day.
+                // syncTahajjudNight retries on failure instead of silently
+                // dropping this +1 (see utils/tahajjudLeaderboardSync.ts).
+                if (pk === 'tahajjud') {
+                    import('../utils/tahajjudLeaderboardSync').then(m => m.syncTahajjudNight()).catch(() => {});
+                }
             }
             await AsyncStorage.setItem('prayer-tracker-v2', JSON.stringify(parsed));
             // Refresh this calendar, make the Tracker reload state + streaks,

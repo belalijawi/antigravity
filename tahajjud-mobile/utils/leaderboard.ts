@@ -260,16 +260,26 @@ export const Leaderboard = {
      * check status first. Handles the weekly rollover client-side (no
      * Cloud Functions exist in this app): if the stored weekKey is stale,
      * `week` resets to just this delta instead of accumulating.
+     *
+     * Returns whether the write actually landed. This matters: the debounced
+     * dhikr/Quran trackers (utils/dhikrLeaderboardTracker.ts,
+     * quranReadingTracker.ts) only discard their locally-accumulated count
+     * once they know it's safely in Firestore — a caller that ignored this
+     * and treated "the promise resolved" as "it worked" would silently drop
+     * real taps/ayahs on every transient failure (offline for a moment, a
+     * cold-start auth race, the anti-cheat rule rejecting a legitimate
+     * burst), since this function deliberately never rejects.
      */
-    async syncDelta(metric: LeaderboardMetric, delta: number): Promise<void> {
-        if (delta <= 0) return;
+    async syncDelta(metric: LeaderboardMetric, delta: number): Promise<boolean> {
+        if (delta <= 0) return true;
         try {
             await ensureSignedIn();
             const user = getFirebaseAuth()?.currentUser;
-            if (!user) return;
+            if (!user) return false; // not signed in yet — transient, caller should retry
             const db = getFirebaseDb();
             const ref = doc(db, 'leaderboard', user.uid);
 
+            let optedIn = true;
             // A Firestore TRANSACTION, not a plain getDoc()+writeBatch(). This
             // metric's write depends on a decision (has the week rolled over?)
             // made from a value read a moment earlier — a plain read-then-write
@@ -286,7 +296,7 @@ export const Leaderboard = {
             // how many syncs land close together.
             await runTransaction(db, async (tx) => {
                 const snap = await tx.get(ref);
-                if (!snap.exists()) return; // not opted in — nothing to sync
+                if (!snap.exists()) { optedIn = false; return; } // not opted in — nothing to sync
                 const data = snap.data() as any;
                 const isNewWeek = data.weekKey !== currentWeekKey();
                 const priorWeek = (data[metric]?.week ?? 0) as number;
@@ -309,14 +319,32 @@ export const Leaderboard = {
             // of caller (TasbeehCard, Quran reading, Tahajjud logging), so
             // this is the one place that needs to know about it — no need to
             // duplicate the check at each sync call site.
-            this.checkRankMilestones(metric).catch(() => {});
+            if (optedIn) {
+                // Fire-and-forget: did this sync move the rank across a
+                // meaningful tier (Top 1/3/10/50) for either window? Every
+                // periodic count sync goes through this one function regardless
+                // of caller (TasbeehCard, Quran reading, Tahajjud logging), so
+                // this is the one place that needs to know about it — no need to
+                // duplicate the check at each sync call site.
+                this.checkRankMilestones(metric).catch(() => {});
+            }
+            // Not opted in isn't a failure to retry — there's no doc to ever
+            // write this delta to, so the caller should discard it, not hold
+            // onto it forever waiting for a write that will never happen.
+            return true;
         } catch (e: any) {
             // permission-denied here means the anti-cheat delta cap rejected
             // this update (implausibly large for the elapsed time) — that's
             // the rule working as intended, not an error to surface loudly.
+            // Still reported as a failure to the caller: the cap is scaled by
+            // elapsed time since the last successful sync, so an accumulated
+            // delta that's rejected now becomes acceptable once enough real
+            // time has passed — retrying (rather than discarding) is what
+            // makes that self-healing instead of a silent permanent loss.
             if (e?.code !== 'permission-denied') {
                 console.error('[Leaderboard] syncDelta error', e);
             }
+            return false;
         }
     },
 

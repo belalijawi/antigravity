@@ -359,7 +359,13 @@
         }
 
         @media (max-width: 600px) {
-            nav .links { display: none; }
+            /* Hide only the plain nav links, not .lang-picker — it used to
+               live inside the same `nav .links` container that got hidden
+               wholesale here, so the language button silently disappeared
+               on any narrow/portrait viewport along with Features/Support/
+               Privacy, even though it's the one control a non-English
+               visitor actually needs. */
+            nav .links > a { display: none; }
             .stats { gap: 30px; }
             section { padding: 60px 0; }
         }

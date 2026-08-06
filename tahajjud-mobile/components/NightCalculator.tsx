@@ -261,6 +261,16 @@ export function NightCalculator({ onNightCalcReady, onPrayerTimesReady, refreshK
             const tahajjudNights: { targetTime: Date; buffer: number }[] = [];
             const futurePrayers: { name: string; time: Date }[] = [];
 
+            // Mosque timetable, if imported, overrides calculated times for
+            // today in fetchData() above — but this loop pre-schedules
+            // notifications for the NEXT 6 nights, and previously always
+            // used pure astronomical calculation regardless, silently
+            // drifting from the mosque's real schedule (which can differ by
+            // tens of minutes) until the user reopened the app on that
+            // specific day. Load once, applied per-night below.
+            const { getMosqueTimetable: loadMosqueTimetable } = await import('../utils/mosqueTimetable');
+            const mosqueTimetable = await loadMosqueTimetable();
+
             // Each day's pair of fetches was already parallelized, but the
             // loop itself awaited day-by-day, serializing 6 days of network
             // round-trips. Fire all 6 days' fetches at once instead.
@@ -276,7 +286,29 @@ export function NightCalculator({ onNightCalcReady, onPrayerTimesReady, refreshK
                 })
             );
 
-            for (const [nightTimes, nextDayTimes] of perDay) {
+            perDay.forEach(([nightTimes, nextDayTimes], idx) => {
+                const i = idx + 1;
+                const night = addDays(new Date(), i);
+                const nextDay = addDays(new Date(), i + 1);
+
+                const nightMosque = mosqueTimetable?.times[localDateStr(night)] ?? null;
+                if (nightMosque) {
+                    nightTimes = {
+                        ...nightTimes,
+                        fajr:    mosqueTimeToDate(nightMosque.fajr,    night),
+                        dhuhr:   mosqueTimeToDate(nightMosque.dhuhr,   night),
+                        asr:     mosqueTimeToDate(nightMosque.asr,     night),
+                        maghrib: mosqueTimeToDate(nightMosque.maghrib, night),
+                        isha:    mosqueTimeToDate(nightMosque.isha,    night),
+                    };
+                }
+                // Only Fajr is needed from the following day (Tahajjud's
+                // end boundary) — same as fetchData()'s override above.
+                const nextDayMosque = mosqueTimetable?.times[localDateStr(nextDay)] ?? null;
+                if (nextDayMosque) {
+                    nextDayTimes = { ...nextDayTimes, fajr: mosqueTimeToDate(nextDayMosque.fajr, nextDay) };
+                }
+
                 if (tahajjudEnabled) {
                     const calc = calculateLastThird(nightTimes.maghrib, nextDayTimes.fajr);
                     for (const buf of remindBuffers) {
@@ -292,7 +324,7 @@ export function NightCalculator({ onNightCalcReady, onPrayerTimesReady, refreshK
                         { name: 'Isha',    time: nightTimes.isha },
                     );
                 }
-            }
+            });
 
             if (tahajjudNights.length > 0) await scheduleFutureTahajjudNotifications(tahajjudNights);
             if (futurePrayers.length > 0)  await scheduleFuturePrayerNotifications(futurePrayers);

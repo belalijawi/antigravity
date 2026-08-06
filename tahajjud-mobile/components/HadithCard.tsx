@@ -22,8 +22,8 @@ export function HadithCard({ text, source }: HadithCardProps) {
                 <Quote size={20} color="#f8fafc" strokeWidth={2.5} />
             </View>
             <View style={styles.content}>
-                <Text style={styles.text}>{text}</Text>
-                <Text style={styles.source}>— {source}</Text>
+                <Text style={styles.text} selectable>{text}</Text>
+                <Text style={styles.source} selectable>— {source}</Text>
             </View>
         </View>
     );

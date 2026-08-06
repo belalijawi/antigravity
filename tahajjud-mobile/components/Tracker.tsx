@@ -376,7 +376,12 @@ export function Tracker() {
                 trigger: {
                     type: Notifications.SchedulableTriggerInputTypes.DATE,
                     date: tomorrow9am,
-                    ...(Platform.OS === 'android' && { channelId: 'prayers' }),
+                    // 'prayers_adhan' is the only prayer-related channel the
+                    // app still creates (see utils/notifications.ts) — the
+                    // old 'prayers' id is never created on a fresh install,
+                    // so pointing here at it left this notification on a
+                    // channel that may not exist.
+                    ...(Platform.OS === 'android' && { channelId: 'prayers_adhan' }),
                 },
             });
             track('streak_notif_scheduled', { streak: 5 });
@@ -491,8 +496,10 @@ export function Tracker() {
             // Add anonymous dot to global map
             logTahajjudToMap().catch(() => {});
             // Leaderboard: one Tahajjud night = +1 (isLoggedToday above
-            // already guards this to at most once per day).
-            import('../utils/leaderboard').then(m => m.Leaderboard.syncDelta('tahajjud', 1)).catch(() => {});
+            // already guards this to at most once per day). syncTahajjudNight
+            // retries on failure instead of silently dropping this +1 (see
+            // utils/tahajjudLeaderboardSync.ts).
+            import('../utils/tahajjudLeaderboardSync').then(m => m.syncTahajjudNight()).catch(() => {});
             // Refresh the Friday digest so it reflects this week's count
             refreshWeeklyDigest().catch(() => {});
             // Tell HistoryCalendar + PrayerAnalytics to reload
@@ -501,6 +508,15 @@ export function Tracker() {
             TahajjudChallenge.recordTahajjudToday().catch(() => {});
             // End any Live Activity (Lock Screen countdown) — they prayed
             import('../utils/liveActivity').then(m => m.LiveActivity.endAll()).catch(() => {});
+        }
+        // Refresh the home-screen widget so its "Log X" button and streak
+        // don't sit stale until some unrelated location/method change
+        // happens to trigger NightCalculator's own widget refresh — reuses
+        // today's already-cached prayer times instead of recomputing them.
+        if (startTimes) {
+            import('../utils/widgetBridge').then(m => m.updateWidget(startTimes)).catch(() => {});
+        }
+        if (key === 'tahajjud') {
             // Premium → full journal, free → simple letter
             if (isPremium) {
                 setShowJournal(true);
@@ -538,6 +554,10 @@ export function Tracker() {
                             [key]: historyRef.current[key].filter(d => localDateStr(d) !== today),
                         };
                         await save(updated);
+                        // Tell HistoryCalendar + PrayerAnalytics + HomeTab's
+                        // "already logged today" gate to refresh — same event
+                        // logPrayer emits, just missing on the undo path.
+                        DeviceEventEmitter.emit('prayerLogged');
                     },
                 },
             ]
@@ -562,7 +582,20 @@ export function Tracker() {
                 : [...historyRef.current[key], ts.toISOString()],
         };
         await save(updated);
-        if (!had) track('prayer_logged', { prayer: key, backfill: true });
+        if (!had) {
+            track('prayer_logged', { prayer: key, backfill: true });
+            // Leaderboard: backfilled Tahajjud counts the same as same-night
+            // logging — `had` above already guards this to at most once per
+            // day. syncTahajjudNight retries on failure instead of silently
+            // dropping this +1 (see utils/tahajjudLeaderboardSync.ts).
+            if (key === 'tahajjud') {
+                import('../utils/tahajjudLeaderboardSync').then(m => m.syncTahajjudNight()).catch(() => {});
+            }
+        }
+        // Tell HistoryCalendar + PrayerAnalytics + HomeTab's "already logged
+        // today" gate to refresh, same as logPrayer/unlogPrayer — this ran
+        // every backfill toggle before without it.
+        DeviceEventEmitter.emit('prayerLogged');
     };
 
     // Yesterday's missed prayers. The banner text lists only the 5 obligatory

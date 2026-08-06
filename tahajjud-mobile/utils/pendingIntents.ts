@@ -84,7 +84,16 @@ export async function drainPendingPrayerLogs(): Promise<number> {
             }
         }
         await AsyncStorage.setItem(TRACKER_KEY, JSON.stringify(history));
-        if (merged > 0) DeviceEventEmitter.emit('prayerLogged');
+        if (merged > 0) {
+            DeviceEventEmitter.emit('prayerLogged');
+            // Refresh the widget so a drained widget-tap log doesn't leave
+            // it showing the pre-tap "Log X" state until an unrelated
+            // NightCalculator refresh happens to run.
+            import('./widgetBridge').then(async m => {
+                const times = await m.loadCachedPrayerTimes();
+                if (times) await m.updateWidget(times);
+            }).catch(() => {});
+        }
     } catch {
         return 0; // don't ack — try again next launch
     }

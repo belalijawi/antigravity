@@ -83,7 +83,7 @@ function EntryCard({ entry, colors, onDelete, onToggleAnswered }: {
                         {hasDua ? (
                             <>
                                 <Text style={styles.duaLabel}>{t('journalHist.duaLabel')}</Text>
-                                <Text style={styles.duaText}>{entry.duaText}</Text>
+                                <Text style={styles.duaText} selectable>{entry.duaText}</Text>
                                 <TouchableOpacity
                                     onPress={() => { haptic.light(); onToggleAnswered(entry.id, !entry.duaAnswered); }}
                                     style={[

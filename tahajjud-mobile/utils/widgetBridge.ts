@@ -104,6 +104,24 @@ export function setWidgetDua(dua: { title: string; arabic?: string; translation?
 }
 
 /**
+ * Reads the prayer-times cache NightCalculator writes on every fresh load
+ * (see components/Tracker.tsx's loadPrayerStartTimes, which reads the same
+ * key). Lets any background-safe prayer-logging path (widget tap, notification
+ * action) refresh the widget immediately after logging without recomputing
+ * times from location/method — and without importing a whole UI component
+ * module just to reach one cache read.
+ */
+export async function loadCachedPrayerTimes(): Promise<{ fajr: Date; dhuhr: Date; asr: Date; maghrib: Date; isha: Date } | null> {
+    try {
+        const raw = await AsyncStorage.getItem('prayer_times_today_v1');
+        if (!raw) return null;
+        const j = JSON.parse(raw);
+        if (j.date !== localDateStr(new Date())) return null; // stale — yesterday's cache
+        return { fajr: new Date(j.fajr), dhuhr: new Date(j.dhuhr), asr: new Date(j.asr), maghrib: new Date(j.maghrib), isha: new Date(j.isha) };
+    } catch { return null; }
+}
+
+/**
  * Call this after prayer times load and after the streak updates.
  * Writes data to the shared App Group for the home screen widget.
  * @param tahajjudStart  Optional Date of tonight's last-third start (from NightCalculation)

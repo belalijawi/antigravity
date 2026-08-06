@@ -150,7 +150,7 @@ const DuaCard = React.memo(({ dua, isBookmarked, onToggleBookmark, isOnWidget, o
                 {dua.category === 'Personal' ? (
                     <View style={styles.letterContentContainer}>
                         {dua.translation ? (
-                            <Text style={styles.letterText} numberOfLines={4}>{localized.translation}</Text>
+                            <Text style={styles.letterText} numberOfLines={4} selectable>{localized.translation}</Text>
                         ) : (
                             <Text style={[styles.letterText, { color: '#475569', fontStyle: 'italic' }]}>{t('duasTab.noContent')}</Text>
                         )}
@@ -172,7 +172,7 @@ const DuaCard = React.memo(({ dua, isBookmarked, onToggleBookmark, isOnWidget, o
                                         ))}
                                     </Text>
                                 ) : (
-                                    <Text style={styles.arabicText}>{dua.arabic}</Text>
+                                    <Text style={styles.arabicText} selectable>{dua.arabic}</Text>
                                 )}
                             </View>
                         ) : null}
@@ -180,7 +180,7 @@ const DuaCard = React.memo(({ dua, isBookmarked, onToggleBookmark, isOnWidget, o
                         {dua.transliteration ? (
                             <View style={styles.transliterationContainer}>
                                 <Text style={[styles.transliterationLabel, { color: '#94a3b8' }]}>{t('hifz.transliterationToggle')}</Text>
-                                <Text style={[styles.transliterationText, { color: '#cbd5e1' }]}>{dua.transliteration}</Text>
+                                <Text style={[styles.transliterationText, { color: '#cbd5e1' }]} selectable>{dua.transliteration}</Text>
                             </View>
                         ) : null}
 
@@ -200,7 +200,7 @@ const DuaCard = React.memo(({ dua, isBookmarked, onToggleBookmark, isOnWidget, o
                                         ))}
                                     </Text>
                                 ) : (
-                                    <Text style={[styles.translationText, { color: '#f8fafc' }]}>{localized.translation}</Text>
+                                    <Text style={[styles.translationText, { color: '#f8fafc' }]} selectable>{localized.translation}</Text>
                                 )}
                             </View>
                         ) : null}
@@ -390,9 +390,20 @@ export function DuasTab() {
             await syncLocalToCloud(firebaseUser.uid).catch(() => {});
             const cloudDuas = await fetchCloudData(firebaseUser.uid);
             if (cloudDuas.length > 0) {
+                // Merge rather than blindly replace: savePersonalDua's cloud
+                // write (cloudSetDua) is fire-and-forget, so a letter saved
+                // WHILE this fetch was already in flight won't be in this
+                // snapshot yet. Overwriting local with it outright would make
+                // that just-saved letter silently disappear until the next
+                // sync. Re-read local fresh (not this closure's possibly-
+                // stale personalDuas state) and union by id, newest first.
+                const freshLocal = await getPersonalDuas();
+                const merged = [...freshLocal, ...cloudDuas]
+                    .filter((d, i, arr) => arr.findIndex(x => x.id === d.id) === i)
+                    .sort((a, b) => b.createdAt - a.createdAt);
                 // Persist via the same key + notify path so all subscribers update
-                await AsyncStorage.setItem('personal-duas', JSON.stringify(cloudDuas));
-                setPersonalDuas(cloudDuas);
+                await AsyncStorage.setItem('personal-duas', JSON.stringify(merged));
+                setPersonalDuas(merged);
             }
         }
     };
@@ -738,7 +749,7 @@ export function DuasTab() {
                     </TouchableOpacity>
                 </View>
                 {item.translation ? (
-                    <Text style={[styles.letterCardPreview, { color: colors.secondaryText }]} numberOfLines={3}>{item.translation}</Text>
+                    <Text style={[styles.letterCardPreview, { color: colors.secondaryText }]} numberOfLines={3} selectable>{item.translation}</Text>
                 ) : null}
             </View>
         );

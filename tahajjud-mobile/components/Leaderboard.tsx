@@ -8,7 +8,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import {
     Modal, View, Text, StyleSheet, TouchableOpacity, TextInput,
-    FlatList, ActivityIndicator, Alert, KeyboardAvoidingView, Platform, AppState,
+    FlatList, ActivityIndicator, Alert, KeyboardAvoidingView, Platform, AppState, RefreshControl,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as Localization from 'expo-localization';
@@ -187,6 +187,12 @@ export function LeaderboardModal({ visible, onClose }: Props) {
     const [communityTotal, setCommunityTotal] = useState<number | null>(null);
     const [rankChange, setRankChange] = useState<{ direction: 'up' | 'down'; delta: number } | null>(null);
     const [listLoading, setListLoading] = useState(false);
+    // Separate from listLoading (which swaps the whole list for a full-page
+    // spinner — fine for the first load of a metric, jarring for a manual
+    // pull gesture on data that's already on screen). Self-contained rather
+    // than reusing loadBoard() from the effect below, which is intentionally
+    // scoped to that effect's own cancellation/caching lifecycle.
+    const [pullRefreshing, setPullRefreshing] = useState(false);
 
     // "Near You" — the 5 above/below your own rank instead of the top-50,
     // for when the board has hundreds of people and the top slice is
@@ -384,6 +390,33 @@ export function LeaderboardModal({ visible, onClose }: Props) {
         });
         return () => { state.cancelled = true; appStateSub.remove(); };
     }, [visible, metric, windowSel, scope, status.country]);
+
+    // Pull-to-refresh for the top-N board. Deliberately doesn't touch
+    // listLoading/loadBoard above — this keeps the current list on screen
+    // with just the native pull spinner, instead of swapping to the
+    // full-page ActivityIndicator that a fresh/uncached metric load shows.
+    const handlePullRefresh = async () => {
+        haptic.light();
+        setPullRefreshing(true);
+        try {
+            const countryFilter = scope === 'country' ? (status.country ?? null) : null;
+            const s = statusRef.current;
+            const preloadedValue = s.optedIn ? s.values?.[metric]?.[windowSel] : undefined;
+            const [top, rank, total] = await Promise.all([
+                Leaderboard.getTopN(metric, windowSel, 50, countryFilter),
+                Leaderboard.getMyRank(metric, windowSel, countryFilter, preloadedValue),
+                Leaderboard.getCommunityTotal(metric, windowSel),
+            ]);
+            const change = rank ? await Leaderboard.trackRank(metric, windowSel, rank.rank) : null;
+            setTopN(top);
+            setMyRank(rank);
+            setCommunityTotal(total);
+            setRankChange(change);
+            const cacheKey = `${metric}-${windowSel}-${countryFilter ?? 'global'}`;
+            boardCacheRef.current.set(cacheKey, { top, rank, total, rankChange: change });
+        } catch { /* leave the current list on screen */ }
+        setPullRefreshing(false);
+    };
 
     // "Near You" data — separate from the main load above since it depends
     // on myRank (fetched there) rather than being fetchable independently.
@@ -845,7 +878,7 @@ export function LeaderboardModal({ visible, onClose }: Props) {
                                     }}
                                 />
                             )
-                        ) : listLoading ? (
+                        ) : listLoading && topN.length === 0 ? (
                             <View style={styles.centerFill}><ActivityIndicator color={colors.accent} /></View>
                         ) : topN.length === 0 ? (
                             <View style={styles.centerFill}>
@@ -858,6 +891,14 @@ export function LeaderboardModal({ visible, onClose }: Props) {
                                 data={topN}
                                 keyExtractor={e => e.uid}
                                 contentContainerStyle={styles.list}
+                                refreshControl={
+                                    <RefreshControl
+                                        refreshing={pullRefreshing}
+                                        onRefresh={handlePullRefresh}
+                                        tintColor={colors.accent}
+                                        colors={[colors.accent]}
+                                    />
+                                }
                                 renderItem={({ item, index }) => {
                                     const isTop3 = index < 3;
                                     // Relative to the #1 score — turns a flat list of

@@ -22,6 +22,16 @@ import { t, getLocale } from '../utils/i18n';
 const SESSIONS_KEY     = 'tasbeeh-sessions';
 const CUSTOM_KEY       = 'tasbeeh-custom-dhikrs';
 const GOAL_KEY         = 'tasbeeh-daily-goal';
+// SESSIONS_KEY is capped to the 100 most recent sessions (see saveSession) —
+// fine for "recent" views (today, last 7 days, streak) but NOT a valid
+// source for a lifetime total: once a user passes 100 completed rounds,
+// every new round evicts an old one from the array, so summing `sessions`
+// plateaus instead of growing — the count silently "gets stuck" while the
+// live tap counter keeps working normally. These two keys track the
+// lifetime figures independently, incremented once per saveSession() and
+// NEVER trimmed or recomputed from the capped array.
+const ALLTIME_TOTAL_KEY = 'tasbeeh-alltime-total';
+const DHIKR_TOTALS_KEY  = 'tasbeeh-dhikr-totals';
 
 const GOAL_PRESETS = [100, 200, 300, 500, 1000];
 
@@ -88,6 +98,10 @@ export function TasbeehCard() {
     const [rounds, setRounds]               = useState(0);
     const [sessions, setSessions]           = useState<Session[]>([]);
     const [dailyGoal, setDailyGoal]         = useState<number>(0); // 0 = no goal
+    // Lifetime totals — see ALLTIME_TOTAL_KEY's comment above. Independent of
+    // `sessions`, which is capped and only good for recent-window views.
+    const [allTimeTotalPersisted, setAllTimeTotalPersisted] = useState(0);
+    const [dhikrTotalsPersisted, setDhikrTotalsPersisted]   = useState<Record<string, number>>({});
 
     // Views
     const [showStats, setShowStats] = useState(false);
@@ -122,6 +136,10 @@ export function TasbeehCard() {
     // burst sees the previous tap's write immediately, before any render.
     const sessionsRef = useRef<Session[]>([]);
     const countRef    = useRef(0);
+    // Same rapid-burst-safety reasoning as sessionsRef/countRef above,
+    // applied to the two lifetime counters.
+    const allTimeTotalRef = useRef(0);
+    const dhikrTotalsRef  = useRef<Record<string, number>>({});
 
     const BUILT_IN = getBuiltIn();
     const allDhikrs: Dhikr[] = [...BUILT_IN, ...customDhikrs];
@@ -132,16 +150,50 @@ export function TasbeehCard() {
 
     const load = async () => {
         try {
-            const [rawSessions, rawCustom, rawGoal] = await Promise.all([
+            const [rawSessions, rawCustom, rawGoal, rawAllTimeTotal, rawDhikrTotals] = await Promise.all([
                 AsyncStorage.getItem(SESSIONS_KEY),
                 AsyncStorage.getItem(CUSTOM_KEY),
                 AsyncStorage.getItem(GOAL_KEY),
+                AsyncStorage.getItem(ALLTIME_TOTAL_KEY),
+                AsyncStorage.getItem(DHIKR_TOTALS_KEY),
             ]);
             // Guard: only accept arrays — corrupt/migrated storage could hold a
             // non-array, which would crash .filter/.reduce at render time.
-            if (rawSessions) { const s = JSON.parse(rawSessions); if (Array.isArray(s)) { setSessions(s); sessionsRef.current = s; } }
+            let loadedSessions: Session[] | null = null;
+            if (rawSessions) { const s = JSON.parse(rawSessions); if (Array.isArray(s)) { loadedSessions = s; setSessions(s); sessionsRef.current = s; } }
             if (rawCustom)   { const c = JSON.parse(rawCustom);   if (Array.isArray(c)) setCustomDhikrs(c); }
             if (rawGoal)     setDailyGoal(parseInt(rawGoal, 10) || 0);
+
+            // One-time migration for anyone who already has session history
+            // predating these two keys: seed them from whatever the capped
+            // `sessions` array currently sums to (their already-displayed,
+            // possibly-already-plateaued number) rather than resetting to 0
+            // — the true pre-cap lifetime total isn't recoverable (older
+            // sessions were already permanently evicted from storage), but
+            // this at least stops it from staying stuck from here on.
+            if (rawAllTimeTotal != null) {
+                const n = parseInt(rawAllTimeTotal, 10);
+                if (Number.isFinite(n)) { allTimeTotalRef.current = n; setAllTimeTotalPersisted(n); }
+            } else if (loadedSessions) {
+                const seed = loadedSessions.reduce((sum, s) => sum + s.count, 0);
+                allTimeTotalRef.current = seed;
+                setAllTimeTotalPersisted(seed);
+                AsyncStorage.setItem(ALLTIME_TOTAL_KEY, String(seed)).catch(() => {});
+            }
+            if (rawDhikrTotals) {
+                const d = JSON.parse(rawDhikrTotals);
+                if (d && typeof d === 'object') { dhikrTotalsRef.current = d; setDhikrTotalsPersisted(d); }
+            } else if (loadedSessions) {
+                const seed = loadedSessions.reduce<Record<string, number>>((acc, s) => {
+                    const label = s.dhikrLabel?.trim();
+                    if (!label || label === 'undefined') return acc;
+                    acc[label] = (acc[label] || 0) + s.count;
+                    return acc;
+                }, {});
+                dhikrTotalsRef.current = seed;
+                setDhikrTotalsPersisted(seed);
+                AsyncStorage.setItem(DHIKR_TOTALS_KEY, JSON.stringify(seed)).catch(() => {});
+            }
         } catch (_) {}
         hasLoadedRef.current = true; // mark initial load complete
     };
@@ -193,15 +245,11 @@ export function TasbeehCard() {
     }));
 
     // ── Stats computation ─────────────────────────────────────────────────────
-    const allTimeTotal = sessions.reduce((sum, s) => sum + s.count, 0) + count;
-
-    // Per-dhikr totals (all time) — skip sessions with no label
-    const dhikrTotals = sessions.reduce<Record<string, number>>((acc, s) => {
-        const label = s.dhikrLabel?.trim();
-        if (!label || label === 'undefined') return acc;
-        acc[label] = (acc[label] || 0) + s.count;
-        return acc;
-    }, {});
+    // From the independently-persisted lifetime counters, NOT `sessions` —
+    // see ALLTIME_TOTAL_KEY's comment for why summing the capped array
+    // plateaus instead of growing past ~100 completed rounds.
+    const allTimeTotal = allTimeTotalPersisted + count;
+    const dhikrTotals = dhikrTotalsPersisted;
     const topDhikr = Object.entries(dhikrTotals).sort((a, b) => b[1] - a[1])[0];
 
     // Last 7 days totals
@@ -243,6 +291,26 @@ export function TasbeehCard() {
         sessionsRef.current = updated;
         setSessions(updated);
         try { await AsyncStorage.setItem(SESSIONS_KEY, JSON.stringify(updated)); } catch (_) {}
+
+        // Lifetime counters — built from refs for the same rapid-tap-burst
+        // reason as `updated` above, and never trimmed like `sessions` is.
+        allTimeTotalRef.current += finalCount;
+        setAllTimeTotalPersisted(allTimeTotalRef.current);
+        const label = session.dhikrLabel?.trim();
+        if (label && label !== 'undefined') {
+            dhikrTotalsRef.current = {
+                ...dhikrTotalsRef.current,
+                [label]: (dhikrTotalsRef.current[label] || 0) + finalCount,
+            };
+            setDhikrTotalsPersisted(dhikrTotalsRef.current);
+        }
+        try {
+            await Promise.all([
+                AsyncStorage.setItem(ALLTIME_TOTAL_KEY, String(allTimeTotalRef.current)),
+                AsyncStorage.setItem(DHIKR_TOTALS_KEY, JSON.stringify(dhikrTotalsRef.current)),
+            ]);
+        } catch (_) {}
+
         // Analytics: report the number of presses so PostHog can SUM them into a
         // global total — every press counts (full + partial rounds), one event
         // per session rather than one per tap.

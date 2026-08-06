@@ -184,7 +184,13 @@ export function subscribeTahajjudMap(
 // Last count that successfully came back from the server — persisted so a
 // fresh cold start can show the Home map card immediately instead of hiding
 // it behind the >= 50 gate until the first network round-trip completes.
+// Stored with a timestamp: an unbounded-age cache produced the "Home card
+// says 1, then jumps to the real number the moment the map screen's own
+// listener resolves" report — a count from hours/days ago flashing before
+// the fresh fetch lands. Only worth showing optimistically if it's recent
+// enough that it's still plausibly close to correct.
 const DAILY_TOTAL_CACHE_KEY = 'tahajjud_map_daily_total_cache';
+const DAILY_TOTAL_CACHE_MAX_AGE_MS = 15 * 60 * 1000;
 
 /** Total Tahajjud logs in the last 24 hours (for the "last night" stat). */
 export function subscribeDailyTotal(onUpdate: (total: number) => void): () => void {
@@ -209,11 +215,15 @@ export function subscribeDailyTotal(onUpdate: (total: number) => void): () => vo
         let retryDelay = 10 * 1000;
 
         // Seed with the last known count while the fresh one is in flight —
-        // guarded so a slow cache read can never overwrite a fresh result.
+        // guarded so a slow cache read can never overwrite a fresh result,
+        // and skipped entirely once the cache is too old to still be a
+        // reasonable stand-in for the real count.
         AsyncStorage.getItem(DAILY_TOTAL_CACHE_KEY).then(v => {
-            const cached = v ? parseInt(v, 10) : NaN;
-            if (!cancelled && !hasFreshValue && Number.isFinite(cached) && cached > 0) {
-                onUpdate(cached);
+            if (!v) return;
+            const parsed = JSON.parse(v) as { count: number; ts: number };
+            const isFresh = Number.isFinite(parsed.ts) && (Date.now() - parsed.ts) < DAILY_TOTAL_CACHE_MAX_AGE_MS;
+            if (!cancelled && !hasFreshValue && isFresh && Number.isFinite(parsed.count) && parsed.count > 0) {
+                onUpdate(parsed.count);
             }
         }).catch(() => {});
 
@@ -240,7 +250,7 @@ export function subscribeDailyTotal(onUpdate: (total: number) => void): () => vo
                         hasFreshValue = true;
                         const count = snap.data().count;
                         onUpdate(count);
-                        AsyncStorage.setItem(DAILY_TOTAL_CACHE_KEY, String(count)).catch(() => {});
+                        AsyncStorage.setItem(DAILY_TOTAL_CACHE_KEY, JSON.stringify({ count, ts: Date.now() })).catch(() => {});
                         if (!hasTrackedFirstValue) {
                             hasTrackedFirstValue = true;
                             track('map_daily_total_observed', { count, card_visible: count >= 50 });

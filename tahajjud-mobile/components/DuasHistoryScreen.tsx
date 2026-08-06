@@ -277,7 +277,7 @@ export function DuasHistoryScreen({ onClose, accent, onRequestPaywall, initialTa
                     <ScrollView contentContainerStyle={styles.list} showsVerticalScrollIndicator={false}>
                         {myDuas.map(dua => (
                             <View key={dua.id} style={[styles.card, { borderColor: colors.accent + '22' }]}>
-                                <Text style={styles.duaText} numberOfLines={4}>{dua.text}</Text>
+                                <Text style={styles.duaText} numberOfLines={4} selectable>{dua.text}</Text>
                                 <View style={styles.myDuaFooter}>
                                     <Text style={styles.meta}>
                                         {formatDistanceToNowStrict(dua.createdAt)} {t('duaWall.ago')} · 🤲 {dua.ameenCount}
@@ -428,7 +428,7 @@ export function DuasHistoryScreen({ onClose, accent, onRequestPaywall, initialTa
                                             : t('duaWall.answered')}
                                     </Text>
                                 </View>
-                                <Text style={styles.duaText}>{item.text}</Text>
+                                <Text style={styles.duaText} selectable>{item.text}</Text>
                                 <View style={styles.metaRow}>
                                     <Text style={styles.meta}>{formatDuaAuthor(item)}</Text>
                                     {/* Quiet supporter mark, same as CommentThread's */}

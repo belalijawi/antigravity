@@ -103,10 +103,10 @@ function StepCard({ step, index, colors }: StepProps) {
                 </View>
                 <Text style={[styles.stepTitle, { color: colors.primaryText }]}>{tc(`edu.step${step.number}.title`, step.title)}</Text>
             </View>
-            <Text style={[styles.stepDescription, { color: colors.secondaryText }]}>{tc(`edu.step${step.number}.description`, step.description)}</Text>
+            <Text style={[styles.stepDescription, { color: colors.secondaryText }]} selectable>{tc(`edu.step${step.number}.description`, step.description)}</Text>
             <View style={[styles.tipRow, { borderTopColor: 'rgba(255,255,255,0.06)' }]}>
                 <Lightbulb size={13} color={colors.accent} strokeWidth={2.5} style={{ alignSelf: 'center', marginBottom: 6 }} />
-                <Text style={[styles.tipText, { color: colors.accent, textAlign: 'center' }]}>{tc(`edu.step${step.number}.tip`, step.tip)}</Text>
+                <Text style={[styles.tipText, { color: colors.accent, textAlign: 'center' }]} selectable>{tc(`edu.step${step.number}.tip`, step.tip)}</Text>
             </View>
         </Animated.View>
     );
@@ -135,7 +135,7 @@ function FAQItem({ item, index, colors }: FAQProps) {
                     }
                 </View>
                 {open && (
-                    <Text style={[styles.faqAnswer, { color: colors.secondaryText }]}>{tc(`edu.faq${index + 1}.a`, item.a)}</Text>
+                    <Text style={[styles.faqAnswer, { color: colors.secondaryText }]} selectable>{tc(`edu.faq${index + 1}.a`, item.a)}</Text>
                 )}
             </TouchableOpacity>
         </Animated.View>
@@ -164,7 +164,7 @@ export function EducationalContent() {
             <Animated.View entering={FadeInUp.duration(550)} style={styles.hero}>
                 <Moon size={38} color={colors.primaryText} strokeWidth={1.5} />
                 <Text style={[styles.heroTitle, { color: colors.primaryText }]}>{tc('edu.hero.title', 'How to Pray Tahajjud')}</Text>
-                <Text style={[styles.heroSubtitle, { color: colors.secondaryText }]}>
+                <Text style={[styles.heroSubtitle, { color: colors.secondaryText }]} selectable>
                     {tc('edu.hero.subtitle', "A complete step-by-step guide for beginners and those returning to the night prayer.")}
                 </Text>
             </Animated.View>
@@ -182,7 +182,7 @@ export function EducationalContent() {
                 <CheckCircle size={20} color={colors.accent} strokeWidth={2} />
                 <View style={{ flex: 1 }}>
                     <Text style={[styles.witrTitle, { color: colors.primaryText }]}>{tc('edu.witr.title', "Don't Forget Witr")}</Text>
-                    <Text style={[styles.witrDesc, { color: colors.secondaryText }]}>
+                    <Text style={[styles.witrDesc, { color: colors.secondaryText }]} selectable>
                         {tc('edu.witr.description', "Always end your night prayer with Witr — at least 1 rak'ah.\n\"Pray Witr before Fajr enters.\" — Sahih Muslim")}
                     </Text>
                 </View>
@@ -198,7 +198,7 @@ export function EducationalContent() {
 
             {/* Closing */}
             <Animated.View entering={FadeInDown.delay(500).duration(450)} style={styles.closing}>
-                <Text style={[styles.closingText, { color: colors.secondaryText }]}>
+                <Text style={[styles.closingText, { color: colors.secondaryText }]} selectable>
                     {tc('edu.closing.text', "\"Start with two rak'ahs. Be sincere. Show up.\nAllah sees your effort.\"")}
                 </Text>
             </Animated.View>
