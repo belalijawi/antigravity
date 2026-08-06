@@ -101,6 +101,9 @@ export interface Comment {
      * convention below) against the signed-in uid — used only to hide the
      * like button on your own reply. */
     isMine: boolean;
+    /** Cached on-demand translations, keyed by Locale code — see
+     * utils/translate.ts. */
+    translations?: Record<string, string>;
 }
 
 export interface PostCommentResult {
@@ -140,6 +143,7 @@ function docToComment(id: string, data: any, myUid?: string): Comment {
         likeCount: data.likeCount ?? 0,
         isMine: !!myUid && data.authorId === myUid,
         authorId: data.authorId,
+        translations: data.translations ?? undefined,
     };
 }
 
@@ -574,6 +578,32 @@ export const Comments = {
             return true;
         } catch (e) {
             console.error('[Comments] adminSetHidden error', e);
+            return false;
+        }
+    },
+
+    /**
+     * Delete a reply you wrote yourself — not an admin action, gated purely
+     * on ownership. The client-side authorId check below is just a fast
+     * fail; the real enforcement is firestore.rules' `allow delete` on
+     * /comments/{commentId}, which requires resource.data.authorId ==
+     * request.auth.uid (or isAdmin()) regardless of what the client sends.
+     */
+    async deleteMine(commentId: string): Promise<boolean> {
+        try {
+            const db = getFirebaseDb();
+            const uid = getFirebaseAuth()?.currentUser?.uid;
+            if (!uid) return false;
+            const snap = await getDoc(doc(db, 'comments', commentId));
+            const data = snap.exists() ? (snap.data() as any) : null;
+            if (!data || data.authorId !== uid) return false;
+            await deleteDoc(doc(db, 'comments', commentId));
+            if (!data.hidden) {
+                this._adjustParentCount(data, -1).catch(() => {});
+            }
+            return true;
+        } catch (e) {
+            console.error('[Comments] deleteMine error', e);
             return false;
         }
     },

@@ -1,6 +1,6 @@
 import {
     collection, doc, addDoc, getDoc, getDocFromServer, setDoc, getDocs, updateDoc, deleteDoc,
-    query, orderBy, limit, where, serverTimestamp, increment, writeBatch, startAfter,
+    query, orderBy, limit, where, serverTimestamp, increment, writeBatch, startAfter, deleteField,
     onSnapshot, QuerySnapshot, QueryDocumentSnapshot, DocumentData,
 } from 'firebase/firestore';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -51,6 +51,13 @@ const OWN_MAP_DUAS_CAP = 20;
 // is over two months of daily posting at the max rate.
 const OWN_DUAS_KEY = 'dua-wall-own-duas-v1';
 const OWN_DUAS_CAP = 200;
+// Maps duaId -> the exact publish timestamp that was added to RATE_LIMIT_KEY
+// for it. Lets deleteMine() remove precisely the ONE rolling-window entry a
+// deleted dua was occupying (instead of guessing), so deleting a dua frees
+// up exactly the daily-limit slot it used — no more, no less. Same cap/prune
+// shape as OWN_DUAS_KEY.
+const DUA_PUBLISH_TIMES_KEY = 'dua-wall-publish-times-v1';
+const DUA_PUBLISH_TIMES_CAP = 200;
 const RATE_LIMIT_MS = 24 * 60 * 60 * 1000; // 24h rolling window
 const FREE_DAILY_LIMIT = 1;
 const PREMIUM_DAILY_LIMIT = 3;
@@ -73,6 +80,34 @@ function parseRateLimitTimestamps(raw: string | null): number[] {
         if (typeof parsed === 'number') return [parsed];
     } catch { /* ignore malformed value */ }
     return [];
+}
+
+/** Remember which rolling-window timestamp a just-published dua consumed. */
+async function recordPublishTime(duaId: string, ts: number): Promise<void> {
+    try {
+        const raw = await AsyncStorage.getItem(DUA_PUBLISH_TIMES_KEY);
+        const map: Record<string, number> = raw ? JSON.parse(raw) : {};
+        map[duaId] = ts;
+        const entries = Object.entries(map);
+        if (entries.length > DUA_PUBLISH_TIMES_CAP) {
+            entries.sort((a, b) => a[1] - b[1]);
+            for (const [id] of entries.slice(0, entries.length - DUA_PUBLISH_TIMES_CAP)) delete map[id];
+        }
+        await AsyncStorage.setItem(DUA_PUBLISH_TIMES_KEY, JSON.stringify(map));
+    } catch {}
+}
+
+/** Pop and return the publish timestamp recorded for `duaId`, if any. */
+async function takePublishTime(duaId: string): Promise<number | null> {
+    try {
+        const raw = await AsyncStorage.getItem(DUA_PUBLISH_TIMES_KEY);
+        const map: Record<string, number> = raw ? JSON.parse(raw) : {};
+        if (!(duaId in map)) return null;
+        const ts = map[duaId];
+        delete map[duaId];
+        await AsyncStorage.setItem(DUA_PUBLISH_TIMES_KEY, JSON.stringify(map));
+        return ts;
+    } catch { return null; }
 }
 
 // Basic profanity / abuse word list. Conservative — we'd rather false-flag
@@ -104,6 +139,10 @@ export interface PublicDua {
     reportCount: number;
     createdAt: Date;
     hidden: boolean;
+    /** Cached on-demand translations, keyed by Locale code — written by the
+     * translateText Cloud Function the first time anyone translates this
+     * dua into that language. See utils/translate.ts. */
+    translations?: Record<string, string>;
 }
 
 /** "Name" or "Name, Country" — one shared formatter so every surface that
@@ -186,18 +225,47 @@ export const DuaWall = {
      * immediately with no extra wiring — see subscribeWall/subscribeMapDuas).
      * Server enforces authorId == the caller (see firestore.rules) so this
      * can't be used to delete someone else's dua by guessing an id.
+     *
+     * Also frees up the daily posting slot this dua occupied — both the
+     * client-side rolling-window entry (canPublishNow) AND the server-side
+     * rate-limits stamp (the 6h floor batched into publish() above) —
+     * so a free user (1/day) who deletes their dua can immediately post
+     * another, rather than being stuck until the original timestamp ages
+     * out of the 24h window.
      */
     async deleteMine(duaId: string): Promise<boolean> {
         try {
             const db = getFirebaseDb();
-            await deleteDoc(doc(db, 'public-duas', duaId));
+            const uid = getFirebaseAuth()?.currentUser?.uid;
+            const batch = writeBatch(db);
+            batch.delete(doc(db, 'public-duas', duaId));
+            if (uid) {
+                batch.set(doc(db, 'rate-limits', uid), { lastDuaAt: deleteField() }, { merge: true });
+            }
+            await batch.commit();
             this.forgetOwnDua(duaId).catch(() => {});
+            this._freeUpPublishSlot(duaId).catch(() => {});
             DeviceEventEmitter.emit('duaDeleted', { duaId });
             return true;
         } catch (e) {
             console.error('[DuaWall] deleteMine error', e);
             return false;
         }
+    },
+
+    /** Remove the rolling-window timestamp `duaId`'s publish consumed, if
+     * one was recorded — see deleteMine above. */
+    async _freeUpPublishSlot(duaId: string): Promise<void> {
+        const ts = await takePublishTime(duaId);
+        if (ts == null) return;
+        try {
+            const timestamps = parseRateLimitTimestamps(await AsyncStorage.getItem(RATE_LIMIT_KEY));
+            const idx = timestamps.indexOf(ts);
+            if (idx !== -1) {
+                timestamps.splice(idx, 1);
+                await AsyncStorage.setItem(RATE_LIMIT_KEY, JSON.stringify(timestamps));
+            }
+        } catch {}
     },
 
     /** Fetch several duas by id (for "My Duas"). Silently drops any that no
@@ -384,11 +452,13 @@ export const DuaWall = {
                     { lastDuaAt: serverTimestamp() }, { merge: true });
             }
             await batch.commit();
+            const publishedAt = Date.now();
             const priorTimestamps = parseRateLimitTimestamps(await AsyncStorage.getItem(RATE_LIMIT_KEY));
-            const cutoff = Date.now() - RATE_LIMIT_MS;
-            const updatedTimestamps = [...priorTimestamps.filter(t => t > cutoff), Date.now()]
+            const cutoff = publishedAt - RATE_LIMIT_MS;
+            const updatedTimestamps = [...priorTimestamps.filter(t => t > cutoff), publishedAt]
                 .slice(-PREMIUM_DAILY_LIMIT); // bounded even if premium later lapses
             await AsyncStorage.setItem(RATE_LIMIT_KEY, JSON.stringify(updatedTimestamps));
+            recordPublishTime(ref.id, publishedAt).catch(() => {});
             this.recordOwnDua(ref.id).catch(() => {});
             if (opts?.location) this.recordOwnMapDua(ref.id).catch(() => {});
             return { ok: true, duaId: ref.id };
@@ -455,6 +525,7 @@ export const DuaWall = {
                         createdAt: data.createdAt?.toDate?.() ?? new Date(),
                         hidden: data.hidden ?? false,
                         authorId: data.authorId,
+                        translations: data.translations ?? undefined,
                     });
                 });
                 cb(list, snap.metadata.fromCache);
@@ -505,6 +576,7 @@ export const DuaWall = {
                 createdAt: data.createdAt?.toDate?.() ?? new Date(),
                 hidden: data.hidden ?? false,
                 authorId: data.authorId,
+                translations: data.translations ?? undefined,
             };
         } catch (e) {
             console.error('[DuaWall] getById error', e);
@@ -552,6 +624,7 @@ export const DuaWall = {
                     createdAt: data.createdAt?.toDate?.() ?? new Date(),
                     hidden: data.hidden ?? false,
                     authorId: data.authorId,
+                    translations: data.translations ?? undefined,
                 });
             });
             return { items, nextCursor: snap.docs.length > 0 ? snap.docs[snap.docs.length - 1] : null };
@@ -816,6 +889,7 @@ export const DuaWall = {
                     createdAt: data.createdAt?.toDate?.() ?? new Date(),
                     hidden: data.hidden ?? false,
                     authorId: data.authorId,
+                    translations: data.translations ?? undefined,
                 });
             });
             // Sort: reported first (desc reportCount), then by recency

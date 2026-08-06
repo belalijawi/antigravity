@@ -18,6 +18,7 @@ import { QuoteShareCard } from './QuoteShareCard';
 import { checkAchievements } from '../utils/achievements';
 import { t } from '../utils/i18n';
 import { TopPicksService } from '../utils/topPicks';
+import { useTranslatable } from '../utils/useTranslatable';
 
 
 const TESTIMONY_LIKED_KEY = 'testimony_liked_ids';
@@ -55,6 +56,23 @@ const TestimonyCard = React.memo(function TestimonyCard({ item, onShare, isTopSt
     // Real Firestore testimonies have 20-char auto-generated ids; seed
     // testimonies use short ids ('1', 'c2'…) and can't be liked server-side.
     const isServerTestimony = typeof item.id === 'string' && String(item.id).length >= 12;
+
+    // Seed stories are bundled static content — nothing to translate that
+    // isn't already covered by the app's own UI language. Real (server)
+    // stories are what this was actually built for.
+    const { displayText: displayBody, showingTranslation, loading: translating, toggle: toggleTranslate } = useTranslatable({
+        text: item.body,
+        docId: String(item.id),
+        parentType: 'testimony',
+        existingTranslations: item.translations,
+    });
+    const handleToggleTranslate = async () => {
+        haptic.light();
+        const res = await toggleTranslate();
+        if (res && !res.ok) {
+            Alert.alert(t('translate.failedTitle'), t('translate.failedBody'));
+        }
+    };
 
     // Load liked state from AsyncStorage first (instant), then reconcile with Firestore
     useEffect(() => {
@@ -163,7 +181,24 @@ const TestimonyCard = React.memo(function TestimonyCard({ item, onShare, isTopSt
                     </TouchableOpacity>
                 </View>
 
-                <Text style={styles.body}>{item.body}</Text>
+                <Text style={styles.body} selectable>{displayBody}</Text>
+                {isServerTestimony && (
+                    <TouchableOpacity
+                        onPress={handleToggleTranslate}
+                        disabled={translating}
+                        hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
+                        accessibilityRole="button"
+                        style={styles.translateLink}
+                    >
+                        <Text style={[styles.translateLinkText, { color: colors.accent }]}>
+                            {translating
+                                ? t('translate.translating')
+                                : showingTranslation
+                                    ? t('translate.seeOriginal')
+                                    : t('translate.button')}
+                        </Text>
+                    </TouchableOpacity>
+                )}
 
                 <View style={styles.tagsContainer}>
                     {item.tags.map(tag => (
@@ -346,6 +381,7 @@ export function TestimoniesTab() {
                             reactions: data.reactions || 0,
                             replyCount: data.replyCount || 0,
                             tags: data.tags || [],
+                            translations: data.translations ?? undefined,
                             isCommunity: true,
                             // Firestore Timestamp, epoch millis, or absent — normalize to millis
                             createdAt: data.createdAt?.toMillis?.() ?? (typeof data.createdAt === 'number' ? data.createdAt : 0),
@@ -682,6 +718,15 @@ const styles = StyleSheet.create({
         lineHeight: 26,
         marginBottom: 20,
         fontWeight: '500',
+    },
+    translateLink: {
+        alignSelf: 'flex-start',
+        marginTop: -12,
+        marginBottom: 16,
+    },
+    translateLinkText: {
+        fontSize: 12,
+        fontWeight: '700',
     },
     tagsContainer: {
         flexDirection: 'row',

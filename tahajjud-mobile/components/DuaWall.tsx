@@ -2,7 +2,7 @@ import React, { useEffect, useState, useRef } from 'react';
 import {
     Modal, View, Text, TouchableOpacity, StyleSheet, FlatList,
     TextInput, Alert, ActivityIndicator, KeyboardAvoidingView, Platform, TouchableWithoutFeedback, Keyboard,
-    Animated as RNAnimated, DeviceEventEmitter,
+    Animated as RNAnimated, DeviceEventEmitter, RefreshControl,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { X, Heart, Flag, PenLine, Moon, Sparkles, Star, Globe, Check, Crown, ListChecks, ChevronRight, Trash2 } from 'lucide-react-native';
@@ -27,6 +27,7 @@ import Paywall from './Paywall';
 import { CommunityProfileStore } from '../utils/communityProfile';
 import { getBlocked, blockAuthor, blockedSnapshot, BLOCKED_CHANGED } from '../utils/blockedUsers';
 import { flagEmoji, countryName, isValidCountryCode } from '../utils/countries';
+import { useTranslatable } from '../utils/useTranslatable';
 
 const AMEEN_KEY = 'dua_wall_ameened';
 const PRAY_KEY = 'dua_wall_prayed';
@@ -265,6 +266,22 @@ export function DuaWallModal({ visible, onClose, focusDuaId, inline }: Props) {
     const ameenInFlightRef = React.useRef<Set<string>>(new Set());
     const prayingInFlightRef = React.useRef<Set<string>>(new Set());
     const listRef = React.useRef<FlatList>(null);
+    // The wall is already live via onSnapshot below — there's no separate
+    // "stale data" to fetch. What pull-to-refresh actually buys here: tearing
+    // down and re-establishing the listener, which recovers the one failure
+    // mode subscribeWall's own comments call out — a permission-denied error
+    // permanently closes an onSnapshot listener, and there was previously no
+    // way for a user to recover from that short of leaving and reopening.
+    const [pullRefreshing, setPullRefreshing] = useState(false);
+    const [refreshNonce, setRefreshNonce] = useState(0);
+    const handlePullRefresh = () => {
+        haptic.light();
+        setPullRefreshing(true);
+        setRefreshNonce(n => n + 1);
+        // Safety net: if a fresh (non-cached) snapshot never arrives (e.g.
+        // fully offline), don't leave the spinner stuck forever.
+        setTimeout(() => setPullRefreshing(false), 8000);
+    };
 
     useEffect(() => {
         if (!visible) {
@@ -283,7 +300,10 @@ export function DuaWallModal({ visible, onClose, focusDuaId, inline }: Props) {
             setDuas(live);
             // Keep showing the loading hint until the server confirms — an empty
             // cache snapshot (fromCache) is not a trustworthy "no duas" answer.
-            if (!fromCache) setLoadingLive(false);
+            if (!fromCache) {
+                setLoadingLive(false);
+                setPullRefreshing(false);
+            }
         });
         Promise.all([loadReactionSet(AMEEN_KEY), loadReactionSet(PRAY_KEY)]).then(([a, p]) => {
             if (!duaWallMountedRef.current) return;
@@ -296,7 +316,7 @@ export function DuaWallModal({ visible, onClose, focusDuaId, inline }: Props) {
             if (!seen && duaWallMountedRef.current) setShowWallIntro(true);
         });
         return () => unsub();
-    }, [visible]);
+    }, [visible, refreshNonce]);
 
     const dismissWallIntro = () => {
         setShowWallIntro(false);
@@ -729,6 +749,14 @@ export function DuaWallModal({ visible, onClose, focusDuaId, inline }: Props) {
                     // "NullPointerException: mViewFlags on a null object reference"
                     // (confirmed in Play Console crash reports across 1.8.5-1.8.9).
                     removeClippedSubviews={false}
+                    refreshControl={
+                        <RefreshControl
+                            refreshing={pullRefreshing}
+                            onRefresh={handlePullRefresh}
+                            tintColor={colors.accent}
+                            colors={[colors.accent]}
+                        />
+                    }
                     ListHeaderComponent={
                         <>
                             {topDua && (
@@ -1110,6 +1138,22 @@ const DuaCard = React.memo(function DuaCard({
         transform: [{ scale: heartScale.value }],
     }));
 
+    // Seed duas are bundled static content, not real posts — nothing to
+    // translate that isn't already covered by the app's own UI language.
+    const { displayText, showingTranslation, loading: translating, toggle: toggleTranslate } = useTranslatable({
+        text: dua.text,
+        docId: dua.id,
+        parentType: 'dua',
+        existingTranslations: dua.translations,
+    });
+    const handleToggleTranslate = async () => {
+        haptic.light();
+        const res = await toggleTranslate();
+        if (res && !res.ok) {
+            Alert.alert(t('translate.failedTitle'), t('translate.failedBody'));
+        }
+    };
+
     const tap = () => {
         // Animate the satisfying pop only when adding an Ameen, not when undoing
         if (!userTapped) {
@@ -1150,7 +1194,24 @@ const DuaCard = React.memo(function DuaCard({
                 </View>
             )}
 
-            <Text style={styles.duaText}>{dua.text}</Text>
+            <Text style={styles.duaText} selectable>{displayText}</Text>
+            {!isSeed && (
+                <TouchableOpacity
+                    onPress={handleToggleTranslate}
+                    disabled={translating}
+                    hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
+                    accessibilityRole="button"
+                    style={styles.translateLink}
+                >
+                    <Text style={[styles.translateLinkText, { color: accent }]}>
+                        {translating
+                            ? t('translate.translating')
+                            : showingTranslation
+                                ? t('translate.seeOriginal')
+                                : t('translate.button')}
+                    </Text>
+                </TouchableOpacity>
+            )}
 
             <View style={styles.cardFooter}>
                 <View style={styles.footerTop}>
@@ -1400,6 +1461,15 @@ const styles = StyleSheet.create({
         lineHeight: 24,
         fontWeight: '400',
         marginBottom: 14,
+    },
+    translateLink: {
+        alignSelf: 'flex-start',
+        marginTop: -8,
+        marginBottom: 14,
+    },
+    translateLinkText: {
+        fontSize: 11,
+        fontWeight: '700',
     },
     cardFooter: {
         flexDirection: 'column',

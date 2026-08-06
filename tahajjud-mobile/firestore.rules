@@ -311,7 +311,9 @@ service cloud.firestore {
             && isParentAuthor(resource.data.parentType, resource.data.parentId))
         || isAdmin();
 
-      allow delete: if isAdmin();
+      // A user can delete their own reply; admins can delete any.
+      allow delete: if (request.auth != null && resource.data.authorId == request.auth.uid)
+        || isAdmin();
     }
 
     // ─── Comment like markers (idempotency) ─────────────────────────

@@ -3,9 +3,10 @@ import {
     View, Text, TouchableOpacity, StyleSheet, TextInput,
     ActivityIndicator, Alert, DeviceEventEmitter,
 } from 'react-native';
-import { MessageCircle, Flag, Send, Heart, ChevronDown, ChevronUp, Crown } from 'lucide-react-native';
+import { MessageCircle, Flag, Send, Heart, ChevronDown, ChevronUp, Crown, Trash2 } from 'lucide-react-native';
 import { formatDistanceToNowStrict } from 'date-fns';
 import { Comments, Comment, CommentParentType } from '../utils/comments';
+import { Translate } from '../utils/translate';
 import { CommunityProfileStore } from '../utils/communityProfile';
 import { usePurchases } from '../context/PurchasesContext';
 import { isCurrentUserAdmin } from '../utils/admins';
@@ -106,6 +107,13 @@ export function CommentThread({ parentType, parentId, replyCount, accent, onRequ
     // Replies THIS device has liked (general-purpose, everyone can do this —
     // separate from authorLiked's parent-author-only "appreciated" heart).
     const [likedLocally, setLikedLocally] = useState<Set<string>>(new Set());
+    // Per-reply translate state. Replies render inline via .map() below (not
+    // as their own component instances), so this can't use the useTranslatable
+    // hook (calling hooks per-item inside a loop breaks the Rules of Hooks) —
+    // same per-id-dictionary shape as locallyHidden/likedLocally above instead.
+    const [commentTranslations, setCommentTranslations] = useState<Record<string, string>>({});
+    const [translatingIds, setTranslatingIds] = useState<Set<string>>(new Set());
+    const [showingTranslationIds, setShowingTranslationIds] = useState<Set<string>>(new Set());
     const likeToggleInFlightRef = useRef<Set<string>>(new Set());
     // viewerIsParentAuthor is declared earlier, alongside hasUnlimitedReplies.
     const likeInFlightRef = useRef<Set<string>>(new Set());
@@ -295,7 +303,59 @@ export function CommentThread({ parentType, parentId, replyCount, accent, onRequ
         }
     };
 
+    // Toggle a reply between its original text and a cached/fetched
+    // translation into the app's current display language. Uses the comment
+    // already carries (c.translations, from the live subscribe() listener)
+    // before ever calling the network — see Translate.translate.
+    const handleToggleTranslate = async (c: Comment) => {
+        haptic.light();
+        if (showingTranslationIds.has(c.id)) {
+            setShowingTranslationIds(prev => { const next = new Set(prev); next.delete(c.id); return next; });
+            return;
+        }
+        if (commentTranslations[c.id]) {
+            setShowingTranslationIds(prev => new Set(prev).add(c.id));
+            return;
+        }
+        if (translatingIds.has(c.id)) return;
+        setTranslatingIds(prev => new Set(prev).add(c.id));
+        const res = await Translate.translate(c.text, c.id, 'comment', c.translations);
+        if (!mountedRef.current) return;
+        setTranslatingIds(prev => { const next = new Set(prev); next.delete(c.id); return next; });
+        if (res.ok) {
+            setCommentTranslations(prev => ({ ...prev, [c.id]: res.text }));
+            setShowingTranslationIds(prev => new Set(prev).add(c.id));
+        } else {
+            Alert.alert(t('translate.failedTitle'), t('translate.failedBody'));
+        }
+    };
+
     const handleCommentActions = (commentId: string) => {
+        const target = comments.find(c => c.id === commentId);
+        // Blocking/hiding/reporting your OWN reply makes no sense — swap in
+        // a plain delete confirmation instead of the moderation menu below.
+        if (target?.isMine) {
+            Alert.alert(
+                t('comments.deleteConfirmTitle'),
+                t('comments.deleteConfirmBody'),
+                [
+                    { text: t('btn.cancel'), style: 'cancel' },
+                    {
+                        text: t('btn.delete'),
+                        style: 'destructive',
+                        onPress: async () => {
+                            haptic.light();
+                            // No manual removal from `comments` needed on success —
+                            // the live subscribe() listener above will drop it.
+                            const ok = await Comments.deleteMine(commentId);
+                            if (ok) haptic.success();
+                            else Alert.alert(t('comments.deleteFailedTitle'), t('comments.deleteFailedBody'));
+                        },
+                    },
+                ],
+            );
+            return;
+        }
         Alert.alert(
             t('comments.actionsTitle'),
             undefined,
@@ -409,14 +469,33 @@ export function CommentThread({ parentType, parentId, replyCount, accent, onRequ
                                     <TouchableOpacity
                                         onPress={() => handleCommentActions(c.id)}
                                         hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                                        accessibilityLabel="Reply options: hide or report"
+                                        accessibilityLabel={c.isMine ? 'Delete this reply' : 'Reply options: hide or report'}
                                         accessibilityRole="button"
                                         style={styles.commentFlag}
                                     >
-                                        <Flag size={11} color="#475569" />
+                                        {c.isMine
+                                            ? <Trash2 size={11} color="#475569" />
+                                            : <Flag size={11} color="#475569" />}
                                     </TouchableOpacity>
                                 </View>
-                                <Text style={styles.commentText}>{c.text}</Text>
+                                <Text style={styles.commentText} selectable>
+                                    {showingTranslationIds.has(c.id) ? commentTranslations[c.id] : c.text}
+                                </Text>
+                                <TouchableOpacity
+                                    onPress={() => handleToggleTranslate(c)}
+                                    disabled={translatingIds.has(c.id)}
+                                    hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
+                                    accessibilityRole="button"
+                                    style={styles.translateLink}
+                                >
+                                    <Text style={[styles.translateLinkText, { color: accent }]}>
+                                        {translatingIds.has(c.id)
+                                            ? t('translate.translating')
+                                            : showingTranslationIds.has(c.id)
+                                                ? t('translate.seeOriginal')
+                                                : t('translate.button')}
+                                    </Text>
+                                </TouchableOpacity>
                                 <View style={styles.actionsRow}>
                                     {/* General like — anyone but the reply's own
                                         writer. Separate from the author-only
@@ -598,6 +677,8 @@ const styles = StyleSheet.create({
     commentTime: { fontSize: 10, color: '#475569', fontWeight: '600', flex: 1 },
     commentFlag: { padding: 2 },
     commentText: { color: '#cbd5e1', fontSize: 13, lineHeight: 19 },
+    translateLink: { alignSelf: 'flex-start', marginTop: 4 },
+    translateLinkText: { fontSize: 10, fontWeight: '700' },
     actionsRow: {
         flexDirection: 'row', alignItems: 'center', gap: 14,
         marginTop: 6,

@@ -13,6 +13,9 @@ export interface Testimony {
     createdAt?: number;
     /** Denormalised count of visible replies (community stories only). */
     replyCount?: number;
+    /** Cached on-demand translations of `body`, keyed by Locale code —
+     * community stories only. See utils/translate.ts. */
+    translations?: Record<string, string>;
 }
 
 export const initialTestimonies: Testimony[] = [
