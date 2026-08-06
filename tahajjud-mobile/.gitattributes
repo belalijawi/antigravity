@@ -1,0 +1,9 @@
+# These are executed as shell scripts by Xcode/Gradle on macOS/Linux build
+# machines. Windows' git core.autocrlf=true silently converts them to CRLF
+# on checkout, which breaks `sh -c` parsing there ("command not found") —
+# force LF regardless of the checking-out machine's git config.
+*.sh text eol=lf
+gradlew text eol=lf
+.xcode.env text eol=lf
+.xcode.env.local text eol=lf
+Podfile text eol=lf

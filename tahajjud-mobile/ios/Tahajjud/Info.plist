@@ -1,122 +1,122 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
-<dict>
-	<key>CADisableMinimumFrameDurationOnPhone</key>
-	<true/>
-	<key>CFBundleAllowMixedLocalizations</key>
-	<true/>
-	<key>CFBundleDevelopmentRegion</key>
-	<string>$(DEVELOPMENT_LANGUAGE)</string>
-	<key>CFBundleDisplayName</key>
-	<string>Tahajjud+</string>
-	<key>CFBundleExecutable</key>
-	<string>$(EXECUTABLE_NAME)</string>
-	<key>CFBundleIdentifier</key>
-	<string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
-	<key>CFBundleInfoDictionaryVersion</key>
-	<string>6.0</string>
-	<key>CFBundleName</key>
-	<string>$(PRODUCT_NAME)</string>
-	<key>CFBundlePackageType</key>
-	<string>$(PRODUCT_BUNDLE_PACKAGE_TYPE)</string>
-	<key>CFBundleShortVersionString</key>
-	<string>1.9.2</string>
-	<key>CFBundleSignature</key>
-	<string>????</string>
-	<key>CFBundleURLTypes</key>
-	<array>
-		<dict>
-			<key>CFBundleURLSchemes</key>
-			<array>
-				<string>tahajjud-plus</string>
-				<string>com.tahajjudplus.app</string>
-			</array>
-		</dict>
-		<dict>
-			<key>CFBundleURLSchemes</key>
-			<array>
-				<string>com.googleusercontent.apps.434827238021-l54qkp6ts99g1vsf5ha314tfj056sk50</string>
-			</array>
-		</dict>
-		<dict>
-			<key>CFBundleURLSchemes</key>
-			<array>
-				<string>exp+tahajjud-plus</string>
-			</array>
-		</dict>
-	</array>
-	<key>CFBundleVersion</key>
-	<string>112</string>
-	<key>ITSAppUsesNonExemptEncryption</key>
-	<false/>
-	<key>LSMinimumSystemVersion</key>
-	<string>12.0</string>
-	<key>LSRequiresIPhoneOS</key>
-	<true/>
-	<key>NSAppTransportSecurity</key>
-	<dict>
-		<key>NSAllowsArbitraryLoads</key>
-		<false/>
-		<key>NSAllowsLocalNetworking</key>
-		<true/>
-	</dict>
-	<key>NSCameraUsageDescription</key>
-	<string>Tahajjud+ uses the camera to photograph your mosque's monthly prayer timetable so the app can automatically import all the prayer times for the month.</string>
-	<key>NSFaceIDUsageDescription</key>
-	<string>Tahajjud+ uses FaceID to provide a secure biometric lock for your private Tahajjud letters and journal entries, ensuring your spiritual journey remains for your eyes only.</string>
-	<key>NSHealthShareUsageDescription</key>
-	<string>Tahajjud+ reads your sleep data to suggest the best bedtime for Tahajjud. Sleep data stays on your device.</string>
-	<key>NSHealthUpdateUsageDescription</key>
-	<string>Tahajjud+ does not write to Health.</string>
-	<key>NSLocalNetworkUsageDescription</key>
-	<string>Tahajjud+ uses the local network to connect to Firebase for syncing your Tahajjud prayer logs and journal entries across your devices. For example, a Tahajjud letter you write on your iPhone will sync and appear on your iPad.</string>
-	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
-	<string>Tahajjud+ uses your location to calculate the five daily Islamic prayer times (Fajr, Dhuhr, Asr, Maghrib, and Isha) specific to your city, and to orient the Qibla compass toward Mecca. For example, a user in Dubai will see prayer times calculated for Dubai and a compass pointing from Dubai toward the Kaaba in Mecca.</string>
-	<key>NSLocationAlwaysUsageDescription</key>
-	<string>Tahajjud+ uses your location to calculate the five daily Islamic prayer times specific to your city and to orient the Qibla compass toward Mecca. For example, a user in London will receive prayer times calculated for London.</string>
-	<key>NSLocationWhenInUseUsageDescription</key>
-	<string>Tahajjud+ uses your location to calculate the five daily Islamic prayer times (Fajr, Dhuhr, Asr, Maghrib, and Isha) specific to your city, and to orient the Qibla compass toward Mecca. For example, a user in Dubai will see prayer times calculated for Dubai and a compass pointing from Dubai toward the Kaaba in Mecca.</string>
-	<key>NSMicrophoneUsageDescription</key>
-	<string>Allow $(PRODUCT_NAME) to access your microphone</string>
-	<key>NSPhotoLibraryUsageDescription</key>
-	<string>Tahajjud+ accesses your photo library so you can select a photo of your mosque's monthly prayer timetable to import the times automatically.</string>
-	<key>NSSupportsLiveActivities</key>
-	<true/>
-	<key>NSSupportsLiveActivitiesFrequentUpdates</key>
-	<true/>
-	<key>RCTNewArchEnabled</key>
-	<true/>
-	<key>UIBackgroundModes</key>
-	<array>
-		<string>audio</string>
-		<string>remote-notification</string>
-	</array>
-	<key>UILaunchStoryboardName</key>
-	<string>SplashScreen</string>
-	<key>UIRequiredDeviceCapabilities</key>
-	<array>
-		<string>arm64</string>
-	</array>
-	<key>UIRequiresFullScreen</key>
-	<false/>
-	<key>UIStatusBarStyle</key>
-	<string>UIStatusBarStyleDefault</string>
-	<key>UISupportedInterfaceOrientations</key>
-	<array>
-		<string>UIInterfaceOrientationPortrait</string>
-		<string>UIInterfaceOrientationPortraitUpsideDown</string>
-	</array>
-	<key>UISupportedInterfaceOrientations~ipad</key>
-	<array>
-		<string>UIInterfaceOrientationPortrait</string>
-		<string>UIInterfaceOrientationPortraitUpsideDown</string>
-		<string>UIInterfaceOrientationLandscapeLeft</string>
-		<string>UIInterfaceOrientationLandscapeRight</string>
-	</array>
-	<key>UIUserInterfaceStyle</key>
-	<string>Dark</string>
-	<key>UIViewControllerBasedStatusBarAppearance</key>
-	<false/>
-</dict>
+  <dict>
+    <key>CADisableMinimumFrameDurationOnPhone</key>
+    <true/>
+    <key>CFBundleAllowMixedLocalizations</key>
+    <true/>
+    <key>CFBundleDevelopmentRegion</key>
+    <string>$(DEVELOPMENT_LANGUAGE)</string>
+    <key>CFBundleDisplayName</key>
+    <string>Tahajjud+</string>
+    <key>CFBundleExecutable</key>
+    <string>$(EXECUTABLE_NAME)</string>
+    <key>CFBundleIdentifier</key>
+    <string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
+    <key>CFBundleInfoDictionaryVersion</key>
+    <string>6.0</string>
+    <key>CFBundleName</key>
+    <string>$(PRODUCT_NAME)</string>
+    <key>CFBundlePackageType</key>
+    <string>$(PRODUCT_BUNDLE_PACKAGE_TYPE)</string>
+    <key>CFBundleShortVersionString</key>
+    <string>1.9.2</string>
+    <key>CFBundleSignature</key>
+    <string>????</string>
+    <key>CFBundleURLTypes</key>
+    <array>
+      <dict>
+        <key>CFBundleURLSchemes</key>
+        <array>
+          <string>tahajjud-plus</string>
+          <string>com.tahajjudplus.app</string>
+        </array>
+      </dict>
+      <dict>
+        <key>CFBundleURLSchemes</key>
+        <array>
+          <string>com.googleusercontent.apps.434827238021-l54qkp6ts99g1vsf5ha314tfj056sk50</string>
+        </array>
+      </dict>
+      <dict>
+        <key>CFBundleURLSchemes</key>
+        <array>
+          <string>exp+tahajjud-plus</string>
+        </array>
+      </dict>
+    </array>
+    <key>CFBundleVersion</key>
+    <string>114</string>
+    <key>ITSAppUsesNonExemptEncryption</key>
+    <false/>
+    <key>LSMinimumSystemVersion</key>
+    <string>12.0</string>
+    <key>LSRequiresIPhoneOS</key>
+    <true/>
+    <key>NSAppTransportSecurity</key>
+    <dict>
+      <key>NSAllowsArbitraryLoads</key>
+      <false/>
+      <key>NSAllowsLocalNetworking</key>
+      <true/>
+    </dict>
+    <key>NSCameraUsageDescription</key>
+    <string>Tahajjud+ uses the camera to photograph your mosque's monthly prayer timetable so the app can automatically import all the prayer times for the month.</string>
+    <key>NSFaceIDUsageDescription</key>
+    <string>Tahajjud+ uses FaceID to provide a secure biometric lock for your private Tahajjud letters and journal entries, ensuring your spiritual journey remains for your eyes only.</string>
+    <key>NSHealthShareUsageDescription</key>
+    <string>Tahajjud+ reads your sleep data to suggest the best bedtime for Tahajjud. Sleep data stays on your device.</string>
+    <key>NSHealthUpdateUsageDescription</key>
+    <string>Tahajjud+ does not write to Health.</string>
+    <key>NSLocalNetworkUsageDescription</key>
+    <string>Tahajjud+ uses the local network to connect to Firebase for syncing your Tahajjud prayer logs and journal entries across your devices. For example, a Tahajjud letter you write on your iPhone will sync and appear on your iPad.</string>
+    <key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
+    <string>Tahajjud+ uses your location to calculate the five daily Islamic prayer times (Fajr, Dhuhr, Asr, Maghrib, and Isha) specific to your city, and to orient the Qibla compass toward Mecca. For example, a user in Dubai will see prayer times calculated for Dubai and a compass pointing from Dubai toward the Kaaba in Mecca.</string>
+    <key>NSLocationAlwaysUsageDescription</key>
+    <string>Tahajjud+ uses your location to calculate the five daily Islamic prayer times specific to your city and to orient the Qibla compass toward Mecca. For example, a user in London will receive prayer times calculated for London.</string>
+    <key>NSLocationWhenInUseUsageDescription</key>
+    <string>Tahajjud+ uses your location to calculate the five daily Islamic prayer times (Fajr, Dhuhr, Asr, Maghrib, and Isha) specific to your city, and to orient the Qibla compass toward Mecca. For example, a user in Dubai will see prayer times calculated for Dubai and a compass pointing from Dubai toward the Kaaba in Mecca.</string>
+    <key>NSMicrophoneUsageDescription</key>
+    <string>Allow $(PRODUCT_NAME) to access your microphone</string>
+    <key>NSPhotoLibraryUsageDescription</key>
+    <string>Tahajjud+ accesses your photo library so you can select a photo of your mosque's monthly prayer timetable to import the times automatically.</string>
+    <key>NSSupportsLiveActivities</key>
+    <true/>
+    <key>NSSupportsLiveActivitiesFrequentUpdates</key>
+    <true/>
+    <key>RCTNewArchEnabled</key>
+    <true/>
+    <key>UIBackgroundModes</key>
+    <array>
+      <string>audio</string>
+      <string>remote-notification</string>
+    </array>
+    <key>UILaunchStoryboardName</key>
+    <string>SplashScreen</string>
+    <key>UIRequiredDeviceCapabilities</key>
+    <array>
+      <string>arm64</string>
+    </array>
+    <key>UIRequiresFullScreen</key>
+    <false/>
+    <key>UIStatusBarStyle</key>
+    <string>UIStatusBarStyleDefault</string>
+    <key>UISupportedInterfaceOrientations</key>
+    <array>
+      <string>UIInterfaceOrientationPortrait</string>
+      <string>UIInterfaceOrientationPortraitUpsideDown</string>
+    </array>
+    <key>UISupportedInterfaceOrientations~ipad</key>
+    <array>
+      <string>UIInterfaceOrientationPortrait</string>
+      <string>UIInterfaceOrientationPortraitUpsideDown</string>
+      <string>UIInterfaceOrientationLandscapeLeft</string>
+      <string>UIInterfaceOrientationLandscapeRight</string>
+    </array>
+    <key>UIUserInterfaceStyle</key>
+    <string>Dark</string>
+    <key>UIViewControllerBasedStatusBarAppearance</key>
+    <false/>
+  </dict>
 </plist>

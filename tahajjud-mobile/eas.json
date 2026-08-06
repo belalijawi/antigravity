@@ -24,8 +24,8 @@
       "ios": {
         "ascAppId": "6759176533",
         "appleId": "belalijawi@yahoo.com",
-        "ascApiKeyPath": "./.secrets/AuthKey_A29426BTB9.p8",
-        "ascApiKeyId": "A29426BTB9",
+        "ascApiKeyPath": "./.secrets/AuthKey_T8Y93TY929.p8",
+        "ascApiKeyId": "T8Y93TY929",
         "ascApiKeyIssuerId": "d68f0632-0d5f-4ecf-9472-3ddc0099a5c8"
       }
     }
