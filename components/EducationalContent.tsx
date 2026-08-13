@@ -1,5 +1,4 @@
 import { BookOpen, Star, Heart } from "lucide-react";
-import { cn } from "@/lib/utils";
 
 function InfoCard({ title, icon, children }: { title: string, icon: React.ReactNode, children: React.ReactNode }) {
     return (
@@ -28,20 +27,20 @@ export function EducationalContent() {
             <div className="grid md:grid-cols-3 gap-6">
                 <InfoCard title="What is Tahajjud?" icon={<BookOpen className="w-6 h-6" />}>
                     <p>
-                        Tahajjud is a voluntary night prayer performed after sleeping. It is often called the "Prayer of the Night" (Qiyam al-Layl) but specifically refers to prayer after waking up from sleep.
+                        Tahajjud is a voluntary night prayer performed after sleeping. It is often called the &ldquo;Prayer of the Night&rdquo; (Qiyam al-Layl) but specifically refers to prayer after waking up from sleep.
                     </p>
                 </InfoCard>
 
                 <InfoCard title="Virtues" icon={<Star className="w-6 h-6" />}>
                     <p>
-                        "Adhere to night prayer... for it is the habit of the righteous before you, a means of drawing nearer to your Lord, an expiation for sins, and a deterrent from wrongdoing." (Tirmidhi)
+                        &ldquo;Adhere to night prayer... for it is the habit of the righteous before you, a means of drawing nearer to your Lord, an expiation for sins, and a deterrent from wrongdoing.&rdquo; (Tirmidhi)
                     </p>
                 </InfoCard>
 
                 <InfoCard title="How to Pray" icon={<Heart className="w-6 h-6" />}>
                     <ul className="list-disc list-inside space-y-1">
                         <li>Make intention (Niyyah).</li>
-                        <li>Pray 2 rak'ahs at a time.</li>
+                        <li>Pray 2 rak&apos;ahs at a time.</li>
                         <li>It is recommended to pray Witr (odd number) as the last prayer of the night.</li>
                         <li>Best time: The last third of the night.</li>
                     </ul>

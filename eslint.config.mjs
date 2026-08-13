@@ -12,6 +12,9 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // Separate Expo/React Native project with its own lint setup — not
+    // meant to be checked against the web app's Next.js rules.
+    "tahajjud-mobile/**",
   ]),
 ]);
 

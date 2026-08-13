@@ -6,7 +6,6 @@ import { calculateLastThird, NightCalculation, PrayerTimes } from "@/lib/prayer-
 import { Loader2, Moon, Star } from "lucide-react";
 import { PrayerCard } from "./PrayerCard";
 import { format } from "date-fns";
-import { cn } from "@/lib/utils";
 
 export function NightCalculator() {
     const [location, setLocation] = useState<{ lat: number; lng: number } | null>(null);
@@ -158,7 +157,7 @@ export function NightCalculator() {
             {/* Educational / Motivational Quote */}
             <div className="mt-20 max-w-2xl text-center">
                 <blockquote className="text-xl italic font-serif text-white/80 leading-relaxed border-l-4 border-primary/50 pl-6 py-2 bg-white/5 rounded-r-lg">
-                    "The Lord descends every night to the lowest heaven when the last third of the night remains..."
+                    &ldquo;The Lord descends every night to the lowest heaven when the last third of the night remains...&rdquo;
                 </blockquote>
                 <p className="text-right text-sm text-muted-foreground mt-2">— Sahih Al-Bukhari</p>
             </div>

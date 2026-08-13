@@ -1,24 +1,14 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { CheckCircle, Trophy, Calendar } from "lucide-react";
+import { CheckCircle, Trophy } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { format, subDays, isSameDay } from "date-fns";
+import { subDays } from "date-fns";
 
 export function Tracker() {
     const [streak, setStreak] = useState(0);
     const [history, setHistory] = useState<string[]>([]); // ISO date strings
     const [todayLogged, setTodayLogged] = useState(false);
-
-    useEffect(() => {
-        const storedHistory = localStorage.getItem("tahajjud-tracker");
-        if (storedHistory) {
-            const parsed = JSON.parse(storedHistory);
-            setHistory(parsed);
-            calculateStreak(parsed);
-            checkToday(parsed);
-        }
-    }, []);
 
     const calculateStreak = (dates: string[]) => {
         if (dates.length === 0) {
@@ -26,20 +16,8 @@ export function Tracker() {
             return;
         }
 
-        // Sort dates descending
-        const sorted = [...dates].sort((a, b) => new Date(b).getTime() - new Date(a).getTime());
-
-        // Simple streak logic: consecutive days
+        // Simple streak logic: consecutive days.
         // Note: Tahajjud is usually pre-dawn. If I log it at 4 AM, it's "today".
-        let currentStreak = 0;
-        let lastDate = new Date(); // Start checking from today
-
-        // If today is not logged, check if yesterday was logged to continue streak
-        // If today is logged, currentStreak starts at 1.
-
-        // Let's simplify: Check if "today" or "yesterday" is in list.
-        // Actually, just iterate back from most recent.
-
         const todayStr = new Date().toISOString().split('T')[0];
         const yesterdayStr = subDays(new Date(), 1).toISOString().split('T')[0];
 
@@ -77,6 +55,21 @@ export function Tracker() {
         const found = dates.some(d => d.split('T')[0] === todayStr);
         setTodayLogged(found);
     }
+
+    useEffect(() => {
+        // Deliberately deferred to an effect rather than a lazy useState
+        // initializer: this component renders on the server first (no
+        // "use client" opt-out of SSR here), and localStorage doesn't exist
+        // there — reading it outside an effect would crash the server render.
+        const storedHistory = localStorage.getItem("tahajjud-tracker");
+        if (storedHistory) {
+            const parsed = JSON.parse(storedHistory);
+            // eslint-disable-next-line react-hooks/set-state-in-effect
+            setHistory(parsed);
+            calculateStreak(parsed);
+            checkToday(parsed);
+        }
+    }, []);
 
     const toggleToday = () => {
         const today = new Date();
@@ -124,7 +117,7 @@ export function Tracker() {
             </button>
 
             <p className="text-xs text-center text-muted-foreground mt-4">
-                "The most beloved deeds to Allah are those that are consistent, even if they are small."
+                &ldquo;The most beloved deeds to Allah are those that are consistent, even if they are small.&rdquo;
             </p>
         </div>
     );
