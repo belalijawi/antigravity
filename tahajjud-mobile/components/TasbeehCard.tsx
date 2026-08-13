@@ -2,7 +2,7 @@ import React, { useState, useCallback, useEffect, useRef } from 'react';
 import {
     View, Text, StyleSheet, Pressable, TouchableOpacity,
     ScrollView, Platform, Vibration, Modal, TextInput,
-    KeyboardAvoidingView, Alert,
+    KeyboardAvoidingView, Alert, DeviceEventEmitter,
 } from 'react-native';
 import { GlassBg as BlurView } from './GlassBg';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -147,6 +147,19 @@ export function TasbeehCard() {
 
     // ── Load ──────────────────────────────────────────────────────────────────
     useEffect(() => { load(); }, []);
+
+    // Lock Screen widget taps (utils/dhikrLeaderboardTracker.ts's
+    // drainPendingWidgetDhikrTaps) credit the all-time-total/per-dhikr
+    // AsyncStorage keys directly, bypassing this component's own React
+    // state entirely — this component may already be mounted (and holding
+    // stale in-memory totals) when that happens, e.g. the app was open on
+    // this tab, backgrounded, the widget tapped, then foregrounded again.
+    // Reload from storage rather than staying stuck on the pre-drain totals
+    // until some unrelated remount.
+    useEffect(() => {
+        const sub = DeviceEventEmitter.addListener('dhikrWidgetTapsDrained', load);
+        return () => sub.remove();
+    }, []);
 
     const load = async () => {
         try {

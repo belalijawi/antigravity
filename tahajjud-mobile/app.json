@@ -2,7 +2,7 @@
   "expo": {
     "name": "Tahajjud+",
     "slug": "tahajjud-plus",
-    "version": "1.9.2",
+    "version": "1.9.3",
     "scheme": "tahajjud-plus",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
@@ -17,7 +17,7 @@
       "supportsTablet": true,
       "bundleIdentifier": "com.tahajjudplus.app",
       "appStoreUrl": "https://apps.apple.com/app/id6759176533",
-      "buildNumber": "114",
+      "buildNumber": "116",
       "googleServicesFile": "./GoogleService-Info.plist",
       "entitlements": {
         "com.apple.developer.usernotifications.time-sensitive": true
@@ -63,7 +63,7 @@
         "FOREGROUND_SERVICE_MEDIA_PLAYBACK"
       ],
       "package": "com.tahajjudplus.app",
-      "versionCode": 40,
+      "versionCode": 43,
       "googleServicesFile": "./google-services.json",
       "edgeToEdgeEnabled": true,
       "predictiveBackGestureEnabled": false

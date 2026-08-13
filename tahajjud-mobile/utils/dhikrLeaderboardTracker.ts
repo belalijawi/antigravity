@@ -23,8 +23,37 @@
  * did dhikr but my count didn't go up" reports this fixes.
  */
 
+import { NativeModules, DeviceEventEmitter } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Leaderboard } from './leaderboard';
+
+const { DhikrIntentsBridge } = NativeModules;
+
+// Mirrors components/TasbeehCard.tsx's getBuiltIn() id → transliteration —
+// that file keys its Stats breakdown (DHIKR_TOTALS_KEY) by transliteration
+// label, not id, and duplicating the map here (rather than importing a
+// whole React component into a background utility) matches this codebase's
+// existing convention of duplicating small, stable constants like this
+// across files (e.g. prayer-tracker-v2's key literal). Keep in sync with
+// both TasbeehCard.tsx AND DhikrChoice in ios/TahajjudWidget/TapDhikrIntent.swift
+// if the built-in dhikr list ever changes.
+const DHIKR_ID_TO_LABEL: Record<string, string> = {
+    subhan:    'SubhanAllah',
+    hamd:      'Alhamdulillah',
+    akbar:     'Allahu Akbar',
+    istighfar: 'Astaghfirullah',
+    tahleel:   'La ilaha illallah',
+    salawat:   "Allahuma Salli 'ala Muhammad",
+};
+
+// TasbeehCard.tsx's own lifetime-totals keys — duplicated here rather than
+// exported from a component file. Written to directly (not through React
+// state, since this runs at app startup/foreground, often before
+// TasbeehCard ever mounts) — see the 'dhikrWidgetTapsDrained' event below
+// for how an already-mounted TasbeehCard picks up the change immediately
+// instead of waiting for its next mount.
+const TASBEEH_ALLTIME_TOTAL_KEY = 'tasbeeh-alltime-total';
+const TASBEEH_DHIKR_TOTALS_KEY  = 'tasbeeh-dhikr-totals';
 
 const FLUSH_DELAY_MS = 3000;
 const PENDING_KEY = 'pending-dhikr-taps';
@@ -84,4 +113,82 @@ export async function hydrateDhikrPending(): Promise<void> {
         if (stranded > 0) pending += stranded;
     } catch { /* worst case: that stranded count stays lost, same as before this fix */ }
     if (pending > 0) flushDhikrNow();
+}
+
+/**
+ * Drains taps made on the Lock Screen dhikr widget (iOS 17+ — see
+ * ios/TahajjudWidget/TapDhikrIntent.swift) into BOTH this file's debounced,
+ * durable leaderboard sync AND TasbeehCard.tsx's own Stats totals (all-time
+ * + per-dhikr breakdown). The widget's App Intent runs outside the JS
+ * engine, so it can't call recordDhikrTap() or touch AsyncStorage-backed
+ * React state directly — taps accumulate per-dhikr in the shared App Group
+ * instead, and this reads + clears that via DhikrIntentsBridge (native) on
+ * the app's next launch or foreground.
+ *
+ * Acks (clears) the native side BEFORE crediting anything locally — not
+ * after. Crediting-then-ack looks safer at first (don't clear native state
+ * until the amount is durably captured locally) but actually risks
+ * DOUBLE-COUNTING: if ackPendingDhikrTaps() itself fails or the app dies in
+ * the gap, the native pending counts are untouched, so the next drain
+ * re-reads and re-credits the SAME taps a second time — inflating a shared
+ * leaderboard (and a user's own lifetime stats) is a worse failure than
+ * losing one. Ack first instead: everything after it is synchronous,
+ * non-throwing, in-memory/AsyncStorage work, so the only way to lose taps
+ * this way is the process dying mid-write, an essentially negligible risk
+ * next to double-crediting.
+ *
+ * No-ops harmlessly on Android or a binary predating the widget/bridge
+ * (DhikrIntentsBridge undefined) — this offer is iOS Lock Screen only for
+ * now, same as TapDhikrIntent.swift's own `@available(iOS 17.0, *)` gate.
+ */
+export async function drainPendingWidgetDhikrTaps(): Promise<void> {
+    if (!DhikrIntentsBridge) return;
+    try {
+        // { [dhikrId]: count } — only ids with a nonzero pending count are
+        // included (see DhikrIntentsBridge.swift).
+        const byId: Record<string, number> = await DhikrIntentsBridge.consumePendingDhikrTaps();
+        const ids = Object.keys(byId).filter(id => byId[id] > 0);
+        if (ids.length === 0) return;
+        await DhikrIntentsBridge.ackPendingDhikrTaps(byId);
+
+        const total = ids.reduce((sum, id) => sum + byId[id], 0);
+        // Leaderboard: same debounced, durable pipeline a normal in-app tap
+        // uses — it doesn't care which specific dhikr contributed, just the
+        // total.
+        recordDhikrTap(total);
+
+        // TasbeehCard.tsx's Stats — all-time total, plus each dhikr's own
+        // breakdown, keyed by transliteration label (see DHIKR_ID_TO_LABEL).
+        try {
+            const [rawTotal, rawTotals] = await Promise.all([
+                AsyncStorage.getItem(TASBEEH_ALLTIME_TOTAL_KEY),
+                AsyncStorage.getItem(TASBEEH_DHIKR_TOTALS_KEY),
+            ]);
+            const newTotal = (rawTotal ? parseInt(rawTotal, 10) || 0 : 0) + total;
+            const totals: Record<string, number> = rawTotals ? JSON.parse(rawTotals) : {};
+            for (const id of ids) {
+                const label = DHIKR_ID_TO_LABEL[id];
+                if (!label) continue; // unknown/future id — leaderboard credit above still applies
+                totals[label] = (totals[label] || 0) + byId[id];
+            }
+            await Promise.all([
+                AsyncStorage.setItem(TASBEEH_ALLTIME_TOTAL_KEY, String(newTotal)),
+                AsyncStorage.setItem(TASBEEH_DHIKR_TOTALS_KEY, JSON.stringify(totals)),
+            ]);
+            // Lets an already-mounted TasbeehCard (e.g. app was open on the
+            // Tasbeeh tab, backgrounded, widget tapped, foregrounded again)
+            // pick up the new totals immediately instead of only on its next
+            // mount — same "event tells a live screen to reload" pattern as
+            // 'prayerLogged' elsewhere in this app.
+            DeviceEventEmitter.emit('dhikrWidgetTapsDrained');
+        } catch {
+            // The native side is already acked at this point, so an
+            // AsyncStorage failure here (rare — local disk I/O, no network)
+            // isn't retried on the next drain the way the rest of this
+            // function's failures are. The leaderboard credit above is safe
+            // regardless (it went through recordDhikrTap()'s own durable
+            // pending counter before this block ever ran) — only this
+            // batch's Stats all-time-total/breakdown credit would be missed.
+        }
+    } catch { /* not consumed/acked — the same counts are simply re-read next launch/foreground */ }
 }

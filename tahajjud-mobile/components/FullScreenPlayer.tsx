@@ -19,7 +19,7 @@ import { formatMinSec as fmt } from '../utils/timeFormat';
 
 interface Props { visible: boolean; onClose: () => void; }
 
-const PLAYBACK_RATES = [0.75, 0.9, 1.0, 1.25, 1.5];
+const PLAYBACK_RATES = [0.75, 1.0, 1.25, 1.5];
 const SLEEP_OPTIONS: Array<0 | 15 | 30 | 60> = [0, 15, 30, 60];
 
 export function FullScreenPlayer({ visible, onClose }: Props) {

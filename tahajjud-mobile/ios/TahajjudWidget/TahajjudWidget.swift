@@ -910,6 +910,131 @@ struct TahajjudDuaWidget: Widget {
     }
 }
 
+// MARK: - Dhikr Counter Widget (Lock Screen, iOS 17+)
+//
+// Interactive — Button(intent:) increments the count without opening the
+// app (see TapDhikrIntent.swift). AppIntentConfiguration (not
+// StaticConfiguration) because each widget instance is independently
+// configured to a chosen dhikr via DhikrWidgetConfigIntent — the accessory
+// sizes have no room for an in-place dhikr picker.
+
+@available(iOS 17.0, *)
+struct DhikrEntry: TimelineEntry {
+    let date: Date
+    let dhikr: DhikrChoice
+    let count: Int
+}
+
+@available(iOS 17.0, *)
+struct DhikrProvider: AppIntentTimelineProvider {
+    private func currentCount(for dhikr: DhikrChoice) -> Int {
+        let defaults = UserDefaults(suiteName: "group.com.tahajjudplus")
+        return defaults?.integer(forKey: "widget_dhikr_count_\(dhikr.rawValue)") ?? 0
+    }
+
+    func placeholder(in context: Context) -> DhikrEntry {
+        DhikrEntry(date: Date(), dhikr: .subhan, count: 12)
+    }
+
+    func snapshot(for configuration: DhikrWidgetConfigIntent, in context: Context) async -> DhikrEntry {
+        DhikrEntry(date: Date(), dhikr: configuration.dhikr, count: currentCount(for: configuration.dhikr))
+    }
+
+    func timeline(for configuration: DhikrWidgetConfigIntent, in context: Context) async -> Timeline<DhikrEntry> {
+        let entry = DhikrEntry(date: Date(), dhikr: configuration.dhikr, count: currentCount(for: configuration.dhikr))
+        // Content only ever changes via TapDhikrIntent, which reloads
+        // timelines itself the instant it writes — no time-based refresh
+        // needed, unlike TahajjudProvider's prayer-transition schedule.
+        return Timeline(entries: [entry], policy: .never)
+    }
+}
+
+// Gauge + .accessoryCircularCapacity is the standard system style for a
+// circular Lock Screen complication with a progress value — draws the
+// filling ring itself (replacing the plain AccessoryWidgetBackground()
+// this used before), so the count reads as "progress toward a round" at a
+// glance instead of just a bare number cramped next to a tiny "/33".
+@available(iOS 17.0, *)
+struct DhikrAccessoryCircularView: View {
+    let entry: DhikrEntry
+
+    var body: some View {
+        Button(intent: TapDhikrIntent(dhikrId: entry.dhikr.rawValue, target: entry.dhikr.target)) {
+            Gauge(value: Double(entry.count), in: 0...Double(max(entry.dhikr.target, 1))) {
+                Text(entry.dhikr.displayName)
+            } currentValueLabel: {
+                Text("\(entry.count)")
+                    .font(.system(size: 20, weight: .bold, design: .rounded))
+                    .monospacedDigit()
+            }
+            .gaugeStyle(.accessoryCircularCapacity)
+        }
+        .buttonStyle(.plain)
+        .containerBackground(.clear, for: .widget)
+    }
+}
+
+// Single-column layout — a small label over a large "count / target" line —
+// rather than the previous two-column split with an extra "Tap to count"
+// hint line. accessoryRectangular is roughly 160×56pt; three-plus lines of
+// text at that size read as cramped and hard to parse at a glance, and the
+// widget being tappable doesn't need explaining inline.
+@available(iOS 17.0, *)
+struct DhikrAccessoryRectangularView: View {
+    let entry: DhikrEntry
+
+    var body: some View {
+        Button(intent: TapDhikrIntent(dhikrId: entry.dhikr.rawValue, target: entry.dhikr.target)) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(entry.dhikr.displayName)
+                    .font(.caption2.weight(.semibold))
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.8)
+                HStack(alignment: .firstTextBaseline, spacing: 3) {
+                    Text("\(entry.count)")
+                        .font(.title2.weight(.bold))
+                        .monospacedDigit()
+                    Text("/ \(entry.dhikr.target)")
+                        .font(.caption2)
+                        .opacity(0.7)
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .buttonStyle(.plain)
+        .containerBackground(.clear, for: .widget)
+    }
+}
+
+@available(iOS 17.0, *)
+struct DhikrWidgetEntryView: View {
+    @Environment(\.widgetFamily) var family
+    let entry: DhikrEntry
+
+    var body: some View {
+        switch family {
+        case .accessoryRectangular:
+            DhikrAccessoryRectangularView(entry: entry)
+        default:
+            DhikrAccessoryCircularView(entry: entry)
+        }
+    }
+}
+
+@available(iOS 17.0, *)
+struct DhikrWidget: Widget {
+    let kind: String = "DhikrWidget"
+
+    var body: some WidgetConfiguration {
+        AppIntentConfiguration(kind: kind, intent: DhikrWidgetConfigIntent.self, provider: DhikrProvider()) { entry in
+            DhikrWidgetEntryView(entry: entry)
+        }
+        .configurationDisplayName("Dhikr Counter")
+        .description("Tap to count dhikr right from the Lock Screen.")
+        .supportedFamilies([.accessoryCircular, .accessoryRectangular])
+    }
+}
+
 // MARK: - Colour helper
 
 extension Color {

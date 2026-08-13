@@ -24,6 +24,9 @@
 		F11748422D0307B40044C1D9 /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = F11748412D0307B40044C1D9 /* AppDelegate.swift */; };
 		F3E41BE8FDFA4059AB37332B /* GoogleService-Info.plist in Resources */ = {isa = PBXBuildFile; fileRef = CB18CE23D898427C8E36EEB8 /* GoogleService-Info.plist */; };
 		F7DDC41349B9291E8B30D4C7 /* LogPrayerIntent.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB1503519258BD0BCADAD12F /* LogPrayerIntent.swift */; };
+		DA01D817915B4A2A9B0DA001 /* TapDhikrIntent.swift in Sources */ = {isa = PBXBuildFile; fileRef = DA01D817915B4A2A9B0DA002 /* TapDhikrIntent.swift */; };
+		DA01D817915B4A2A9B0DA003 /* DhikrIntentsBridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = DA01D817915B4A2A9B0DA004 /* DhikrIntentsBridge.swift */; };
+		DA01D817915B4A2A9B0DA005 /* DhikrIntentsBridge.m in Sources */ = {isa = PBXBuildFile; fileRef = DA01D817915B4A2A9B0DA006 /* DhikrIntentsBridge.m */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -76,6 +79,9 @@
 		F11748412D0307B40044C1D9 /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = AppDelegate.swift; path = Tahajjud/AppDelegate.swift; sourceTree = "<group>"; };
 		F11748442D0722820044C1D9 /* Tahajjud-Bridging-Header.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = "Tahajjud-Bridging-Header.h"; path = "Tahajjud/Tahajjud-Bridging-Header.h"; sourceTree = "<group>"; };
 		FBBF1D1DA4B9431D54141728 /* WidgetDataBridge.m */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.c.objc; name = WidgetDataBridge.m; path = Tahajjud/WidgetDataBridge.m; sourceTree = "<group>"; };
+		DA01D817915B4A2A9B0DA002 /* TapDhikrIntent.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TapDhikrIntent.swift; sourceTree = "<group>"; };
+		DA01D817915B4A2A9B0DA004 /* DhikrIntentsBridge.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = DhikrIntentsBridge.swift; path = Tahajjud/DhikrIntentsBridge.swift; sourceTree = "<group>"; };
+		DA01D817915B4A2A9B0DA006 /* DhikrIntentsBridge.m */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.c.objc; name = DhikrIntentsBridge.m; path = Tahajjud/DhikrIntentsBridge.m; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -123,6 +129,8 @@
 				FBBF1D1DA4B9431D54141728 /* WidgetDataBridge.m */,
 				88E501982739089E11687D92 /* PendingIntentsBridge.swift */,
 				BD7EA6C217CD09B491D73B38 /* PendingIntentsBridge.m */,
+				DA01D817915B4A2A9B0DA004 /* DhikrIntentsBridge.swift */,
+				DA01D817915B4A2A9B0DA006 /* DhikrIntentsBridge.m */,
 			);
 			name = Tahajjud;
 			sourceTree = "<group>";
@@ -182,6 +190,7 @@
 				DECBBC45A7104AE9A68A319E /* TahajjudWidgetBundle.swift */,
 				4136319B6E434C15AB4BB9C2 /* TahajjudWidget.swift */,
 				BB1503519258BD0BCADAD12F /* LogPrayerIntent.swift */,
+				DA01D817915B4A2A9B0DA002 /* TapDhikrIntent.swift */,
 				17604876C451498295C207B2 /* TahajjudWidget.entitlements */,
 				0750C0A7808740ACAF65A0B1 /* Info.plist */,
 			);
@@ -469,6 +478,8 @@
 				AC0BE4D9FD9AB39364D0FE23 /* WidgetDataBridge.m in Sources */,
 				A3A13CCBADA4106431661527 /* PendingIntentsBridge.swift in Sources */,
 				B8CB83CEC108E3936A844CBC /* PendingIntentsBridge.m in Sources */,
+				DA01D817915B4A2A9B0DA003 /* DhikrIntentsBridge.swift in Sources */,
+				DA01D817915B4A2A9B0DA005 /* DhikrIntentsBridge.m in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -479,6 +490,7 @@
 				C80F360C4EF4440A9816D5BB /* TahajjudWidgetBundle.swift in Sources */,
 				66A9D5E3416140F1A46AD04C /* TahajjudWidget.swift in Sources */,
 				F7DDC41349B9291E8B30D4C7 /* LogPrayerIntent.swift in Sources */,
+				DA01D817915B4A2A9B0DA001 /* TapDhikrIntent.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

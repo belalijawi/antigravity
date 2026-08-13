@@ -79,7 +79,7 @@ import { initAnalytics, track, setSuperProperties, noteOnboardedAtLaunch } from 
 import { recordAppOpen } from './utils/neverConvertedOffer';
 import { applyRtlIfNeeded } from './utils/rtl';
 import { drainPendingPrayerLogs } from './utils/pendingIntents';
-import { hydrateDhikrPending } from './utils/dhikrLeaderboardTracker';
+import { hydrateDhikrPending, drainPendingWidgetDhikrTaps } from './utils/dhikrLeaderboardTracker';
 import { hydrateQuranPending } from './utils/quranReadingTracker';
 import { hydrateTahajjudPending } from './utils/tahajjudLeaderboardSync';
 import { scheduleIslamicEventNotifications, forceRescheduleIslamicEventNotifications } from './utils/islamicEvents';
@@ -357,6 +357,11 @@ function MainApp() {
       // dhikrLeaderboardTracker.ts / quranReadingTracker.ts.
       hydrateDhikrPending().catch(() => {});
       hydrateQuranPending().catch(() => {});
+      // Lock Screen dhikr widget taps (iOS 17+) accumulate natively while
+      // the app isn't running — pull them in on cold start too, not just
+      // the foreground listener below, so a tap made before the app was
+      // ever (re)launched this session isn't left stranded.
+      drainPendingWidgetDhikrTaps().catch(() => {});
       // Retry any Tahajjud leaderboard +1 that failed to sync last session
       // — see utils/tahajjudLeaderboardSync.ts.
       hydrateTahajjudPending().catch(() => {});
@@ -415,6 +420,11 @@ function MainApp() {
     const appStateSub = AppState.addEventListener('change', (state) => {
       if (state === 'active') {
         drainPendingPrayerLogs().catch(() => {});
+        // Same idea as the prayer-log widget drain above, for Lock Screen
+        // dhikr taps — a tap made while merely backgrounded (not a full
+        // relaunch) needs this same catch, or it sits stranded until the
+        // next cold start.
+        drainPendingWidgetDhikrTaps().catch(() => {});
         // Rank-milestone notifications for dhikr/Quran are normally fired by
         // checkRankMilestones right after the debounced flush below — but
         // that flush is forced out at the exact moment the app is
@@ -763,7 +773,17 @@ function AppNavigator() {
 
   const checkOnboarding = async () => {
     try {
-      const onboarded = await AsyncStorage.getItem('onboarded');
+      // Two independent AsyncStorage reads (different keys, neither depends
+      // on the other's result) — this gates the very first frame the app
+      // can show (isOnboarded === null renders nothing but a blank splash
+      // until it resolves, see below), so it sits squarely in the cold/warm
+      // start critical path. Awaiting them sequentially paid for two native
+      // bridge round-trips back to back for no reason; running them together
+      // costs the same as the slower of the two instead of both combined.
+      const [onboarded, completed] = await Promise.all([
+        AsyncStorage.getItem('onboarded'),
+        hasCompletedOnboarding(),
+      ]);
       // Snapshot BEFORE onboarding can complete — app_first_open classifies
       // new-vs-existing users from this, not from a post-onboarding read.
       noteOnboardedAtLaunch(onboarded === 'true');
@@ -771,7 +791,6 @@ function AppNavigator() {
       // Skip the new multi-step flow for users who were already onboarded
       // BEFORE this build shipped — they've already used the app and don't
       // need a feature walkthrough.
-      const completed = await hasCompletedOnboarding();
       setNeedsOnboardingFlow(!completed && onboarded !== 'true');
       // Users onboarded before the age gate existed skip needsOnboardingFlow
       // entirely, so they'd never be asked at all without this — see
