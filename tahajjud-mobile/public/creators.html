@@ -1,0 +1,255 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Become a Creator · Tahajjud+</title>
+    <meta name="description" content="Help other Muslims find Tahajjud+, and get a commission for everyone who joins through you.">
+    <meta name="theme-color" content="#020617">
+    <style>
+        :root {
+            --bg: #020617; --accent: #22d3ee;
+            --text: #f1f5f9; --text-2: #94a3b8; --text-3: #64748b;
+            --border: rgba(255,255,255,0.08);
+        }
+        * { box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto, sans-serif;
+            background: radial-gradient(ellipse at top, #0a1228 0%, var(--bg) 60%);
+            color: var(--text);
+            margin: 0; line-height: 1.7;
+        }
+        a { color: var(--accent); }
+        .container { max-width: 640px; margin: 0 auto; padding: 24px; }
+        nav {
+            display: flex; justify-content: space-between; align-items: center;
+            padding: 16px 0 32px; margin-bottom: 32px;
+            border-bottom: 1px solid var(--border);
+        }
+        nav .logo {
+            display: flex; align-items: center; gap: 10px;
+            font-weight: 800; color: var(--text); text-decoration: none;
+        }
+        nav .logo-icon {
+            width: 36px; height: 36px;
+            border-radius: 9px;
+            overflow: hidden;
+            box-shadow: 0 2px 10px rgba(34,211,238,0.25);
+        }
+        .logo-icon img { width: 100%; height: 100%; display: block; object-fit: cover; }
+        nav a.back { color: var(--text-2); font-size: 14px; text-decoration: none; }
+
+        .eyebrow {
+            text-align: center; color: var(--accent);
+            font-size: 13px; font-weight: 700; letter-spacing: 0.08em;
+            text-transform: uppercase; margin: 0 0 8px;
+        }
+        h1 {
+            text-align: center;
+            font-size: 40px; font-weight: 900; margin: 0 0 12px;
+            letter-spacing: -1px;
+        }
+        .intro { text-align: center; color: var(--text-2); font-size: 16px; margin-bottom: 40px; }
+
+        label { display: block; font-size: 14px; color: var(--text-2); margin-bottom: 8px; }
+        label .optional { color: var(--text-3); }
+        .field { margin-bottom: 22px; }
+        input, textarea {
+            width: 100%; font-family: inherit; font-size: 15px;
+            background: rgba(255,255,255,0.04);
+            border: 1px solid var(--border);
+            color: var(--text);
+            border-radius: 12px; padding: 13px 16px;
+        }
+        input::placeholder, textarea::placeholder { color: var(--text-3); }
+        input:focus, textarea:focus { outline: none; border-color: rgba(34,211,238,0.5); }
+        textarea { resize: vertical; min-height: 80px; }
+
+        .socials-label { margin-bottom: 14px; }
+        .socials-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px; margin-bottom: 22px; }
+        @media (max-width: 560px) { .socials-grid { grid-template-columns: 1fr; } }
+
+        hr { border: none; border-top: 1px solid var(--border); margin: 32px 0; }
+
+        .error { color: #f87171; font-size: 14px; margin-bottom: 16px; }
+
+        button[type="submit"] {
+            width: 100%; font-family: inherit; font-size: 16px; font-weight: 800;
+            background: var(--accent); color: #0a1228;
+            border: none; border-radius: 14px; padding: 15px;
+            cursor: pointer;
+        }
+        button[type="submit"]:disabled { opacity: 0.5; cursor: not-allowed; }
+        button[type="submit"]:not(:disabled):hover { filter: brightness(1.08); }
+
+        .success { text-align: center; padding: 80px 0; }
+        .success h1 { margin-bottom: 16px; }
+        .success p { color: var(--text-2); }
+
+        footer {
+            margin-top: 60px; padding-top: 32px;
+            border-top: 1px solid var(--border);
+            color: var(--text-3); font-size: 12px; text-align: center;
+        }
+    </style>
+</head>
+<body>
+<div class="container">
+
+    <nav>
+        <a href="index.html" class="logo">
+            <div class="logo-icon"><img src="icon.png" alt="" /></div>
+            <span>Tahajjud+</span>
+        </a>
+        <a href="index.html" class="back">← Back</a>
+    </nav>
+
+    <div id="formView">
+        <p class="eyebrow">Become a</p>
+        <h1>Tahajjud+ Creator</h1>
+        <p class="intro">Help other Muslims find Tahajjud+, and get a commission for everyone who joins through you.</p>
+
+        <form id="creatorForm">
+            <div class="field">
+                <label for="name">Name</label>
+                <input type="text" id="name" placeholder="Your name" required>
+            </div>
+            <div class="field">
+                <label for="email">Email</label>
+                <input type="email" id="email" placeholder="your@email.com" required>
+            </div>
+            <div class="field">
+                <label for="location">Where are you based? <span class="optional">(optional)</span></label>
+                <input type="text" id="location" placeholder="City, country — we work with creators worldwide">
+            </div>
+
+            <hr>
+
+            <label class="socials-label">Your socials <span class="optional">(at least one, so we can see your content)</span></label>
+            <div class="socials-grid">
+                <input type="text" id="instagram" placeholder="instagram @you">
+                <input type="text" id="tiktok" placeholder="tiktok @you">
+                <input type="text" id="youtube" placeholder="youtube @you">
+            </div>
+
+            <div class="field">
+                <label for="otherPlatform">Anywhere else? <span class="optional">(optional)</span></label>
+                <input type="text" id="otherPlatform" placeholder="Another platform + handle">
+            </div>
+            <div class="field">
+                <label for="audienceSize">Audience size <span class="optional">(optional)</span></label>
+                <input type="text" id="audienceSize" placeholder="e.g. 12k, 80k, 1.2M">
+            </div>
+            <div class="field">
+                <label for="workLinks">Your best work <span class="optional">(optional)</span></label>
+                <textarea id="workLinks" placeholder="Paste links, one per line — reels, TikToks, YouTube, a portfolio"></textarea>
+            </div>
+            <div class="field">
+                <label for="why">Why do you want to be a Tahajjud+ creator? <span class="optional">(optional)</span></label>
+                <textarea id="why"></textarea>
+            </div>
+
+            <p class="error" id="errorMsg" style="display:none;"></p>
+
+            <button type="submit" id="submitBtn">Apply</button>
+        </form>
+    </div>
+
+    <div id="successView" class="success" style="display:none;">
+        <h1>JazakAllah Khair 🤲</h1>
+        <p>We've got your application. If it's a good fit, we'll reach out at the email you gave us.</p>
+    </div>
+
+    <footer>
+        <span>© 2026 Tahajjud+</span> · <a href="index.html">Home</a> · <a href="privacy.html">Privacy</a> · <a href="terms.html">Terms of Use</a>
+    </footer>
+</div>
+
+<script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-app.js";
+    import { getAuth, signInAnonymously } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-auth.js";
+    import { getFirestore, collection, addDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
+
+    // Same project the Tahajjud+ app itself uses — config is safe to be in
+    // source, web API keys are public-facing by design.
+    const firebaseConfig = {
+        apiKey: "AIzaSyBTbpXPTn-wMBp821rMaoqOqdstNhzyRdM",
+        authDomain: "tahajjud-2d7bf.firebaseapp.com",
+        projectId: "tahajjud-2d7bf",
+        storageBucket: "tahajjud-2d7bf.firebasestorage.app",
+        messagingSenderId: "434827238021",
+        appId: "1:434827238021:web:2a437aa88af1b360c1e7ec",
+    };
+    const app = initializeApp(firebaseConfig);
+    const auth = getAuth(app);
+    const db = getFirestore(app);
+
+    const form = document.getElementById("creatorForm");
+    const errorMsg = document.getElementById("errorMsg");
+    const submitBtn = document.getElementById("submitBtn");
+
+    function val(id) {
+        return document.getElementById(id).value.trim();
+    }
+
+    form.addEventListener("submit", async (e) => {
+        e.preventDefault();
+        errorMsg.style.display = "none";
+
+        const name = val("name");
+        const email = val("email");
+        const instagram = val("instagram");
+        const tiktok = val("tiktok");
+        const youtube = val("youtube");
+        const otherPlatform = val("otherPlatform");
+
+        if (!name || !email) {
+            errorMsg.textContent = "Name and email are required.";
+            errorMsg.style.display = "block";
+            return;
+        }
+        if (!instagram && !tiktok && !youtube && !otherPlatform) {
+            errorMsg.textContent = "Add at least one social so we can see your content.";
+            errorMsg.style.display = "block";
+            return;
+        }
+
+        submitBtn.disabled = true;
+        submitBtn.textContent = "Sending…";
+
+        try {
+            if (!auth.currentUser) {
+                await signInAnonymously(auth);
+            }
+            const data = {
+                name, email, status: "new", submittedAt: serverTimestamp(),
+            };
+            const location = val("location");
+            const otherPlatformVal = otherPlatform;
+            const audienceSize = val("audienceSize");
+            const workLinks = val("workLinks");
+            const why = val("why");
+            if (location) data.location = location;
+            if (instagram) data.instagram = instagram;
+            if (tiktok) data.tiktok = tiktok;
+            if (youtube) data.youtube = youtube;
+            if (otherPlatformVal) data.otherPlatform = otherPlatformVal;
+            if (audienceSize) data.audienceSize = audienceSize;
+            if (workLinks) data.workLinks = workLinks;
+            if (why) data.why = why;
+
+            await addDoc(collection(db, "ambassador-applications"), data);
+
+            document.getElementById("formView").style.display = "none";
+            document.getElementById("successView").style.display = "block";
+        } catch (err) {
+            console.error("[creators] submit failed:", err);
+            errorMsg.textContent = "Something went wrong sending your application. Please try again.";
+            errorMsg.style.display = "block";
+            submitBtn.disabled = false;
+            submitBtn.textContent = "Apply";
+        }
+    });
+</script>
+</body>
+</html>
