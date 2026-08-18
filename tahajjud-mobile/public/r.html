@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Tahajjud+</title>
+    <meta name="theme-color" content="#020617">
+    <style>
+        :root {
+            --bg: #020617; --accent: #22d3ee;
+            --text: #f1f5f9; --text-2: #94a3b8; --text-3: #64748b;
+            --border: rgba(255,255,255,0.08);
+        }
+        * { box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto, sans-serif;
+            background: radial-gradient(ellipse at top, #0a1228 0%, var(--bg) 60%);
+            color: var(--text);
+            margin: 0; line-height: 1.6;
+            min-height: 100vh;
+            display: flex; align-items: center; justify-content: center;
+        }
+        .container { max-width: 420px; width: 100%; padding: 24px; text-align: center; }
+
+        .eyebrow {
+            color: var(--accent);
+            font-size: 13px; font-weight: 700; letter-spacing: 0.08em;
+            text-transform: uppercase; margin: 0 0 12px;
+        }
+        h1 {
+            font-size: 40px; font-weight: 900; margin: 0 0 32px;
+            letter-spacing: -1px;
+        }
+
+        .code-card {
+            border: 1px solid rgba(34,211,238,0.3);
+            background: rgba(255,255,255,0.03);
+            border-radius: 18px;
+            padding: 24px;
+            margin-bottom: 32px;
+        }
+        .code-label { font-size: 12px; color: var(--text-3); margin: 0 0 8px; }
+        .code-value {
+            font-size: 26px; font-weight: 800; letter-spacing: 0.2em;
+            font-family: ui-monospace, SFMono-Regular, monospace;
+            margin: 0;
+        }
+        .code-hint { font-size: 12px; color: var(--text-3); margin: 12px 0 0; }
+
+        .store-btn {
+            display: block;
+            width: 100%;
+            font-weight: 700; font-size: 16px;
+            padding: 15px; border-radius: 14px;
+            text-decoration: none;
+            margin-bottom: 12px;
+        }
+        .store-btn.ios { background: var(--text); color: #0a1228; }
+        .store-btn.android { background: transparent; color: var(--text); border: 1px solid var(--border); }
+        .store-btn.android:hover, .store-btn.ios:hover { filter: brightness(1.08); }
+
+        footer { margin-top: 40px; color: var(--text-3); font-size: 12px; }
+        footer a { color: var(--text-3); }
+    </style>
+</head>
+<body>
+<div class="container">
+    <p class="eyebrow">You've been invited to</p>
+    <h1>Tahajjud+</h1>
+
+    <div class="code-card">
+        <p class="code-label">Your code</p>
+        <p class="code-value" id="codeValue">—</p>
+        <p class="code-hint">Enter this code at checkout for your discount.</p>
+    </div>
+
+    <a class="store-btn ios" id="iosBtn" href="https://apps.apple.com/app/id6759176533">Download on the App Store</a>
+    <a class="store-btn android" id="androidBtn" href="#">Get it on Google Play</a>
+
+    <footer>
+        <span>Tahajjud+ · wake for the last third of the night</span>
+    </footer>
+</div>
+
+<script>
+    // Code comes from the URL path (/r/SARAH → "SARAH"), rewritten to this
+    // file by firebase.json's "/r/**" rule — same trick already used for
+    // /privacy, /terms, /support, just with a wildcard tail instead of a
+    // fixed page.
+    const path = window.location.pathname;
+    const match = path.match(/\/r\/([^/]+)/);
+    const code = match ? decodeURIComponent(match[1]).trim() : "";
+    const displayCode = code ? code.toUpperCase() : "TAHAJJUD";
+
+    document.getElementById("codeValue").textContent = displayCode;
+    document.title = "Tahajjud+ — invited by " + displayCode;
+
+    // Google's own Install Referrer mechanism — no third-party attribution
+    // SDK needed. Play passes this string through to the app on first
+    // launch, so the ambassador code survives an install even though the
+    // click happened before the app existed on-device. iOS has no
+    // equivalent first-party way to carry data through an install, so on
+    // iOS the code has to be entered manually at checkout instead.
+    const referrer = encodeURIComponent("ambassador_code=" + code);
+    document.getElementById("androidBtn").href =
+        "https://play.google.com/store/apps/details?id=com.tahajjudplus.app&referrer=" + referrer;
+</script>
+</body>
+</html>
