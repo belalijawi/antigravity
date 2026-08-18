@@ -15,6 +15,7 @@
  */
 
 const { onDocumentUpdated, onDocumentCreated } = require('firebase-functions/v2/firestore');
+const { onCall, HttpsError } = require('firebase-functions/v2/https');
 const { initializeApp } = require('firebase-admin/app');
 const { getFirestore } = require('firebase-admin/firestore');
 const logger = require('firebase-functions/logger');
@@ -117,3 +118,94 @@ exports.translateNewDua = onDocumentCreated('public-duas/{duaId}', async (event)
         logger.error(`translateNewDua failed for ${event.params.duaId}`, err);
     }
 });
+
+// Where each `parentType` from utils/translate.ts's on-demand caller
+// actually lives, and which field holds its translatable text — needed to
+// read the doc's real content and cache a fresh translation back onto it.
+// Keep in sync with TranslateParentType in utils/translate.ts.
+const TRANSLATABLE_SOURCES = {
+    dua: { collection: 'public-duas', field: 'text' },
+    testimony: { collection: 'community', field: 'body' },
+    comment: { collection: 'comments', field: 'text' },
+};
+
+/**
+ * On-demand translation, called from the client's "Translate" tap
+ * (utils/translate.ts) whenever the automatic translateNewDua pass hasn't
+ * covered a given locale yet — a dua posted before this locale was added to
+ * APP_LOCALES, one that was too long for the automatic pass, one whose
+ * automatic translation to this specific locale failed, or (mainly) content
+ * types this function doesn't run against at all: testimonies and comments,
+ * which are never auto-translated on creation, only ever on demand here.
+ *
+ * Writes the result back onto the source doc's `translations.{lang}` field,
+ * same shape translateNewDua uses — so once anyone triggers a translation,
+ * every future viewer gets it from the cached field for free, no repeat
+ * billed API call.
+ *
+ * Every other collection in this app requires request.auth != null for read
+ * AND write (see firestore.rules) — this callable is the one place that
+ * both reads and writes without going through those rules at all (Admin SDK
+ * bypasses them), so it has to enforce the same bar itself. Deliberately
+ * ignores the client's own `text` for what gets translated/cached: trusting
+ * it would let anyone call this directly with a forged docId and arbitrary
+ * text, translating THAT and writing the result onto someone else's real
+ * dua/testimony/comment for every future viewer in that locale to see.
+ * Always re-reads the actual stored field instead.
+ */
+exports.translateText = onCall(async (request) => {
+    if (!request.auth) {
+        throw new HttpsError('unauthenticated', 'sign-in required');
+    }
+
+    const { targetLang, parentType, docId } = request.data || {};
+    if (!targetLang || !APP_LOCALES.includes(targetLang)) {
+        throw new HttpsError('invalid-argument', 'targetLang is invalid');
+    }
+    const source = TRANSLATABLE_SOURCES[parentType];
+    if (!source || !docId || typeof docId !== 'string') {
+        throw new HttpsError('invalid-argument', 'parentType/docId is invalid');
+    }
+
+    const ref = getFirestore().doc(`${source.collection}/${docId}`);
+    const snap = await ref.get();
+    if (!snap.exists) {
+        throw new HttpsError('not-found', 'document not found');
+    }
+    const data = snap.data() ?? {};
+    const text = data[source.field];
+    if (!text || typeof text !== 'string') {
+        throw new HttpsError('failed-precondition', 'document has no translatable text');
+    }
+    if (text.length > MAX_TRANSLATABLE_LENGTH) {
+        throw new HttpsError('invalid-argument', 'text too long');
+    }
+
+    // Someone else may have already triggered (or the automatic pass may
+    // have already covered) this exact translation since the client's own
+    // existingTranslations was fetched — re-check server-side rather than
+    // pay for the same API call twice.
+    const cached = data.translations?.[targetLang];
+    if (cached) {
+        return { translated: cached };
+    }
+
+    let translated;
+    try {
+        [translated] = await translate.translate(text, targetLang);
+    } catch (err) {
+        logger.error(`translateText failed for ${parentType}/${docId}`, err);
+        throw new HttpsError('internal', 'translation failed');
+    }
+
+    await ref.update({ [`translations.${targetLang}`]: translated }).catch((err) => {
+        // The translation itself succeeded — the caller still gets a result
+        // even if this best-effort cache write fails (e.g. the doc was
+        // deleted between the tap and this write landing).
+        logger.error(`translateText: failed to cache ${source.collection}/${docId}.translations.${targetLang}`, err);
+    });
+
+    return { translated };
+});
+
+exports.notifyAmbassadorApplication = require('./ambassadorNotify').notifyAmbassadorApplication;
