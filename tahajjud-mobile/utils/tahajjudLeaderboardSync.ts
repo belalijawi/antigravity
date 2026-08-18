@@ -15,6 +15,16 @@
  * A failed attempt is stashed as a persisted count and folded into the next
  * attempt — either the next night's call, or hydrateTahajjudPending() at the
  * next app launch — rather than lost the moment the promise resolves false.
+ *
+ * flushPending's read-modify-write of PENDING_KEY is serialized through
+ * `lock` below — without it, two overlapping calls (e.g. rapidly toggling
+ * several past days on HistoryCalendar, or a fresh syncTahajjudNight() firing
+ * while hydrateTahajjudPending() is still mid-read at launch) can both read
+ * the same stale pending count before either writes, so if both then fail,
+ * the second write clobbers the first instead of accumulating — silently
+ * losing part of the retry queue. Serializing makes that structurally
+ * impossible: each call's read only ever happens after the previous call's
+ * write has fully landed.
  */
 
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -22,23 +32,34 @@ import { Leaderboard } from './leaderboard';
 
 const PENDING_KEY = 'pending-tahajjud-leaderboard-syncs';
 
-async function flushPending(extra: number): Promise<void> {
-    let carried = 0;
-    try {
-        const raw = await AsyncStorage.getItem(PENDING_KEY);
-        carried = raw ? parseInt(raw, 10) || 0 : 0;
-    } catch { /* worst case: a prior stranded count is lost, same as before this fix */ }
-    const toSync = carried + extra;
-    if (toSync <= 0) return;
-    const ok = await Leaderboard.syncDelta('tahajjud', toSync);
-    if (ok) {
-        AsyncStorage.removeItem(PENDING_KEY).catch(() => {});
-    } else {
-        // Leave it pending — the next night's call, or the next app launch's
-        // hydrateTahajjudPending(), retries this same total instead of
-        // losing it.
-        AsyncStorage.setItem(PENDING_KEY, String(toSync)).catch(() => {});
-    }
+// Chained onto for every flushPending() call so they run strictly one after
+// another, regardless of how close together they're triggered.
+let lock: Promise<void> = Promise.resolve();
+
+function flushPending(extra: number): Promise<void> {
+    const run = async () => {
+        let carried = 0;
+        try {
+            const raw = await AsyncStorage.getItem(PENDING_KEY);
+            carried = raw ? parseInt(raw, 10) || 0 : 0;
+        } catch { /* worst case: a prior stranded count is lost, same as before this fix */ }
+        const toSync = carried + extra;
+        if (toSync <= 0) return;
+        const ok = await Leaderboard.syncDelta('tahajjud', toSync);
+        if (ok) {
+            AsyncStorage.removeItem(PENDING_KEY).catch(() => {});
+        } else {
+            // Leave it pending — the next night's call, or the next app launch's
+            // hydrateTahajjudPending(), retries this same total instead of
+            // losing it.
+            AsyncStorage.setItem(PENDING_KEY, String(toSync)).catch(() => {});
+        }
+    };
+    // Queue behind whatever's already running, and swallow a prior failure
+    // so one rejected link doesn't wedge the chain for every call after it.
+    const next = lock.catch(() => {}).then(run);
+    lock = next.catch(() => {});
+    return next;
 }
 
 /** Call once per Tahajjud night logged. No-ops harmlessly if not opted in —

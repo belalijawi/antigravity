@@ -1,11 +1,12 @@
 import React, { useEffect } from 'react';
-import { Modal, View, Text, TouchableOpacity, StyleSheet, Linking } from 'react-native';
+import { Modal, View, Text, TouchableOpacity, StyleSheet } from 'react-native';
 import { BlurView } from 'expo-blur';
 import { LinearGradient } from 'expo-linear-gradient';
 import { X } from 'lucide-react-native';
 import Animated, { FadeIn, ZoomIn } from 'react-native-reanimated';
 import { haptic } from '../utils/haptic';
 import { track } from '../utils/analytics';
+import { openStoreReview } from '../utils/weeklyReview';
 import { t } from '../utils/i18n';
 
 interface SupportModalProps {
@@ -13,6 +14,11 @@ interface SupportModalProps {
     onClose: () => void;
 }
 
+// Only ever shown to Premium subscribers (see HomeTab.tsx's
+// shouldShowCoffeePrompt gating) — asking a paying member for a coffee
+// donation on top of their subscription read as tone-deaf, so the CTA here
+// is a review instead of another money ask (openStoreReview handles its own
+// 'review_store_opened' tracking).
 export function SupportModal({ visible, onClose }: SupportModalProps) {
     useEffect(() => {
         if (visible) {
@@ -24,7 +30,7 @@ export function SupportModal({ visible, onClose }: SupportModalProps) {
     const handleSupport = () => {
         haptic.medium();
         track('coffee_cta_clicked');
-        Linking.openURL('https://buymeacoffee.com/tahajjudplus');
+        openStoreReview().catch(() => {});
         onClose();
     };
 

@@ -634,7 +634,9 @@ export function DuaWallModal({ visible, onClose, focusDuaId, inline }: Props) {
 
     // Character count color shifts as user approaches limit
     const remaining = DuaWall.MAX_LENGTH - composeText.length;
-    const countColor = remaining < 20 ? '#ef4444' : remaining < 50 ? '#f59e0b' : colors.secondaryText;
+    // Red is reserved for actually being OVER (remaining < 0), not just
+    // close to it, so hitting exactly the limit doesn't read as an error.
+    const countColor = remaining < 0 ? '#ef4444' : remaining < 50 ? '#f59e0b' : colors.secondaryText;
 
     const content = (
             <View style={styles.root}>

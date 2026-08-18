@@ -68,7 +68,11 @@ export async function quickLogPrayer(key: PrayerKey, source: 'notification' | 'w
         // leaderboard" — logging via the widget or a notification tap goes
         // through THIS function, not Tracker.tsx's logPrayer(), and every
         // other side effect here was already mirrored except this one.
-        import('./leaderboard').then(m => m.Leaderboard.syncDelta('tahajjud', 1)).catch(() => {});
+        // Routed through the durable retry wrapper (not a bare syncDelta
+        // call) — this is a background-triggered path with no app UI open,
+        // exactly where a transient failure is likeliest and a silently
+        // swallowed .catch() would otherwise cost the +1 for good.
+        import('./tahajjudLeaderboardSync').then(m => m.syncTahajjudNight()).catch(() => {});
     }
     DeviceEventEmitter.emit('prayerLogged');
 

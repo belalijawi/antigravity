@@ -192,6 +192,19 @@ export const PurchasesProvider: React.FC<{ children: React.ReactNode }> = ({ chi
             }
         } catch { /* never block on a notification-scheduling failure */ }
 
+        // Native win-back reminder: only for a PAID cancellation, never a
+        // trial-only one — Apple/Google's win-back offer requires real paid
+        // history, so a trial-only lapse can never be eligible regardless of
+        // how long we wait. See utils/nativeWinbackReminder.ts.
+        try {
+            const { scheduleNativeWinbackReminder, cancelNativeWinbackReminder } = await import('../utils/nativeWinbackReminder');
+            if (isLapsingPaid && ent.expirationDate) {
+                await scheduleNativeWinbackReminder(new Date(ent.expirationDate));
+            } else {
+                await cancelNativeWinbackReminder();
+            }
+        } catch { /* never block on a notification-scheduling failure */ }
+
         // Trial-ending reminder ("your trial ends in N days... cancel to
         // avoid a charge") is only accurate while a trial is genuinely still
         // pending conversion. If they've already cancelled (isLapsingTrial)
@@ -267,6 +280,14 @@ export const PurchasesProvider: React.FC<{ children: React.ReactNode }> = ({ chi
             const inHoldout = await isInNeverConvertedHoldout();
             if (cancelled) return;
             setNeverConvertedOfferEligible(!inHoldout);
+            // Previously this offer was purely passive (banner/paywall only) —
+            // proactively nudge once eligibility is first confirmed, rather
+            // than waiting for the user to happen to reopen the app. No-ops
+            // after the first call ever, per device — see
+            // utils/neverConvertedReminder.ts.
+            if (!inHoldout) {
+                import('../utils/neverConvertedReminder').then(m => m.scheduleNeverConvertedReminder()).catch(() => {});
+            }
             // Fired once per determination (not on every re-render/app open)
             // so PostHog can compare the holdout vs. treatment group's
             // eventual conversion rate — the only way to know if this offer

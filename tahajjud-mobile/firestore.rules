@@ -526,5 +526,21 @@ service cloud.firestore {
         && request.resource.data.userId == request.auth.uid;
       allow update, delete: if false;
     }
+
+    // ─── Brand ambassador applications (from the marketing website) ────
+    // Submitted by an anonymously-signed-in visitor on tahajjudplus.app —
+    // write-only from the client's perspective, same shape as
+    // community-submissions: only the admin can read/review/manage them.
+    match /ambassador-applications/{appId} {
+      allow create: if request.auth != null
+        && request.resource.data.name is string
+        && request.resource.data.name.size() >= 1
+        && request.resource.data.name.size() <= 100
+        && request.resource.data.email is string
+        && request.resource.data.email.size() >= 5
+        && request.resource.data.email.size() <= 200
+        && request.resource.data.status == 'new';
+      allow read, update, delete: if isAdmin();
+    }
   }
 }

@@ -1,5 +1,5 @@
-import React from 'react';
-import { Modal, View, Text, TouchableOpacity, StyleSheet } from 'react-native';
+import React, { useState, useEffect } from 'react';
+import { Modal, View, Text, TouchableOpacity, TextInput, KeyboardAvoidingView, Platform, StyleSheet } from 'react-native';
 import { BlurView } from 'expo-blur';
 import { LinearGradient } from 'expo-linear-gradient';
 import { X } from 'lucide-react-native';
@@ -22,9 +22,36 @@ const REASONS = [
 ] as const;
 
 export function CancellationSurveyModal({ visible, onClose }: Props) {
+    // "Other" used to track as a bare tag with no detail — genuinely
+    // unactionable at ~17% of responses. Picking it now reveals an optional
+    // text field instead of closing immediately.
+    const [showOtherInput, setShowOtherInput] = useState(false);
+    const [otherText, setOtherText] = useState('');
+
+    // Local UI state (which screen, typed text) shouldn't survive across a
+    // dismiss — the Modal component stays mounted with visible toggling, so
+    // without this a re-open would resume mid-"Other" from last time.
+    useEffect(() => {
+        if (visible) {
+            setShowOtherInput(false);
+            setOtherText('');
+        }
+    }, [visible]);
+
     const handlePick = (reason: typeof REASONS[number]) => {
         haptic.light();
+        if (reason === 'other') {
+            setShowOtherInput(true);
+            return;
+        }
         track('subscription_cancellation_reason', { reason });
+        onClose();
+    };
+
+    const handleOtherSubmit = () => {
+        haptic.light();
+        const detail = otherText.trim();
+        track('subscription_cancellation_reason', detail ? { reason: 'other', detail } : { reason: 'other' });
         onClose();
     };
 
@@ -35,7 +62,10 @@ export function CancellationSurveyModal({ visible, onClose }: Props) {
 
     return (
         <Modal visible={visible} transparent animationType="fade" onRequestClose={handleSkip}>
-            <View style={styles.backdrop}>
+            <KeyboardAvoidingView
+                style={styles.backdrop}
+                behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+            >
                 <BlurView intensity={40} tint="dark" style={StyleSheet.absoluteFill} />
 
                 <Animated.View entering={ZoomIn.duration(450).springify()} style={styles.dialog}>
@@ -49,32 +79,60 @@ export function CancellationSurveyModal({ visible, onClose }: Props) {
                         <X size={22} color="#64748b" />
                     </TouchableOpacity>
 
-                    <Animated.Text entering={FadeIn.delay(100)} style={styles.heading}>
-                        {t('cancelSurvey.heading')}
-                    </Animated.Text>
+                    {showOtherInput ? (
+                        <>
+                            <Animated.Text entering={FadeIn.delay(100)} style={styles.heading}>
+                                {t('cancelSurvey.reason_other')}
+                            </Animated.Text>
 
-                    <Animated.Text entering={FadeIn.delay(180)} style={styles.body}>
-                        {t('cancelSurvey.body')}
-                    </Animated.Text>
+                            <Animated.View entering={FadeIn.delay(180)} style={styles.otherInputWrap}>
+                                <TextInput
+                                    style={styles.otherInput}
+                                    placeholder={t('cancelSurvey.otherPlaceholder')}
+                                    placeholderTextColor="#475569"
+                                    value={otherText}
+                                    onChangeText={setOtherText}
+                                    multiline
+                                    autoFocus
+                                />
+                            </Animated.View>
 
-                    <Animated.View entering={FadeIn.delay(280)} style={styles.reasons}>
-                        {REASONS.map(reason => (
-                            <TouchableOpacity
-                                key={reason}
-                                style={styles.reasonBtn}
-                                onPress={() => handlePick(reason)}
-                                activeOpacity={0.7}
-                            >
-                                <Text style={styles.reasonText}>{t(`cancelSurvey.reason_${reason}`)}</Text>
-                            </TouchableOpacity>
-                        ))}
-                    </Animated.View>
+                            <Animated.View entering={FadeIn.delay(260)} style={{ width: '100%' }}>
+                                <TouchableOpacity style={styles.submitBtn} onPress={handleOtherSubmit} activeOpacity={0.85}>
+                                    <Text style={styles.submitText}>{t('cancelSurvey.otherSubmit')}</Text>
+                                </TouchableOpacity>
+                            </Animated.View>
+                        </>
+                    ) : (
+                        <>
+                            <Animated.Text entering={FadeIn.delay(100)} style={styles.heading}>
+                                {t('cancelSurvey.heading')}
+                            </Animated.Text>
+
+                            <Animated.Text entering={FadeIn.delay(180)} style={styles.body}>
+                                {t('cancelSurvey.body')}
+                            </Animated.Text>
+
+                            <Animated.View entering={FadeIn.delay(280)} style={styles.reasons}>
+                                {REASONS.map(reason => (
+                                    <TouchableOpacity
+                                        key={reason}
+                                        style={styles.reasonBtn}
+                                        onPress={() => handlePick(reason)}
+                                        activeOpacity={0.7}
+                                    >
+                                        <Text style={styles.reasonText}>{t(`cancelSurvey.reason_${reason}`)}</Text>
+                                    </TouchableOpacity>
+                                ))}
+                            </Animated.View>
+                        </>
+                    )}
 
                     <TouchableOpacity onPress={handleSkip} style={styles.dismissBtn}>
                         <Text style={styles.dismissText}>{t('cancelSurvey.skip')}</Text>
                     </TouchableOpacity>
                 </Animated.View>
-            </View>
+            </KeyboardAvoidingView>
         </Modal>
     );
 }
@@ -138,6 +196,37 @@ const styles = StyleSheet.create({
         fontWeight: '600',
         color: '#e2e8f0',
         textAlign: 'center',
+    },
+    otherInputWrap: {
+        width: '100%',
+        marginBottom: 16,
+    },
+    otherInput: {
+        width: '100%',
+        minHeight: 90,
+        maxHeight: 160,
+        paddingVertical: 14,
+        paddingHorizontal: 16,
+        borderRadius: 16,
+        backgroundColor: 'rgba(148,163,184,0.08)',
+        borderWidth: 1,
+        borderColor: 'rgba(148,163,184,0.18)',
+        color: '#e2e8f0',
+        fontSize: 14,
+        textAlignVertical: 'top',
+    },
+    submitBtn: {
+        width: '100%',
+        paddingVertical: 15,
+        borderRadius: 16,
+        backgroundColor: '#f43f5e',
+        alignItems: 'center',
+        marginBottom: 8,
+    },
+    submitText: {
+        fontSize: 15,
+        fontWeight: '700',
+        color: '#fff',
     },
     dismissBtn: {
         paddingVertical: 6,

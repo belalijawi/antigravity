@@ -7,7 +7,7 @@
 import React from 'react';
 import { Modal, View, Text, StyleSheet, TouchableOpacity, ScrollView } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
-import { X, MessageCircle, MapPin, Trophy, Sparkles } from 'lucide-react-native';
+import { X, MessageCircle, MapPin, Trophy, Sparkles, Repeat } from 'lucide-react-native';
 import { useTheme } from '../context/ThemeContext';
 import { haptic } from '../utils/haptic';
 import { t } from '../utils/i18n';
@@ -20,7 +20,7 @@ export interface WhatsNewItem {
 }
 
 // Update this list each release. The version string must match app version.
-export const WHATS_NEW_VERSION = '1.9.0';
+export const WHATS_NEW_VERSION = '1.9.3';
 export function getWhatsNewItems(): WhatsNewItem[] {
     return [
         {
@@ -37,6 +37,12 @@ export function getWhatsNewItems(): WhatsNewItem[] {
             icon: Trophy,
             title: t('whatsNew.item3Title'),
             desc: t('whatsNew.item3Desc'),
+        },
+        {
+            icon: Repeat,
+            title: t('whatsNew.item5Title'),
+            desc: t('whatsNew.item5Desc'),
+            premium: true,
         },
     ];
 }

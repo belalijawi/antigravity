@@ -5,6 +5,13 @@
   <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK"/>
   <uses-permission android:name="android.permission.INTERNET"/>
   <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS"/>
+  <!-- Without this, expo-notifications' canScheduleExactAlarms() returns
+       false on Android 12+ and every local notification (prayer + Tahajjud
+       reminders) falls back to AlarmManager's inexact setAndAllowWhileIdle,
+       which Doze is free to defer and batch-deliver at the next maintenance
+       window — reported as multiple overnight Tahajjud reminders all
+       arriving together hours late (e.g. at 7am instead of ~2:30am). -->
+  <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM"/>
   <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE"/>
   <uses-permission android:name="android.permission.USE_BIOMETRIC"/>
   <uses-permission android:name="android.permission.USE_FINGERPRINT"/>

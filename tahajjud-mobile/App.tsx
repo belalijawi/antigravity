@@ -151,7 +151,8 @@ function routeFromNotification(data: any): void {
   } else if (type === 'reply_liked' || type === 'thread_reply') {
     // The liked/replied-to thread lives wherever its parent does.
     target = data?.parentType === 'testimony' ? 'Guide' : 'Duas';
-  } else if (type === 'winback_1' || type === 'winback_2' || type === 'trial_winback') {
+  } else if (type === 'winback_1' || type === 'winback_2' || type === 'trial_winback' || type === 'trial_winback_2'
+      || type === 'sub_winback_1' || type === 'sub_winback_2' || type === 'never_converted_1' || type === 'never_converted_2') {
     target = 'Home';
   }
   const navigate = () => {
@@ -172,12 +173,28 @@ function routeFromNotification(data: any): void {
         DeviceEventEmitter.emit('openPaywall', { source: 'winback' });
       }, 1500);
     }
-    // Trial-cancel win-back tap: separate source so the paywall only spends
-    // a StoreKit round-trip checking the Promotional Offer for users who
-    // actually arrived this way (see utils/trialWinback.ts).
-    if (type === 'trial_winback') {
+    // Trial-cancel win-back tap (both touchpoints — see utils/trialWinback.ts):
+    // separate source so the paywall only spends a StoreKit round-trip
+    // checking the Promotional Offer for users who actually arrived this way.
+    if (type === 'trial_winback' || type === 'trial_winback_2') {
       setTimeout(() => {
         DeviceEventEmitter.emit('openPaywall', { source: 'trial_winback' });
+      }, 1500);
+    }
+    // Native win-back reminder tap (see utils/nativeWinbackReminder.ts) — the
+    // offer itself is checked whenever trialWinbackEligible is true (any
+    // paywall open, not just this one), but tagging the source separately
+    // still lets PostHog see how much this specific nudge is pulling people
+    // back in versus them reopening the app on their own.
+    if (type === 'sub_winback_1' || type === 'sub_winback_2') {
+      setTimeout(() => {
+        DeviceEventEmitter.emit('openPaywall', { source: 'sub_winback' });
+      }, 1500);
+    }
+    // Never-converted reminder tap (see utils/neverConvertedReminder.ts).
+    if (type === 'never_converted_1' || type === 'never_converted_2') {
+      setTimeout(() => {
+        DeviceEventEmitter.emit('openPaywall', { source: 'never_converted_notification' });
       }, 1500);
     }
     // Reply notification tap: open the Dua Wall scrolled to the replied-to
@@ -485,23 +502,37 @@ function MainApp() {
         <NavigationContainer ref={navigationRef} theme={DynamicTheme}>
           <Tab.Navigator
             tabBar={(props) => (
-              <View
-                pointerEvents="box-none"
-                style={{
-                position: 'absolute',
-                bottom: BAR_BOTTOM,
-                left: BAR_MARGIN,
-                right: BAR_MARGIN,
-                height: BAR_HEIGHT,
-                borderRadius: BAR_RADIUS,
-                overflow: 'hidden',
-                shadowColor: colors.shadow,
-                shadowOffset: { width: 0, height: 8 },
-                shadowOpacity: 0.6,
-                shadowRadius: 20,
-                borderWidth: 1,
-                borderColor: colors.accent + '35',
-              }}>
+              <>
+                {/* Opaque backdrop for the gap between the floating pill and the
+                    true screen edge (BAR_BOTTOM). The pill itself only paints its
+                    own height — without this, scrolled content directly behind
+                    that gap (e.g. the last card on Home) shows straight through
+                    on Android, where the pill sits higher off the bottom. */}
+                <View pointerEvents="none" style={{
+                  position: 'absolute',
+                  bottom: 0,
+                  left: 0,
+                  right: 0,
+                  height: BAR_BOTTOM,
+                  backgroundColor: '#020617',
+                }} />
+                <View
+                  pointerEvents="box-none"
+                  style={{
+                  position: 'absolute',
+                  bottom: BAR_BOTTOM,
+                  left: BAR_MARGIN,
+                  right: BAR_MARGIN,
+                  height: BAR_HEIGHT,
+                  borderRadius: BAR_RADIUS,
+                  overflow: 'hidden',
+                  shadowColor: colors.shadow,
+                  shadowOffset: { width: 0, height: 8 },
+                  shadowOpacity: 0.6,
+                  shadowRadius: 20,
+                  borderWidth: 1,
+                  borderColor: colors.accent + '35',
+                }}>
                 {/* Solid theme-tinted base. We dropped the live BlurView here —
                     it was composited every frame behind the always-visible bar
                     and hurt tab-switch responsiveness for no real visual gain
@@ -520,7 +551,8 @@ function MainApp() {
                   paddingTop: Platform.OS === 'android' ? 10 : 6,
                   elevation: 0,
                 }} />
-              </View>
+                </View>
+              </>
             )}
             screenOptions={{
               headerShown: false,

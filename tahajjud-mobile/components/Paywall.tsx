@@ -62,9 +62,10 @@ const Paywall: React.FC<PaywallProps> = ({ onClose, source = 'unknown', featureI
     const [loading, setLoading] = useState(true);
     const [purchasing, setPurchasing] = useState(false);
     const [converted, setConverted] = useState(false);
-    // Win-back offers, keyed by package identifier — only populated when this
-    // paywall was opened from a win-back notification tap (source === 'winback')
-    // and the subscriber is actually eligible per App Store Connect / Play Console.
+    // Win-back offers, keyed by package identifier — only populated when the
+    // subscriber has a cancelled subscription on record (trialWinbackEligible)
+    // and is actually eligible per App Store Connect / Play Console. Not tied
+    // to how they arrived at the paywall — see the loadOfferings() comment.
     const [winBackOffers, setWinBackOffers] = useState<Record<string, PurchasesWinBackOffer>>({});
     // Trial-cancel win-back discount (Promotional Offer), keyed by package
     // identifier — populated whenever PurchasesContext's trialWinbackEligible
@@ -150,10 +151,15 @@ const Paywall: React.FC<PaywallProps> = ({ onClose, source = 'unknown', featureI
                 }
             }
 
-            // Only worth checking win-back eligibility when the user actually
-            // arrived via a win-back notification — avoids a needless
-            // StoreKit round-trip for every other paywall open.
-            if (source === 'winback') {
+            // Checked whenever the user has a cancelled subscription on record
+            // (same signal as the trial-cancel offer below), not just when they
+            // arrived via the win-back notification tap — someone who cancels
+            // and later opens the paywall through Settings, a locked feature,
+            // etc. should still see this if they qualify. Still gated on
+            // trialWinbackEligible (rather than checking on every paywall
+            // open) so the StoreKit round-trip is skipped for the far larger
+            // group who've never subscribed at all.
+            if (trialWinbackEligible) {
                 const entries = await Promise.all(offerings.availablePackages.map(async (pkg) => {
                     const offer = await RevenueCatService.getEligibleWinBackOffer(pkg);
                     return [pkg.identifier, offer] as const;
@@ -161,7 +167,7 @@ const Paywall: React.FC<PaywallProps> = ({ onClose, source = 'unknown', featureI
                 const found = Object.fromEntries(entries.filter(([, offer]) => !!offer)) as Record<string, PurchasesWinBackOffer>;
                 setWinBackOffers(found);
                 if (Object.keys(found).length > 0) {
-                    track('winback_offer_shown', { packages: Object.keys(found).join(',') });
+                    track('winback_offer_shown', { packages: Object.keys(found).join(','), source });
                 }
             }
 
@@ -363,6 +369,11 @@ const Paywall: React.FC<PaywallProps> = ({ onClose, source = 'unknown', featureI
             icon: <Trophy size={20} color={colors.accent} />,
             title: t('paywall.f11t'),
             desc: t('paywall.f11d'),
+        },
+        {
+            icon: <Repeat size={20} color={colors.accent} />,
+            title: t('paywall.f12t'),
+            desc: t('paywall.f12d'),
         },
     ];
 

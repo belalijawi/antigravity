@@ -11,6 +11,7 @@ import { useTheme } from '../context/ThemeContext';
 import { usePurchases } from '../context/PurchasesContext';
 import { t } from '../utils/i18n';
 import { haptic } from '../utils/haptic';
+import { useTranslatable } from '../utils/useTranslatable';
 import { DuaWall, PublicDua, formatDuaAuthor } from '../utils/duaWall';
 import { Comments } from '../utils/comments';
 import { CommunityProfileStore } from '../utils/communityProfile';
@@ -419,44 +420,96 @@ export function DuasHistoryScreen({ onClose, accent, onRequestPaywall, initialTa
                             ? <ActivityIndicator size="small" color={accent} style={styles.footerSpinner} />
                             : null}
                         renderItem={({ item }) => (
-                            <View style={[styles.card, { borderColor: accent + '22' }]}>
-                                <View style={styles.badgeRow}>
-                                    <Sparkles size={11} color="#fbbf24" fill="#fbbf24" />
-                                    <Text style={styles.badgeText}>
-                                        {item.answeredAt
-                                            ? t('duaWall.answeredAgo', { time: formatDistanceToNowStrict(item.answeredAt) })
-                                            : t('duaWall.answered')}
-                                    </Text>
-                                </View>
-                                <Text style={styles.duaText} selectable>{item.text}</Text>
-                                <View style={styles.metaRow}>
-                                    <Text style={styles.meta}>{formatDuaAuthor(item)}</Text>
-                                    {/* Quiet supporter mark, same as CommentThread's */}
-                                    {item.authorPremium && (
-                                        <Crown size={10} color="#fbbf24" fill="#fbbf24" strokeWidth={2} accessibilityLabel="Premium supporter" />
-                                    )}
-                                </View>
-                                {/* The "share how it was answered" copy only
-                                    makes sense to whoever this dua actually
-                                    happened to — a stranger reading someone
-                                    else's card gets the plain, generic reply
-                                    thread instead (see ownDuaIds above). */}
-                                <CommentThread
-                                    parentType="dua"
-                                    parentId={item.id}
-                                    replyCount={item.replyCount ?? 0}
-                                    accent={accent}
-                                    onRequestPaywall={onRequestPaywall}
-                                    {...(ownDuaIds.has(item.id) ? {
-                                        zeroStateLabel: t('duaWall.answeredHowCta'),
-                                        placeholderText: t('duaWall.answeredHowPlaceholder'),
-                                    } : {})}
-                                />
-                            </View>
+                            <AnsweredDuaCard
+                                item={item}
+                                accent={accent}
+                                onRequestPaywall={onRequestPaywall}
+                                isOwn={ownDuaIds.has(item.id)}
+                            />
                         )}
                     />
                 )
             )}
+        </View>
+    );
+}
+
+/**
+ * One card in the Answered tab. Split out from the FlatList's renderItem so
+ * the translate toggle can own its own local state instead of the parent
+ * screen tracking a "which ids are expanded" set across the whole list.
+ *
+ * Uses the same on-demand useTranslatable hook as the main Dua Wall feed —
+ * previously this only read item.translations[locale] and showed nothing at
+ * all if the translateNewDua Cloud Function hadn't (yet, or ever) covered
+ * this locale for this dua: posted before a locale was added, text too long
+ * for the automatic pass, or that one locale's translation failed. Every
+ * answered dua now offers translation regardless of whether the automatic
+ * pass already covered it — existingTranslations still short-circuits the
+ * network call whenever it has.
+ */
+function AnsweredDuaCard({ item, accent, onRequestPaywall, isOwn }: {
+    item: PublicDua;
+    accent: string;
+    onRequestPaywall?: () => void;
+    isOwn: boolean;
+}) {
+    const { displayText, showingTranslation, loading: translating, toggle: toggleTranslate } = useTranslatable({
+        text: item.text,
+        docId: item.id,
+        parentType: 'dua',
+        existingTranslations: item.translations,
+    });
+    const handleToggleTranslate = async () => {
+        haptic.light();
+        const res = await toggleTranslate();
+        if (res && !res.ok) {
+            Alert.alert(t('translate.failedTitle'), t('translate.failedBody'));
+        }
+    };
+
+    return (
+        <View style={[styles.card, { borderColor: accent + '22' }]}>
+            <View style={styles.badgeRow}>
+                <Sparkles size={11} color="#fbbf24" fill="#fbbf24" />
+                <Text style={styles.badgeText}>
+                    {item.answeredAt
+                        ? t('duaWall.answeredAgo', { time: formatDistanceToNowStrict(item.answeredAt) })
+                        : t('duaWall.answered')}
+                </Text>
+            </View>
+            <Text style={styles.duaText} selectable>{displayText}</Text>
+            <TouchableOpacity onPress={handleToggleTranslate} disabled={translating} hitSlop={8}>
+                <Text style={[styles.translateLink, { color: accent }]}>
+                    {translating
+                        ? t('translate.translating')
+                        : showingTranslation
+                            ? t('translate.seeOriginal')
+                            : t('translate.button')}
+                </Text>
+            </TouchableOpacity>
+            <View style={styles.metaRow}>
+                <Text style={styles.meta}>{formatDuaAuthor(item)}</Text>
+                {/* Quiet supporter mark, same as CommentThread's */}
+                {item.authorPremium && (
+                    <Crown size={10} color="#fbbf24" fill="#fbbf24" strokeWidth={2} accessibilityLabel="Premium supporter" />
+                )}
+            </View>
+            {/* The "share how it was answered" copy only makes sense to
+                whoever this dua actually happened to — a stranger reading
+                someone else's card gets the plain, generic reply thread
+                instead (see ownDuaIds above). */}
+            <CommentThread
+                parentType="dua"
+                parentId={item.id}
+                replyCount={item.replyCount ?? 0}
+                accent={accent}
+                onRequestPaywall={onRequestPaywall}
+                {...(isOwn ? {
+                    zeroStateLabel: t('duaWall.answeredHowCta'),
+                    placeholderText: t('duaWall.answeredHowPlaceholder'),
+                } : {})}
+            />
         </View>
     );
 }
@@ -506,6 +559,7 @@ const styles = StyleSheet.create({
     badgeRow: { flexDirection: 'row', alignItems: 'center', gap: 5 },
     badgeText: { color: '#fbbf24', fontSize: 11, fontWeight: '700' },
     duaText: { color: '#e2e8f0', fontSize: 14, lineHeight: 20 },
+    translateLink: { fontSize: 12, fontWeight: '700', alignSelf: 'flex-start' },
     metaRow: { flexDirection: 'row', alignItems: 'center', gap: 4 },
     meta: { color: '#64748b', fontSize: 11, fontWeight: '600' },
     myDuaFooter: {

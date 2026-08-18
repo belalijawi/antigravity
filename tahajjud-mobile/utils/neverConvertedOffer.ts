@@ -26,6 +26,7 @@
  */
 
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import Purchases from 'react-native-purchases';
 import { differenceInCalendarDays } from 'date-fns';
 import { localDateStr } from './localDate';
 
@@ -44,12 +45,51 @@ const HARD_OVERRIDE_DAYS = 30;
 // measured against a control group instead of assumed.
 const HOLDOUT_RATE = 0.2;
 
-async function getDaysSinceInstall(): Promise<number | null> {
+/** Local-only signal — cheap, offline-safe, fine for bookkeeping (recordAppOpen). */
+async function getLocalDaysSinceInstall(): Promise<number | null> {
     const raw = await AsyncStorage.getItem(FIRST_OPEN_KEY);
     if (!raw) return null;
     const firstOpen = Number(raw);
     if (!Number.isFinite(firstOpen)) return null;
     return differenceInCalendarDays(new Date(), new Date(firstOpen));
+}
+
+/**
+ * The signal actually used to GATE eligibility — cross-checked against
+ * RevenueCat's server-tracked `firstSeen`, not just local storage.
+ *
+ * `android:allowBackup="true"` (AndroidManifest.xml) means Android's Auto
+ * Backup silently saves and restores this app's local storage across an
+ * uninstall/reinstall. A user who genuinely used the app long enough to earn
+ * this offer, then uninstalled and reinstalled, gets their old
+ * FIRST_OPEN_KEY and active-days history back immediately — making a
+ * install that the STORE considers brand new look like a long-time user to
+ * this check alone, and the offer isn't guarded by any Apple/Google
+ * eligibility rule (see NEVER_CONVERTED_OFFER_IDS_ANDROID's comment in
+ * services/revenueCat.ts) — this local check is the only gate there is.
+ *
+ * RevenueCat's `firstSeen` is tracked server-side against the subscriber
+ * record, not restorable this way, so it's the authoritative signal for
+ * "is this really a fresh install." Taking the SMALLER (more recent) of the
+ * two values means either signal alone can correctly deny eligibility, but
+ * both have to agree it's been long enough to grant it.
+ */
+async function getDaysSinceInstall(): Promise<number | null> {
+    const localDays = await getLocalDaysSinceInstall();
+    if (localDays === null) return null;
+
+    try {
+        const info = await Purchases.getCustomerInfo();
+        if (info?.firstSeen) {
+            const rcDays = differenceInCalendarDays(new Date(), new Date(info.firstSeen));
+            if (Number.isFinite(rcDays)) return Math.min(localDays, rcDays);
+        }
+    } catch {
+        // RevenueCat unreachable (offline, SDK not yet configured) — fall
+        // back to the local signal alone rather than blocking eligibility
+        // over a transient network issue.
+    }
+    return localDays;
 }
 
 /**
@@ -59,7 +99,10 @@ async function getDaysSinceInstall(): Promise<number | null> {
  */
 export async function recordAppOpen(): Promise<void> {
     try {
-        const daysSinceInstall = await getDaysSinceInstall();
+        // Local-only here is fine — this just decides whether to keep
+        // recording bookkeeping days, and checkNeverConvertedEligibility's
+        // RevenueCat cross-check is what actually guards the real decision.
+        const daysSinceInstall = await getLocalDaysSinceInstall();
         // Also no-ops on a brand-new device where analytics hasn't stamped
         // FIRST_OPEN_KEY yet — it will on a later cold start.
         if (daysSinceInstall === null || daysSinceInstall > MIN_DAYS_SINCE_INSTALL) return;

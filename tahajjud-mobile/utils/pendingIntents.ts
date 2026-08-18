@@ -79,7 +79,11 @@ export async function drainPendingPrayerLogs(): Promise<number> {
                     // Leaderboard: every other Tahajjud-logging path (in-app,
                     // notification action) syncs this — a widget-tap log,
                     // drained here on next launch, was the one gap left.
-                    import('./leaderboard').then(m => m.Leaderboard.syncDelta('tahajjud', 1)).catch(() => {});
+                    // Routed through the durable retry wrapper (not a bare
+                    // syncDelta call) — a launch-time drain is exactly the
+                    // kind of moment a transient failure shouldn't silently
+                    // cost the +1 for good.
+                    import('./tahajjudLeaderboardSync').then(m => m.syncTahajjudNight()).catch(() => {});
                 }
             }
         }

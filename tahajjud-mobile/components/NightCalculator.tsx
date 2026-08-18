@@ -326,7 +326,16 @@ export function NightCalculator({ onNightCalcReady, onPrayerTimesReady, refreshK
                 }
             });
 
-            if (tahajjudNights.length > 0) await scheduleFutureTahajjudNotifications(tahajjudNights);
+            // Re-check the enabled flag fresh here rather than trusting the
+            // `tahajjudEnabled` param captured before the 6-day network
+            // round-trip above — if the user toggled the reminder OFF while
+            // this prefetch was in flight, cancelNotification('tahajjud')
+            // already ran and cleared everything; scheduling now would
+            // silently re-create future-night notifications the user just
+            // turned off, which then fire on those later nights with no
+            // toggle state pointing at them ("rings even though it's off").
+            const stillEnabled = tahajjudNights.length > 0 && await AsyncStorage.getItem(NOTIFICATION_ENABLED_KEY) === 'true';
+            if (stillEnabled) await scheduleFutureTahajjudNotifications(tahajjudNights);
             if (futurePrayers.length > 0)  await scheduleFuturePrayerNotifications(futurePrayers);
 
             if (__DEV__) console.log(`[DEBUG] Pre-scheduled ${tahajjudNights.length} Tahajjud + ${futurePrayers.length} daily prayers for next 6 days`);
